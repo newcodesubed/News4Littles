@@ -10,9 +10,12 @@
  * overwrite edits made through the admin UI. To reset a row, delete it first.
  *
  *   npm run db:seed
- *   ADMIN_USERNAME=me ADMIN_PASSWORD=secret npm run db:seed
+ *
+ * The admin credentials come from .env (see .env.example).
  */
+import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
+import { ADMIN_PASSWORD, ADMIN_USERNAME } from '../env.js';
 import { DATABASE_PATH, openDatabase } from './connection.js';
 import { initialiseSchema } from './init.js';
 import { AGE_6_SIMPLIFICATION_PROMPT, GENERIC_SIMPLIFICATION_PROMPT } from './seed-prompts.js';
@@ -63,11 +66,11 @@ export function seed(path: string = DATABASE_PATH): SeedResult {
 
   const now = new Date().toISOString();
 
-  const username = process.env.ADMIN_USERNAME ?? 'admin';
-  // §4.1 documents admin/admin123 as the default, configurable via env.
+  // §4.1 documents admin/admin123 as the default, configurable via .env.
   // Only the bcrypt hash is stored, and it is computed here rather than
   // committed, so no credential material lives in the repo (§13.2).
-  const passwordHash = bcrypt.hashSync(process.env.ADMIN_PASSWORD ?? 'admin123', BCRYPT_ROUNDS);
+  const username = ADMIN_USERNAME;
+  const passwordHash = bcrypt.hashSync(ADMIN_PASSWORD, BCRYPT_ROUNDS);
 
   const run = db.transaction(() => {
     const insertSource = db.prepare(
@@ -126,7 +129,7 @@ export function seed(path: string = DATABASE_PATH): SeedResult {
   }
 }
 
-const isDirectRun = process.argv[1] === new URL(import.meta.url).pathname;
+const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
 
 if (isDirectRun) {
   const { inserted, skipped } = seed();

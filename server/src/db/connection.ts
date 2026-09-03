@@ -1,15 +1,11 @@
 import { mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
+import { DATABASE_PATH } from '../env.js';
 
-/** Repo path: /server */
-const SERVER_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-
-/** Database file location. Override with DATABASE_PATH for tests or alternate envs. */
-export const DATABASE_PATH = process.env.DATABASE_PATH
-  ? resolve(process.env.DATABASE_PATH)
-  : resolve(SERVER_ROOT, 'data', 'news4littles.db');
+// Re-exported so db modules have a single import for "open a connection".
+// Configured in .env — see .env.example.
+export { DATABASE_PATH };
 
 /**
  * Open a connection with the pragmas this schema depends on.
