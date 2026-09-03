@@ -1,41 +1,125 @@
 @import 'tailwindcss';
 
 /*
- * Visual direction taken from the reference prototype (news4littles.lovable.app):
- * warm paper background, sunny yellow + friendly blue, rounded shapes, generous
- * spacing, a soft rounded typeface. Values here are a starting point to iterate
- * on, not measurements taken from the prototype.
+ * Design tokens copied verbatim from the reference prototype's stylesheet
+ * (news4littles.lovable.app/assets/index-4sVAxpmW.css). These are the
+ * prototype's actual values, not an approximation.
  */
 @theme {
-  --color-paper: #fffdf7;
-  --color-paper-deep: #fdf6e8;
-  --color-ink: #26313f;
-  --color-ink-soft: #5b6779;
-  --color-brand: #3d8fd1;
-  --color-brand-deep: #2b6ea8;
-  --color-brand-wash: #e8f2fb;
-  --color-sun: #ffc83d;
-  --color-sun-wash: #fff4d6;
+  --color-background: hsl(38 60% 97%);
+  --color-foreground: hsl(220 30% 18%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(220 30% 18%);
+  --color-primary: hsl(14 88% 62%);
+  --color-primary-foreground: hsl(38 60% 99%);
+  --color-secondary: hsl(200 75% 88%);
+  --color-secondary-foreground: hsl(215 50% 22%);
+  --color-muted: hsl(38 30% 92%);
+  --color-muted-foreground: hsl(220 15% 42%);
+  --color-accent: hsl(152 55% 82%);
+  --color-accent-foreground: hsl(160 45% 20%);
+  --color-destructive: hsl(0 75% 55%);
+  --color-border: hsl(35 30% 86%);
+  --color-input: hsl(35 30% 88%);
+  --color-ring: hsl(14 88% 62%);
 
-  --font-display: 'Baloo 2', ui-rounded, 'Segoe UI', system-ui, sans-serif;
-  --font-body: 'Nunito', ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  /* Category accents */
+  --color-category-world: hsl(215 70% 60%);
+  --color-category-science: hsl(265 60% 65%);
+  --color-category-environment: hsl(145 55% 45%);
+  --color-category-health: hsl(350 70% 65%);
+  --color-category-culture: hsl(30 85% 60%);
+  --color-category-technology: hsl(195 70% 50%);
+  --color-category-sports: hsl(25 90% 55%);
+  --color-category-good: hsl(50 95% 55%);
+
+  /* Safety accents */
+  --color-safety-calm: hsl(152 60% 45%);
+  --color-safety-adult: hsl(38 90% 55%);
+  --color-safety-skip: hsl(0 70% 60%);
+
+  /* Tinted section surfaces */
+  --color-surface-warm: hsl(38 70% 94%);
+  --color-surface-sun: hsl(45 95% 90%);
+  --color-surface-sky: hsl(200 80% 92%);
+  --color-surface-mint: hsl(152 50% 90%);
+
+  --radius: 1.25rem;
+
+  --shadow-soft: 0 4px 20px -8px hsl(220 30% 18% / 0.12);
+  --shadow-card: 0 8px 30px -12px hsl(220 30% 18% / 0.18);
+  --shadow-pop: 0 12px 40px -10px hsl(14 88% 62% / 0.35);
+
+  --animate-fade-up: fade-up 0.5s ease-out;
+  --animate-float: float 6s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  to {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* The prototype's .container: fixed max-width with 1.25rem gutters. */
+@utility container {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+
+/*
+ * .font-display carries weight and tracking as well as the family, exactly as
+ * the prototype's compiled rule does.
+ */
+@utility font-display {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+@utility bg-gradient-hero {
+  background: linear-gradient(135deg, hsl(200 80% 90%) 0%, hsl(45 90% 88%) 50%, hsl(14 80% 88%) 100%);
+}
+
+@utility bg-gradient-sky {
+  background: linear-gradient(180deg, hsl(200 90% 94%), hsl(38 60% 97%));
+}
+
+@utility bg-gradient-sun {
+  background: linear-gradient(135deg, hsl(45 95% 80%), hsl(14 88% 75%));
 }
 
 @layer base {
   body {
-    @apply bg-paper text-ink font-body antialiased;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: Nunito, system-ui, sans-serif;
+    font-feature-settings: 'ss01', 'ss02';
+    margin: 0;
   }
 
-  h1, h2, h3 {
-    @apply font-display;
-  }
-
-  /* Anchor jumps from the hero CTA shouldn't slam to the section. */
   html {
     scroll-behavior: smooth;
   }
 
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-brand;
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
   }
 }

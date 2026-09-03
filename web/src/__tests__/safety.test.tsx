@@ -76,25 +76,25 @@ afterEach(() => vi.unstubAllGlobals());
 describe('feeling note (§3.4, §11.1)', () => {
   it('is shown for an adult-nearby story', async () => {
     renderStory(article({ safety: 'adult-nearby', feelingNote: 'Grown-ups are helping.' }));
-    expect(await screen.findByText('Feeling note')).toBeInTheDocument();
+    expect(await screen.findByText('A little feeling note')).toBeInTheDocument();
     expect(screen.getByText('Grown-ups are helping.')).toBeInTheDocument();
   });
 
   it('is shown for a skip-young story', async () => {
     renderStory(article({ safety: 'skip-young', feelingNote: 'People are working on it.' }));
-    expect(await screen.findByText('Feeling note')).toBeInTheDocument();
+    expect(await screen.findByText('A little feeling note')).toBeInTheDocument();
   });
 
   it('is NOT shown for a calm story', async () => {
     renderStory(article({ safety: 'calm', feelingNote: null }));
     await screen.findByText(BASE.kidHeadline);
-    expect(screen.queryByText('Feeling note')).not.toBeInTheDocument();
+    expect(screen.queryByText('A little feeling note')).not.toBeInTheDocument();
   });
 
   it('is NOT shown for a calm story even if the data wrongly carries one', async () => {
     renderStory(article({ safety: 'calm', feelingNote: 'This should never be rendered.' }));
     await screen.findByText(BASE.kidHeadline);
-    expect(screen.queryByText('Feeling note')).not.toBeInTheDocument();
+    expect(screen.queryByText('A little feeling note')).not.toBeInTheDocument();
     expect(screen.queryByText('This should never be rendered.')).not.toBeInTheDocument();
   });
 });
@@ -105,10 +105,14 @@ describe('safety badge', () => {
     expect(await screen.findByText('Grown-up nearby')).toBeInTheDocument();
   });
 
-  it('is NOT shown for calm stories', async () => {
+  it('reads "Calm" for a calm story, as the prototype does', async () => {
     renderStory(article({ safety: 'calm' }));
-    await screen.findByText(BASE.kidHeadline);
-    expect(screen.queryByText('Calm')).not.toBeInTheDocument();
+    expect(await screen.findByText('Calm')).toBeInTheDocument();
+  });
+
+  it('reads "Skip for young kids" for skip-young', async () => {
+    renderStory(article({ safety: 'skip-young', feelingNote: 'Note.' }));
+    expect(await screen.findByText('Skip for young kids')).toBeInTheDocument();
   });
 });
 
@@ -140,7 +144,7 @@ describe('home feed states', () => {
 
   it('shows an empty state when nothing is published', async () => {
     renderHome([]);
-    expect(await screen.findByText('No stories today — yet')).toBeInTheDocument();
+    expect(await screen.findByText(/No stories today yet/)).toBeInTheDocument();
   });
 
   it('shows an error state when the API is unreachable', async () => {

@@ -1,39 +1,34 @@
 import { Link } from 'react-router-dom';
+import { Clock } from 'lucide-react';
 import { CategoryBadge, SafetyBadge } from './Badges';
 import type { KidArticle } from '../lib/types';
 
-/** Story card — PRD §3.3. */
+/** Story card — PRD §3.3, markup matching the prototype. */
 export function StoryCard({ article }: { article: KidArticle }) {
   return (
-    <article className="flex h-full flex-col rounded-3xl border border-paper-deep bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex flex-wrap items-center gap-2">
+    <Link
+      to={`/story/${article.id}`}
+      className="group block bg-card rounded-3xl p-6 shadow-soft hover:shadow-card transition-all hover:-translate-y-1 border border-border/60"
+    >
+      <div className="flex items-center gap-2 flex-wrap mb-3">
         <CategoryBadge category={article.category} />
         <SafetyBadge safety={article.safety} />
       </div>
 
-      <h3 className="mt-4 text-xl leading-snug font-bold">
-        <Link to={`/story/${article.id}`} className="hover:text-brand-deep">
-          {article.kidHeadline}
-        </Link>
+      <h3 className="font-display text-2xl leading-tight mb-3 group-hover:text-primary transition-colors">
+        {article.kidHeadline}
       </h3>
 
-      <p className="mt-2 grow text-ink-soft">{article.summary}</p>
-
-      <p className="mt-4 text-sm font-semibold text-ink-soft">
-        {article.readingMinutes} min read · Age {article.ageTarget}+
+      <p className="text-foreground/70 text-base leading-relaxed line-clamp-3 mb-4">
+        {article.summary}
       </p>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-paper-deep pt-4 text-sm">
-        <span className="text-ink-soft">{article.sourceName}</span>
-        <a
-          href={article.sourceUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="font-semibold text-brand-deep hover:underline"
-        >
-          Original (for grown-ups) ↗
-        </a>
+      <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
+        <span className="inline-flex items-center gap-1">
+          <Clock className="w-3.5 h-3.5" /> {article.readingMinutes} min read
+        </span>
+        <span>From {article.sourceName}</span>
       </div>
-    </article>
+    </Link>
   );
 }
