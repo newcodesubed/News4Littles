@@ -1,0 +1,41 @@
+@import 'tailwindcss';
+
+/*
+ * Visual direction taken from the reference prototype (news4littles.lovable.app):
+ * warm paper background, sunny yellow + friendly blue, rounded shapes, generous
+ * spacing, a soft rounded typeface. Values here are a starting point to iterate
+ * on, not measurements taken from the prototype.
+ */
+@theme {
+  --color-paper: #fffdf7;
+  --color-paper-deep: #fdf6e8;
+  --color-ink: #26313f;
+  --color-ink-soft: #5b6779;
+  --color-brand: #3d8fd1;
+  --color-brand-deep: #2b6ea8;
+  --color-brand-wash: #e8f2fb;
+  --color-sun: #ffc83d;
+  --color-sun-wash: #fff4d6;
+
+  --font-display: 'Baloo 2', ui-rounded, 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Nunito', ui-rounded, 'Segoe UI', system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-paper text-ink font-body antialiased;
+  }
+
+  h1, h2, h3 {
+    @apply font-display;
+  }
+
+  /* Anchor jumps from the hero CTA shouldn't slam to the section. */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+}
