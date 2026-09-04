@@ -1,5 +1,8 @@
-import { Link, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { AdminChrome, RequireAdmin } from './pages/admin/AdminLayout';
+import { AdminLogin } from './pages/admin/AdminLogin';
+import { AdminReview } from './pages/admin/AdminReview';
 import { About } from './pages/About';
 import { Home } from './pages/Home';
 import { Podcast } from './pages/Podcast';
@@ -20,10 +23,19 @@ function NotFound() {
   );
 }
 
-/** The five public routes of PRD §3.1. Admin routes (§4.1) are out of scope. */
+/** Public routes (§3.1) plus the admin review queue (§4.1, §4.2). */
 export function App() {
   return (
     <Routes>
+      {/* Admin — §4.1. Everything but /admin/login sits behind RequireAdmin. */}
+      <Route path="admin/login" element={<AdminLogin />} />
+      <Route element={<RequireAdmin />}>
+        <Route path="admin" element={<AdminChrome />}>
+          <Route index element={<Navigate to="/admin/review" replace />} />
+          <Route path="review" element={<AdminReview />} />
+        </Route>
+      </Route>
+
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="story/:id" element={<StoryDetail />} />

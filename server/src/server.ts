@@ -12,6 +12,8 @@ import express from 'express';
 import { CORS_ORIGINS, DATABASE_PATH, PORT } from './env.js';
 import { openDatabase } from './db/connection.js';
 import { startScrapeSchedule } from './ingestion/scheduler.js';
+import { createAdminAuth } from './middleware/adminAuth.js';
+import { createAdminArticlesRouter } from './routes/adminArticles.js';
 import { createArticlesRouter } from './routes/articles.js';
 
 export function createApp(db = openDatabase()) {
@@ -23,6 +25,10 @@ export function createApp(db = openDatabase()) {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, database: DATABASE_PATH });
   });
+
+  // Everything under /api/admin requires Basic Auth (§4.1). Mounted before the
+  // public router so no admin path can fall through to an unauthenticated one.
+  app.use('/api/admin', createAdminAuth(db), createAdminArticlesRouter(db));
 
   app.use('/api', createArticlesRouter(db));
 
@@ -46,6 +52,7 @@ if (isDirectRun) {
     console.log(`\n  GET /api/health`);
     console.log(`  GET /api/articles[?status=pending_review|published|rejected]`);
     console.log(`  GET /api/articles/:id`);
+    console.log(`  /api/admin/*  (Basic Auth)`);
     console.log('');
 
     // §5.3: register the configured scrape times. Failures here are logged by

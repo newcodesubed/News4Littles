@@ -1,0 +1,80 @@
+import type { KidArticle } from '../lib/types';
+
+/** What /api/admin/articles returns: a KidArticle plus two admin-only extras. */
+export interface AdminArticle extends KidArticle {
+  sourceId: string;
+  originalHeadline: string;
+}
+
+export interface StatusCounts {
+  pending_review: number;
+  published: number;
+  rejected: number;
+  total: number;
+}
+
+export interface FilterOptions {
+  categories: string[];
+  sources: { id: string; name: string }[];
+  ageTargets: number[];
+  safety: string[];
+  statuses: string[];
+  sortFields: string[];
+}
+
+export interface BulkResult {
+  action: string;
+  applied: string[];
+  skipped: { id: string; reason: string }[];
+  appliedCount: number;
+  skippedCount: number;
+}
+
+export interface Filters {
+  status: string;
+  categories: string[];
+  safety: string[];
+  flagged: boolean;
+  sources: string[];
+  ageTargets: string[];
+  q: string;
+  createdFrom: string;
+  createdTo: string;
+  sort: string;
+  order: 'asc' | 'desc';
+}
+
+export const EMPTY_FILTERS: Filters = {
+  status: 'pending_review',
+  categories: [],
+  safety: [],
+  flagged: false,
+  sources: [],
+  ageTargets: [],
+  q: '',
+  createdFrom: '',
+  createdTo: '',
+  sort: 'createdAt',
+  order: 'desc',
+};
+
+export function toQueryString(filters: Filters): string {
+  const params = new URLSearchParams();
+  if (filters.status) params.set('status', filters.status);
+  for (const value of filters.categories) params.append('category', value);
+  for (const value of filters.sources) params.append('source', value);
+  for (const value of filters.ageTargets) params.append('ageTarget', value);
+
+  // The flagged shortcut replaces any explicit safety selection (§4.2).
+  if (filters.flagged) params.set('flagged', 'true');
+  else for (const value of filters.safety) params.append('safety', value);
+
+  if (filters.q.trim()) params.set('q', filters.q.trim());
+  if (filters.createdFrom) params.set('createdFrom', filters.createdFrom);
+  // An end date is inclusive of that whole day.
+  if (filters.createdTo) params.set('createdTo', `${filters.createdTo}T23:59:59.999Z`);
+  params.set('sort', filters.sort);
+  params.set('order', filters.order);
+
+  return `?${params.toString()}`;
+}
