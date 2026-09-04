@@ -11,6 +11,7 @@ import cors from 'cors';
 import express from 'express';
 import { CORS_ORIGINS, DATABASE_PATH, PORT } from './env.js';
 import { openDatabase } from './db/connection.js';
+import { startScrapeSchedule } from './ingestion/scheduler.js';
 import { createArticlesRouter } from './routes/articles.js';
 
 export function createApp(db = openDatabase()) {
@@ -35,12 +36,20 @@ export function createApp(db = openDatabase()) {
 const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
 
 if (isDirectRun) {
-  createApp().listen(PORT, () => {
+  // One connection for the request handlers and the cron jobs (§5.3).
+  const db = openDatabase();
+
+  createApp(db).listen(PORT, () => {
     console.log(`News4Littles API listening on http://localhost:${PORT}`);
     console.log(`  database     ${DATABASE_PATH}`);
     console.log(`  CORS origins ${CORS_ORIGINS.join(', ')}`);
     console.log(`\n  GET /api/health`);
     console.log(`  GET /api/articles[?status=pending_review|published|rejected]`);
     console.log(`  GET /api/articles/:id`);
+    console.log('');
+
+    // §5.3: register the configured scrape times. Failures here are logged by
+    // the scheduler and never bring the API down.
+    startScrapeSchedule(db);
   });
 }

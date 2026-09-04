@@ -10,14 +10,19 @@
     "db:seed": "tsx src/db/seed.ts",
     "seed": "tsx src/db/seed-articles.ts",
     "typecheck": "tsc --noEmit",
-    "pipeline:demo": "tsx scripts/try-pipeline.ts"
+    "pipeline:demo": "tsx scripts/try-pipeline.ts",
+    "try:rss": "tsx scripts/try-rss.ts",
+    "scrape": "tsx scripts/scrape.ts",
+    "scrape:bbc": "tsx scripts/scrape.ts --source bbc"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "node-cron": "^4.6.0",
+    "rss-parser": "^3.13.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -145,10 +145,42 @@ export function simplifySentences(text: string, ageTarget: number): string[] {
  * Deliberately does NOT add exclamation marks or rephrase — a rule-based pass
  * cannot do that without risking a false claim about the story.
  */
+/**
+ * A colon does one of two opposite jobs in a news headline:
+ *
+ *   "Watch: Moment workers are rescued"          -> a PREFIX LABEL; the story
+ *                                                   is on the RIGHT
+ *   "Storm nears coast: officials warn of..."    -> a SUBTITLE; the story is
+ *                                                   on the LEFT
+ *
+ * Real BBC output settles it: prefixes are short ("Watch", "Weekly quiz", "The
+ * Papers") while a meaningful left side runs longer. So a left side of three
+ * words or fewer is treated as a label and dropped; anything longer is kept and
+ * the subtitle dropped instead.
+ *
+ * A spaced dash or a pipe is always a suffix ("... | Analysis"), so the left
+ * side always wins there.
+ */
+const PREFIX_LABEL_MAX_WORDS = 3;
+
+function dropHeadlineExtras(headline: string): string {
+  // Suffixes first: " — extra" and " | Analysis" never carry the story.
+  const withoutSuffix = headline.split(/\s+[-–—|]\s+/)[0]?.trim() ?? headline;
+
+  const colon = withoutSuffix.indexOf(':');
+  if (colon === -1) return withoutSuffix;
+
+  const before = withoutSuffix.slice(0, colon).trim();
+  const after = withoutSuffix.slice(colon + 1).trim();
+
+  if (!after) return before;
+  if (!before) return after;
+
+  return before.split(/\s+/).filter(Boolean).length <= PREFIX_LABEL_MAX_WORDS ? after : before;
+}
+
 export function simplifyHeadline(headline: string, ageTarget: number): string {
-  // A colon/pipe binds to the preceding word ("approaches: officials"), while a
-  // dash is spaced on both sides ("reef — researchers"). Both forms must split.
-  const withoutSubtitle = headline.split(/\s*[:|]\s+|\s+[-–—]\s+/)[0] ?? headline;
+  const withoutSubtitle = dropHeadlineExtras(headline);
   const cleaned = capitalize(stripComplexWords(withoutSubtitle).replace(/\s*[.,;:]+$/, ''));
   const limit = Math.min(maxWordsForAge(ageTarget), 12);
   const words = cleaned.split(/\s+/).filter(Boolean);

@@ -57,6 +57,17 @@ export const CORS_ORIGINS = readList('CORS_ORIGIN', [
 /** SQLite file. A relative value resolves against /server, not the shell's cwd. */
 export const DATABASE_PATH = resolve(SERVER_ROOT, readString('DATABASE_PATH', 'data/news4littles.db'));
 
+/**
+ * Scheduled scraping (§5.3). The TIMES come from app_settings.scrapeTimes so an
+ * editor can change them; these two control whether the scheduler runs at all
+ * and which timezone "06:00" is measured in — neither is specified by the PRD.
+ */
+export const SCRAPE_ENABLED = readString('SCRAPE_ENABLED', 'true').toLowerCase() !== 'false';
+export const SCRAPE_TIMEZONE = readString(
+  'SCRAPE_TIMEZONE',
+  Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+);
+
 /** Admin credentials, used by the seed to create the account (PRD §4.1). */
 export const ADMIN_USERNAME = readString('ADMIN_USERNAME', 'admin');
 export const ADMIN_PASSWORD = readString('ADMIN_PASSWORD', 'admin123');
