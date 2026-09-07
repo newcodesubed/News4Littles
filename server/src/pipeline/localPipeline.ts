@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
-import type { KidArticle, Safety } from '../db/mappers.js';
+import type { KidArticle, Safety } from '../core/article.js';
 import { denyListGuard, strictest, type GuardResult } from './guard.js';
 import {
   buildVocab,
