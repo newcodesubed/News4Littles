@@ -15,6 +15,7 @@ import {
   LlmResponseError, parseLlmContent, renderPrompt, selectPrompt,
 } from '../llm/llmSimplifier.js';
 import { denyListGuard, strictest, type GuardResult } from './guard.js';
+import { runPromptGuard, type PromptGuardOutcome } from './promptGuard.js';
 import { FEELING_NOTE_FALLBACK } from './simplify.js';
 import {
   loadLocalPipelineConfig, simplifyLocally,
@@ -35,6 +36,8 @@ export interface SimplifyOutcome {
   fallbackReason?: string;
   /** Which prompt was used, for the sandbox and the editor portal. */
   promptSource?: string;
+  /** Present when §6.2's prompt guard ran. Off by default. */
+  promptGuard?: PromptGuardOutcome;
 }
 
 export interface SimplifyOptions extends LocalPipelineOptions {
@@ -84,14 +87,23 @@ export async function simplifyArticle(
   }
 
   const client = options.client ?? new OpenRouterClient({ model: options.model });
+
+  // §6.2: an optional second opinion on safety. Off unless an editor enables
+  // it, because it costs a second call per article.
+  const guardConfig = settings.getGuardConfig();
+  const promptContext = {
+    headline: raw.headline,
+    body: raw.body,
+    category: raw.topic,
+    sourceName: raw.sourceName,
+    age: config.ageTarget,
+  };
+  const promptGuard = guardConfig.promptGuardEnabled
+    ? await runPromptGuard(guardConfig.promptGuardText, promptContext, client)
+    : undefined;
+
   const result = await client.complete({
-    prompt: renderPrompt(chosen.template, {
-      headline: raw.headline,
-      body: raw.body,
-      category: raw.topic,
-      sourceName: raw.sourceName,
-      age: config.ageTarget,
-    }),
+    prompt: renderPrompt(chosen.template, promptContext),
     model: options.model,
   });
 
@@ -116,6 +128,8 @@ export async function simplifyArticle(
       guards.push(denyListGuard(`${raw.headline}\n${raw.body}`, config.denyList));
     }
     guards.push({ guard: 'llm-simplifier', safety: content.safety, matches: [] });
+    // A guard that failed contributes nothing rather than a made-up verdict.
+    if (promptGuard?.result) guards.push(promptGuard.result);
 
     const guard = strictest(guards);
     const denyMatches = guards.find((g) => g.guard === 'deny-list')?.matches ?? [];
@@ -157,9 +171,11 @@ export async function simplifyArticle(
       guard: { ...guard, matches: denyMatches },
       engine: 'llm',
       model: result.model,
-      costUsd: result.costUsd,
+      // Both calls are billed, so both are reported.
+      costUsd: (result.costUsd ?? 0) + (promptGuard?.costUsd ?? 0),
       elapsedMs: result.elapsedMs,
       promptSource: chosen.source,
+      promptGuard,
     };
   } catch (error: unknown) {
     // §9.1 step 4: parsing failed, so fall back and flag it.
