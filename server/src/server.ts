@@ -14,6 +14,8 @@ import { openDatabase } from './db/connection.js';
 import { startScrapeSchedule } from './ingestion/scheduler.js';
 import { createAdminAuth } from './middleware/adminAuth.js';
 import { createAdminArticlesRouter } from './routes/adminArticles.js';
+import { createAdminSettingsRouter } from './routes/adminSettings.js';
+import { createAdminSubmitRouter } from './routes/adminSubmit.js';
 import { createArticlesRouter } from './routes/articles.js';
 
 export function createApp(db = openDatabase()) {
@@ -28,7 +30,10 @@ export function createApp(db = openDatabase()) {
 
   // Everything under /api/admin requires Basic Auth (§4.1). Mounted before the
   // public router so no admin path can fall through to an unauthenticated one.
-  app.use('/api/admin', createAdminAuth(db), createAdminArticlesRouter(db));
+  const adminAuth = createAdminAuth(db);
+  app.use('/api/admin', adminAuth, createAdminArticlesRouter(db));
+  app.use('/api/admin', adminAuth, createAdminSubmitRouter(db));
+  app.use('/api/admin', adminAuth, createAdminSettingsRouter(db));
 
   app.use('/api', createArticlesRouter(db));
 

@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, ShieldCheck } from 'lucide-react';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
 
@@ -28,6 +28,28 @@ export function AdminChrome() {
               Editor <span className="text-primary">Dashboard</span>
             </span>
           </Link>
+
+          <nav className="flex items-center gap-1">
+            {[
+              { to: '/admin/review', label: 'Review' },
+              { to: '/admin/submit', label: 'Submit' },
+              { to: '/admin/settings', label: 'Settings' },
+            ].map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `px-3 py-2 rounded-full text-sm font-semibold transition-colors ${
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-foreground/70 hover:text-foreground hover:bg-muted'
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
 
           <div className="flex items-center gap-2">
             <Link

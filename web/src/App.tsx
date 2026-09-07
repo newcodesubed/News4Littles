@@ -3,6 +3,8 @@ import { Layout } from './components/Layout';
 import { AdminChrome, RequireAdmin } from './pages/admin/AdminLayout';
 import { AdminLogin } from './pages/admin/AdminLogin';
 import { AdminReview } from './pages/admin/AdminReview';
+import { AdminSettings } from './pages/admin/AdminSettings';
+import { AdminSubmit } from './pages/admin/AdminSubmit';
 import { About } from './pages/About';
 import { Home } from './pages/Home';
 import { Podcast } from './pages/Podcast';
@@ -33,6 +35,8 @@ export function App() {
         <Route path="admin" element={<AdminChrome />}>
           <Route index element={<Navigate to="/admin/review" replace />} />
           <Route path="review" element={<AdminReview />} />
+          <Route path="submit" element={<AdminSubmit />} />
+          <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Route>
 
