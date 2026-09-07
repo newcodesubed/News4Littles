@@ -33,6 +33,7 @@ export function AdminChrome() {
             {[
               { to: '/admin/review', label: 'Review' },
               { to: '/admin/submit', label: 'Submit' },
+              { to: '/admin/sandbox', label: 'Sandbox' },
               { to: '/admin/settings', label: 'Settings' },
             ].map((item) => (
               <NavLink

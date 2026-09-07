@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '../../../ui/Button';
 import { FIELD_CLASS_COMPACT, Select } from '../../../ui/Field';
 import { Notice, Section } from '../../../ui/Surface';
@@ -30,9 +31,16 @@ export function PromptsSection({ config, save }: { config: PromptConfig; save: S
         </Notice>
       </div>
 
-      <label className="block">
+      <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-bold">Generic prompt</span>
+        <Link to="/admin/sandbox?target=simplification"
+          className="text-sm font-semibold text-primary hover:underline">
+          Test in sandbox →
+        </Link>
+      </div>
+      <label className="block">
         <textarea
+          aria-label="Generic prompt"
           value={draft.genericPrompt}
           rows={10}
           onChange={(e) => setDraft({ ...draft, genericPrompt: e.target.value })}
@@ -49,6 +57,10 @@ export function PromptsSection({ config, save }: { config: PromptConfig; save: S
         <div key={age} className="mt-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-bold">Age {age}</span>
+            <Link to={`/admin/sandbox?target=simplification&age=${age}`}
+              className="ml-auto mr-3 text-sm font-semibold text-primary hover:underline">
+              Test in sandbox →
+            </Link>
             <button
               onClick={() => {
                 const ageOverrides = { ...draft.ageOverrides };

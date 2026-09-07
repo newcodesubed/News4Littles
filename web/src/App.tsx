@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { AdminChrome, RequireAdmin } from './pages/admin/AdminLayout';
 import { AdminLogin } from './pages/admin/AdminLogin';
 import { AdminReview } from './pages/admin/AdminReview';
+import { AdminSandbox } from './pages/admin/AdminSandbox';
 import { AdminSettings } from './pages/admin/AdminSettings';
 import { AdminSubmit } from './pages/admin/AdminSubmit';
 import { About } from './pages/About';
@@ -37,6 +38,7 @@ export function App() {
           <Route path="review" element={<AdminReview />} />
           <Route path="submit" element={<AdminSubmit />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="sandbox" element={<AdminSandbox />} />
         </Route>
       </Route>
 

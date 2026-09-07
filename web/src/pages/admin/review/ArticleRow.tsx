@@ -1,4 +1,5 @@
-import { ExternalLink, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react';
+import { ExternalLink, FlaskConical, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { CategoryBadge, SafetyBadge } from '../../../components/Badges';
 import { Button } from '../../../ui/Button';
 import type { AdminArticle } from '../../../admin/types';
@@ -97,6 +98,13 @@ export function ArticleRow({
           <Button size="sm" variant="outline" onClick={actions.onRegenerate}>
             <RotateCcw className="w-3.5 h-3.5" /> Regenerate
           </Button>
+          {/* §7.2: open the sandbox pre-loaded with this article's raw text. */}
+          <Link
+            to={`/admin/sandbox?articleId=${encodeURIComponent(article.originalId)}&age=${article.ageTarget}`}
+            className="inline-flex items-center justify-center gap-1.5 rounded-full border border-border px-3.5 py-2 text-sm font-bold transition hover:bg-muted"
+          >
+            <FlaskConical className="w-3.5 h-3.5" /> Sandbox
+          </Link>
           <Button
             size="sm"
             variant="danger"

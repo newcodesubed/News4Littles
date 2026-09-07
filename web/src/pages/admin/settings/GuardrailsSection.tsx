@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '../../../ui/Button';
 import { FIELD_CLASS_COMPACT } from '../../../ui/Field';
 import { Notice, Section } from '../../../ui/Surface';
@@ -18,6 +19,12 @@ export function GuardrailsSection({ guard, save }: { guard: GuardConfig; save: S
       blurb="The deny-list the safety guard checks every article against. Changes apply to the next guard run immediately — no restart needed."
       className="mb-6"
     >
+      <p className="mb-4 text-sm">
+        <Link to="/admin/sandbox?target=guard" className="font-semibold text-primary hover:underline">
+          Test the safety-guard prompt in the sandbox →
+        </Link>
+      </p>
+
       <label className="flex items-center gap-2 text-sm font-bold mb-4">
         <input
           type="checkbox"
