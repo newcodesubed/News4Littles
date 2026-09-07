@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { AdminAuthError, useAdminAuth } from '../../admin/AdminAuthContext';
+import { Button } from '../../ui/Button';
+import { FIELD_CLASS } from '../../ui/Field';
 
 /** /admin/login — PRD §4.1. */
 export function AdminLogin() {
@@ -50,7 +52,7 @@ export function AdminLogin() {
               autoComplete="username"
               autoFocus
               required
-              className="mt-1 w-full rounded-xl border border-border bg-background px-4 py-2.5"
+              className={`mt-1 ${FIELD_CLASS}`}
             />
           </label>
 
@@ -62,7 +64,7 @@ export function AdminLogin() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
               required
-              className="mt-1 w-full rounded-xl border border-border bg-background px-4 py-2.5"
+              className={`mt-1 ${FIELD_CLASS}`}
             />
           </label>
 
@@ -72,13 +74,9 @@ export function AdminLogin() {
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-full bg-primary px-5 py-3 font-bold text-primary-foreground shadow-pop disabled:opacity-60"
-          >
+          <Button type="submit" size="xl" disabled={busy} className="w-full">
             {busy ? 'Checking…' : 'Sign in'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

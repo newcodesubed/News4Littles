@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { CategoryBadge, CATEGORIES, SafetyBadge } from '../../components/Badges';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
+import { Button } from '../../ui/Button';
+import { FIELD_CLASS, FIELD_CLASS_COMPACT } from '../../ui/Field';
+import { Card, Notice } from '../../ui/Surface';
 import type { KidArticle } from '../../lib/types';
 
 /**
@@ -20,7 +23,6 @@ interface GuardInfo {
 
 const AGES = Array.from({ length: 10 }, (_, i) => i + 5); // 5–14 (§4.3)
 
-const field = 'mt-1 w-full rounded-xl border border-border bg-background px-4 py-2.5';
 
 export function AdminSubmit() {
   const { adminFetch } = useAdminAuth();
@@ -114,22 +116,22 @@ export function AdminSubmit() {
         under the <strong>manual</strong> source.
       </p>
 
-      <div className="rounded-3xl border border-border bg-card p-6 shadow-soft space-y-4">
+      <Card className="space-y-4">
         <label className="block">
           <span className="text-sm font-bold">Original headline</span>
-          <input value={form.headline} onChange={(e) => set('headline', e.target.value)} className={field} />
+          <input value={form.headline} onChange={(e) => set('headline', e.target.value)} className={`mt-1 ${FIELD_CLASS}`} />
         </label>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="text-sm font-bold">Source name</span>
             <input value={form.sourceName} onChange={(e) => set('sourceName', e.target.value)}
-              placeholder="e.g. BBC News" className={field} />
+              placeholder="e.g. BBC News" className={`mt-1 ${FIELD_CLASS}`} />
           </label>
           <label className="block">
             <span className="text-sm font-bold">Source URL</span>
             <input value={form.sourceUrl} onChange={(e) => set('sourceUrl', e.target.value)}
-              placeholder="https://…" className={field} />
+              placeholder="https://…" className={`mt-1 ${FIELD_CLASS}`} />
           </label>
         </div>
 
@@ -137,7 +139,7 @@ export function AdminSubmit() {
           <label className="block">
             <span className="text-sm font-bold">Article text</span>
             <textarea value={form.body} onChange={(e) => set('body', e.target.value)} rows={10}
-              placeholder="Paste the full article text here." className={field} />
+              placeholder="Paste the full article text here." className={`mt-1 ${FIELD_CLASS}`} />
           </label>
           {/* Outside the <label> so it does not become part of the field's name. */}
           <p className="mt-1 text-xs text-muted-foreground">
@@ -148,33 +150,29 @@ export function AdminSubmit() {
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="text-sm font-bold">Category</span>
-            <select value={form.category} onChange={(e) => set('category', e.target.value)} className={field}>
+            <select value={form.category} onChange={(e) => set('category', e.target.value)} className={`mt-1 ${FIELD_CLASS}`}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
           <label className="block">
             <span className="text-sm font-bold">Age target</span>
-            <select value={form.ageTarget} onChange={(e) => set('ageTarget', Number(e.target.value))} className={field}>
+            <select value={form.ageTarget} onChange={(e) => set('ageTarget', Number(e.target.value))} className={`mt-1 ${FIELD_CLASS}`}>
               {AGES.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </label>
         </div>
 
-        <button
-          onClick={simplify}
-          disabled={!complete || busy}
-          className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 font-bold text-primary-foreground shadow-pop disabled:opacity-50"
-        >
+        <Button size="xl" onClick={simplify} disabled={!complete || busy}>
           <Sparkles className="w-4 h-4" /> {busy ? 'Working…' : 'Simplify with AI'}
-        </button>
+        </Button>
         <p className="text-xs text-muted-foreground">
           No AI key is configured, so this runs the local rule-based simplifier. Nothing is saved
           until you choose an action below.
         </p>
-      </div>
+      </Card>
 
       {error && <p role="alert" className="mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{error}</p>}
-      {notice && <p role="status" className="mt-4 rounded-2xl bg-muted px-4 py-3 text-sm font-semibold">{notice}</p>}
+      {notice && <div className="mt-4"><Notice>{notice}</Notice></div>}
 
       {preview && (
         <div className="mt-6 rounded-3xl border border-border bg-card p-6 shadow-card">
@@ -217,10 +215,10 @@ export function AdminSubmit() {
               <label key={key} className="block">
                 <span className="text-sm font-bold">{label}</span>
                 {rows === 1 ? (
-                  <input value={preview[key] as string} onChange={(e) => setPreviewField(key, e.target.value)} className={field} />
+                  <input value={preview[key] as string} onChange={(e) => setPreviewField(key, e.target.value)} className={`mt-1 ${FIELD_CLASS}`} />
                 ) : (
                   <textarea value={preview[key] as string} rows={rows}
-                    onChange={(e) => setPreviewField(key, e.target.value)} className={field} />
+                    onChange={(e) => setPreviewField(key, e.target.value)} className={`mt-1 ${FIELD_CLASS}`} />
                 )}
               </label>
             ))}
@@ -239,16 +237,16 @@ export function AdminSubmit() {
                   <div key={index} className="flex flex-wrap gap-2">
                     <input value={entry.word} aria-label={`Word ${index + 1}`}
                       onChange={(e) => setPreviewField('vocab', preview.vocab.map((v, i) => i === index ? { ...v, word: e.target.value } : v))}
-                      className="w-40 rounded-xl border border-border bg-background px-3 py-2" />
+                      className={`w-40 ${FIELD_CLASS_COMPACT}`} />
                     <input value={entry.definition} aria-label={`Definition ${index + 1}`}
                       onChange={(e) => setPreviewField('vocab', preview.vocab.map((v, i) => i === index ? { ...v, definition: e.target.value } : v))}
-                      className="flex-1 min-w-48 rounded-xl border border-border bg-background px-3 py-2" />
-                    <button onClick={() => setPreviewField('vocab', preview.vocab.filter((_, i) => i !== index))}
-                      className="rounded-full px-3 py-2 text-sm font-bold text-destructive hover:bg-muted">Remove</button>
+                      className={`flex-1 min-w-48 ${FIELD_CLASS_COMPACT}`} />
+                    <Button variant="danger"
+                      onClick={() => setPreviewField('vocab', preview.vocab.filter((_, i) => i !== index))}>Remove</Button>
                   </div>
                 ))}
-                <button onClick={() => setPreviewField('vocab', [...preview.vocab, { word: '', definition: '' }])}
-                  className="rounded-full border border-border px-4 py-2 text-sm font-bold hover:bg-muted">+ Add word</button>
+                <Button variant="outline"
+                  onClick={() => setPreviewField('vocab', [...preview.vocab, { word: '', definition: '' }])}>+ Add word</Button>
               </div>
             </div>
 
@@ -263,16 +261,15 @@ export function AdminSubmit() {
 
       {/* §4.3 actions. "Save draft" is deliberately absent — see the notes. */}
       <div className="mt-6 flex flex-wrap gap-3 border-t border-border pt-6">
-        <button onClick={() => save('pending_review')} disabled={!complete || busy}
-          className="rounded-full bg-primary px-5 py-3 font-bold text-primary-foreground shadow-pop disabled:opacity-50">
+        <Button size="xl" onClick={() => save('pending_review')} disabled={!complete || busy}>
           Send for review
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline" size="xl" disabled={!complete || busy}
           onClick={() => { if (window.confirm('Publish straight to the site, without going through the review queue?')) void save('published'); }}
-          disabled={!complete || busy}
-          className="rounded-full border border-border px-5 py-3 font-bold hover:bg-muted disabled:opacity-50">
+        >
           Publish now
-        </button>
+        </Button>
         <p className="w-full text-xs text-muted-foreground">
           You can save without simplifying — the pipeline runs on the server either way.
         </p>
