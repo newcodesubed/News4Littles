@@ -13,7 +13,9 @@
     "pipeline:demo": "tsx scripts/try-pipeline.ts",
     "try:rss": "tsx scripts/try-rss.ts",
     "scrape": "tsx scripts/scrape.ts",
-    "scrape:bbc": "tsx scripts/scrape.ts --source bbc"
+    "scrape:bbc": "tsx scripts/scrape.ts --source bbc",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -31,6 +33,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.10.5",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.11"
   }
 }
