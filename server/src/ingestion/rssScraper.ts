@@ -13,7 +13,7 @@ import type { Database } from 'better-sqlite3';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository, type SourceRow } from '../db/repositories/sourceRepository.js';
-import { loadLocalPipelineConfig, simplifyLocally } from '../pipeline/localPipeline.js';
+import { simplifyArticle } from '../pipeline/simplifyArticle.js';
 import { fetchFeed, selectNewItems, type FeedItem } from './feedParser.js';
 
 export type { SourceRow };
@@ -38,8 +38,12 @@ export interface ScrapeResult {
   skippedUnusable: number;
   inserted: number;
   newestItemPublishedAt: string | null;
-  /** Headline + safety of each stored article, for the CLI to print. */
-  stored: { kidHeadline: string; safety: string; url: string }[];
+  /** Headline, safety and engine for each stored article, for the CLI to print. */
+  stored: { kidHeadline: string; safety: string; url: string; engine: string }[];
+  /** Total USD spent on this run, so cost is visible rather than a surprise. */
+  costUsd: number;
+  /** One entry per article that had to fall back, with the reason (§9.1 step 4). */
+  fallbacks: string[];
 }
 
 export interface ScrapeOptions {
@@ -61,6 +65,8 @@ function emptyResult(source: SourceRow): ScrapeResult {
     inserted: 0,
     newestItemPublishedAt: source.lastFetchedItemPublishedAt,
     stored: [],
+    costUsd: 0,
+    fallbacks: [],
   };
 }
 
@@ -68,31 +74,48 @@ function emptyResult(source: SourceRow): ScrapeResult {
  * Steps 4-7, in one transaction. A database failure rolls the whole run back,
  * so the cursor never advances past articles that were not stored.
  */
-function storeItems(
+async function storeItems(
   db: Database,
   source: SourceRow,
   items: FeedItem[],
   fetchedAt: string,
   result: ScrapeResult,
-): void {
+): Promise<void> {
   const rawArticles = createRawArticleRepository(db);
   const articles = createArticleRepository(db);
   const sources = createSourceRepository(db);
-  const config = loadLocalPipelineConfig(db);
+
+  // Simplification is async (it may call a model), and better-sqlite3
+  // transactions are synchronous — so every article is prepared first, then
+  // the whole batch is written in one transaction.
+  const prepared: { item: FeedItem; article: Awaited<ReturnType<typeof simplifyArticle>> }[] = [];
+
+  for (const item of items) {
+    if (rawArticles.existsForSourceUrl(source.id, item.link)) {
+      result.skippedAlreadyStored += 1;
+      continue;
+    }
+    prepared.push({
+      item,
+      article: await simplifyArticle(
+        db,
+        {
+          id: 'pending',
+          headline: item.title,
+          body: item.body,
+          topic: DEFAULT_TOPIC,
+          sourceName: source.name,
+          sourceUrl: item.link,
+        },
+        { now: fetchedAt },
+      ),
+    });
+  }
 
   db.transaction(() => {
     let newest = source.lastFetchedItemPublishedAt;
 
-    for (const item of items) {
-      // ASSUMPTION (not in §5.2): skip an item whose URL is already stored for
-      // this source. Undated items cannot be date-filtered, and a re-published
-      // story returns with a fresh pubDate. The schema deliberately has no
-      // UNIQUE(url), so this is a skip rather than a crash.
-      if (rawArticles.existsForSourceUrl(source.id, item.link)) {
-        result.skippedAlreadyStored += 1;
-        continue;
-      }
-
+    for (const { item, article: outcome } of prepared) {
       const rawId = randomUUID();
       rawArticles.insert({
         id: rawId,
@@ -107,25 +130,23 @@ function storeItems(
         fetchedAt,
       });
 
-      // Step 6: guard, then simplify, at the default age.
-      const { article } = simplifyLocally(
-        {
-          id: rawId,
-          headline: item.title,
-          body: item.body,
-          topic: DEFAULT_TOPIC,
-          sourceName: source.name,
-          sourceUrl: item.link,
-        },
-        config,
-        { now: fetchedAt },
-      );
-
       // Step 7: never auto-publish, whatever the guard decided.
-      articles.insert({ ...article, status: 'pending_review', publishedAt: null });
+      articles.insert({
+        ...outcome.article,
+        originalId: rawId,
+        status: 'pending_review',
+        publishedAt: null,
+      });
 
       result.inserted += 1;
-      result.stored.push({ kidHeadline: article.kidHeadline, safety: article.safety, url: item.link });
+      result.stored.push({
+        kidHeadline: outcome.article.kidHeadline,
+        safety: outcome.article.safety,
+        url: item.link,
+        engine: outcome.engine,
+      });
+      if (outcome.costUsd !== undefined) result.costUsd += outcome.costUsd;
+      if (outcome.fallbackReason) result.fallbacks.push(outcome.fallbackReason);
 
       if (item.publishedAt && (!newest || item.publishedAt > newest)) newest = item.publishedAt;
     }
@@ -170,7 +191,7 @@ export async function scrapeSource(
   const fetchedAt = (options.now ?? (() => new Date().toISOString()))();
 
   try {
-    storeItems(db, source, selection.candidates, fetchedAt, result);
+    await storeItems(db, source, selection.candidates, fetchedAt, result);
     result.ok = true;
   } catch (error: unknown) {
     result.error = error instanceof Error ? error.message : String(error);

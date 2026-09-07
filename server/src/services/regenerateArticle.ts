@@ -11,14 +11,18 @@ import {
   createArticleRepository, type AdminArticle,
 } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
-import { loadLocalPipelineConfig, simplifyLocally } from '../pipeline/localPipeline.js';
+import { simplifyArticle } from '../pipeline/simplifyArticle.js';
 
 export interface RegenerationPreview {
   current: AdminArticle;
   generated: AdminArticle;
+  /** Which engine produced the new version, so the diff can say (§7.4). */
+  engine: string;
+  model?: string;
+  fallbackReason?: string;
 }
 
-export function regenerateArticle(db: Database, id: string): RegenerationPreview {
+export async function regenerateArticle(db: Database, id: string): Promise<RegenerationPreview> {
   const articles = createArticleRepository(db);
   const rawArticles = createRawArticleRepository(db);
 
@@ -28,7 +32,8 @@ export function regenerateArticle(db: Database, id: string): RegenerationPreview
   const raw = rawArticles.findById(current.originalId);
   if (!raw) throw NotFoundError.of('raw article', current.originalId);
 
-  const { article } = simplifyLocally(
+  const outcome = await simplifyArticle(
+    db,
     {
       id: raw.id,
       headline: raw.headline,
@@ -37,11 +42,14 @@ export function regenerateArticle(db: Database, id: string): RegenerationPreview
       sourceName: raw.sourceName,
       sourceUrl: raw.sourceUrl,
     },
-    loadLocalPipelineConfig(db, current.ageTarget),
-    { id: current.id, now: current.createdAt },
+    { ageTarget: current.ageTarget, id: current.id, now: current.createdAt },
   );
+  const { article } = outcome;
 
   return {
+    engine: outcome.engine,
+    model: outcome.model,
+    fallbackReason: outcome.fallbackReason,
     current,
     // Identity and lifecycle fields are carried over, so the diff shows only
     // what regeneration would actually change.

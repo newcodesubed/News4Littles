@@ -45,19 +45,20 @@ export function createSubmitRouter(db: Database): Router {
   const router = Router();
 
   /** §4.3 "Simplify with AI" — preview; nothing is written. */
-  router.post('/simplify', (req, res) => {
-    res.json(simplifySubmission(db, readSubmission((req.body ?? {}) as Record<string, unknown>)));
+  router.post('/simplify', async (req, res) => {
+    const submission = readSubmission((req.body ?? {}) as Record<string, unknown>);
+    res.json(await simplifySubmission(db, submission));
   });
 
   /** §4.3 "Send for review" / "Publish". */
-  router.post('/articles', (req, res) => {
+  router.post('/articles', async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const status = requireOneOf(body.status ?? 'pending_review', SAVEABLE_STATUSES, 'status');
 
     const submission = readSubmission(body);
     const overrides = readOverrides(body);
 
-    res.status(201).json(createManualArticle(db, submission, overrides, status));
+    res.status(201).json(await createManualArticle(db, submission, overrides, status));
   });
 
   return router;

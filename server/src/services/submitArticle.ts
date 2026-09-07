@@ -11,7 +11,8 @@ import type { ArticleStatus, KidArticle, VocabEntry } from '../core/article.js';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository } from '../db/repositories/sourceRepository.js';
-import { loadLocalPipelineConfig, simplifyLocally } from '../pipeline/localPipeline.js';
+import { loadLocalPipelineConfig } from '../pipeline/localPipeline.js';
+import { simplifyArticle, type SimplifyOutcome } from '../pipeline/simplifyArticle.js';
 import type { GuardResult } from '../pipeline/guard.js';
 
 /** §4.2's source dropdown includes 'manual'; §4.3 submissions belong to it. */
@@ -37,41 +38,50 @@ export interface ContentOverrides {
   vocab?: VocabEntry[];
 }
 
-export interface SimplifyOutcome {
+export interface SimplifyPreview {
   article: KidArticle;
-  guard: GuardResult & { denyListEnabled: boolean; engine: 'local-fallback' };
+  guard: GuardResult & {
+    denyListEnabled: boolean;
+    /** Which engine produced this — §7.4 requires the UI to say so. */
+    engine: SimplifyOutcome['engine'];
+    model?: string;
+    costUsd?: number;
+    elapsedMs?: number;
+    fallbackReason?: string;
+  };
 }
 
-function runPipeline(db: Database, submission: Submission, id: string, now: string) {
-  const config = loadLocalPipelineConfig(db, submission.ageTarget);
-
-  const { article, guard } = simplifyLocally(
-    {
-      id,
-      headline: submission.headline,
-      body: submission.body,
-      topic: submission.category,
-      sourceName: submission.sourceName,
-      sourceUrl: submission.sourceUrl,
-    },
-    config,
-    { id, now },
-  );
-
-  return { article, guard, config };
+function toRawInput(submission: Submission, id: string) {
+  return {
+    id,
+    headline: submission.headline,
+    body: submission.body,
+    topic: submission.category,
+    sourceName: submission.sourceName,
+    sourceUrl: submission.sourceUrl,
+  };
 }
 
 /** Preview only — writes nothing (§4.3: the editor reviews before saving). */
-export function simplifySubmission(db: Database, submission: Submission): SimplifyOutcome {
-  const { article, guard, config } = runPipeline(db, submission, 'preview', new Date().toISOString());
+export async function simplifySubmission(
+  db: Database,
+  submission: Submission,
+): Promise<SimplifyPreview> {
+  const outcome = await simplifyArticle(db, toRawInput(submission, 'preview'), {
+    ageTarget: submission.ageTarget,
+    id: 'preview',
+  });
 
   return {
-    article,
+    article: outcome.article,
     guard: {
-      ...guard,
-      denyListEnabled: config.denyListEnabled,
-      // So the UI can say honestly which engine produced this.
-      engine: 'local-fallback',
+      ...outcome.guard,
+      denyListEnabled: loadLocalPipelineConfig(db, submission.ageTarget).denyListEnabled,
+      engine: outcome.engine,
+      model: outcome.model,
+      costUsd: outcome.costUsd,
+      elapsedMs: outcome.elapsedMs,
+      fallbackReason: outcome.fallbackReason,
     },
   };
 }
@@ -84,12 +94,12 @@ export function simplifySubmission(db: Database, submission: Submission): Simpli
  * classification. Safety can still be corrected afterwards through the review
  * queue's Edit action (§4.2), which is the audited path.
  */
-export function createManualArticle(
+export async function createManualArticle(
   db: Database,
   submission: Submission,
   overrides: ContentOverrides,
   status: Extract<ArticleStatus, 'pending_review' | 'published'>,
-): KidArticle {
+): Promise<KidArticle> {
   const sources = createSourceRepository(db);
   if (!sources.exists(MANUAL_SOURCE_ID)) {
     throw new BadRequestError(
@@ -99,7 +109,10 @@ export function createManualArticle(
 
   const now = new Date().toISOString();
   const rawId = randomUUID();
-  const { article } = runPipeline(db, submission, rawId, now);
+  const { article } = await simplifyArticle(db, toRawInput(submission, rawId), {
+    ageTarget: submission.ageTarget,
+    now,
+  });
 
   // Apply the editor's edits on top of the generated output, tracking whether
   // anything actually changed so editedByHuman stays truthful.

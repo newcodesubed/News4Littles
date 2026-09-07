@@ -78,12 +78,12 @@ export function createArticleActionsRouter(db: Database): Router {
   });
 
   /** §4.2 Regenerate: preview only. Nothing is written here. */
-  router.post('/articles/:id/regenerate', (req, res) => {
-    res.json(regenerateArticle(db, req.params.id));
+  router.post('/articles/:id/regenerate', async (req, res) => {
+    res.json(await regenerateArticle(db, req.params.id));
   });
 
-  router.post('/articles/:id/regenerate/apply', (req, res) => {
-    const { generated } = regenerateArticle(db, req.params.id);
+  router.post('/articles/:id/regenerate/apply', async (req, res) => {
+    const { generated } = await regenerateArticle(db, req.params.id);
     articles.applyRegeneration(req.params.id, generated);
     respond(res, req.params.id);
   });
