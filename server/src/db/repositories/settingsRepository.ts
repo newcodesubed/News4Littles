@@ -42,8 +42,13 @@ export interface SettingsRepository {
   getGuardConfig(): GuardConfig;
   saveGuardConfig(config: Omit<GuardConfig, 'updatedAt'>, now: string): void;
   getPromptConfig(): PromptConfig;
-  /** `versions` is deliberately not writable: §7.5 makes it a promotion counter. */
+  /** `versions` is deliberately not writable here: §7.5 makes it a promotion counter. */
   savePromptConfig(config: Pick<PromptConfig, 'genericPrompt' | 'ageOverrides'>, now: string): void;
+  /**
+   * The one writer for the version counters. Called only by a sandbox
+   * promotion (§7.5), never by the settings form.
+   */
+  saveVersionCounters(versions: Record<string, number>, now: string): void;
   getAppSettings(): AppSettings;
   saveAppSettings(settings: AppSettings): void;
 }
@@ -104,6 +109,13 @@ export function createSettingsRepository(db: Database): SettingsRepository {
         ageOverrides: JSON.stringify(config.ageOverrides),
         updatedAt: now,
       });
+    },
+
+    saveVersionCounters(versions, now) {
+      db.prepare(
+        `UPDATE translation_prompt_config SET versions = @versions, updatedAt = @updatedAt
+         WHERE id = 'default'`,
+      ).run({ versions: JSON.stringify(versions), updatedAt: now });
     },
 
     getAppSettings() {
