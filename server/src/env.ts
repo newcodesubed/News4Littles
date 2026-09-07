@@ -68,6 +68,32 @@ export const SCRAPE_TIMEZONE = readString(
   Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 );
 
+/**
+ * LLM simplification (PRD §9.1) via OpenRouter's OpenAI-compatible API.
+ *
+ * The KEY lives here and nowhere else — never in the database, never in seed
+ * data, never committed (§13.2). Everything else is a cost control: without a
+ * body cap and a token cap, one pathological article could cost real money.
+ */
+export const OPENROUTER_KEY = readString('OPENROUTER_KEY', '');
+
+/** Master switch. Off, or with no key, the local fallback (§9.2) runs. */
+export const LLM_ENABLED =
+  readString('LLM_ENABLED', 'true').toLowerCase() !== 'false' && OPENROUTER_KEY !== '';
+
+export const LLM_MODEL = readString('LLM_MODEL', 'google/gemini-2.5-flash-lite');
+
+/** Upper bound on the priced half of a response. */
+export const LLM_MAX_TOKENS = readInt('LLM_MAX_TOKENS', 1500);
+
+/** Article text is truncated to this before being sent, to bound input cost. */
+export const LLM_MAX_BODY_CHARS = readInt('LLM_MAX_BODY_CHARS', 6000);
+
+export const LLM_TIMEOUT_MS = readInt('LLM_TIMEOUT_MS', 30_000);
+
+/** Retries are for transient failures only (429, 5xx); never a retry storm. */
+export const LLM_MAX_RETRIES = readInt('LLM_MAX_RETRIES', 1);
+
 /** Admin credentials, used by the seed to create the account (PRD §4.1). */
 export const ADMIN_USERNAME = readString('ADMIN_USERNAME', 'admin');
 export const ADMIN_PASSWORD = readString('ADMIN_PASSWORD', 'admin123');
