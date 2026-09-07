@@ -15,7 +15,9 @@
     "scrape": "tsx scripts/scrape.ts",
     "scrape:bbc": "tsx scripts/scrape.ts --source bbc",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "llm:check": "tsx scripts/check-llm.ts",
+    "db:update-prompts": "tsx scripts/update-seeded-prompts.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
