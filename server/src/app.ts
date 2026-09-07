@@ -14,6 +14,7 @@ import { errorHandler, notFoundHandler } from './http/middleware/errorHandler.js
 import { createArticleActionsRouter } from './routes/admin/articleActions.js';
 import { createArticleBulkRouter } from './routes/admin/articleBulk.js';
 import { createArticleQueueRouter } from './routes/admin/articleQueue.js';
+import { createPromptsRouter } from './routes/admin/prompts.js';
 import { createSettingsRouter } from './routes/admin/settings.js';
 import { createSourcesRouter } from './routes/admin/sources.js';
 import { createSubmitRouter } from './routes/admin/submit.js';
@@ -26,6 +27,7 @@ const ADMIN_ROUTERS = [
   createSubmitRouter,
   createSourcesRouter,
   createSettingsRouter,
+  createPromptsRouter,
   createArticleActionsRouter,
 ];
 
