@@ -1,4 +1,4 @@
-import { ExternalLink, FlaskConical, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react';
+import { Eye, ExternalLink, FlaskConical, Loader2, Pencil, RotateCcw, Trash2, Undo2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { CategoryBadge, SafetyBadge } from '../../../components/Badges';
 import { Button } from '../../../ui/Button';
@@ -11,6 +11,7 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export interface RowActions {
+  onView: () => void;
   onPublish: () => void;
   onReject: () => void;
   onUnpublish: () => void;
@@ -19,18 +20,34 @@ export interface RowActions {
   onDelete: () => void;
 }
 
+/**
+ * Which action on this row is in flight, if any. Every button is disabled while
+ * one is running: without it, a slow Regenerate looks like nothing happened and
+ * invites a second click.
+ */
+export type PendingAction = 'publish' | 'reject' | 'unpublish' | 'regenerate' | 'delete' | null;
+
 /** One queue row: metadata, the story, and the §4.2 row actions. */
 export function ArticleRow({
   article,
   selected,
   onSelectedChange,
   actions,
+  pending = null,
+  locked = false,
 }: {
   article: AdminArticle;
   selected: boolean;
   onSelectedChange: (selected: boolean) => void;
   actions: RowActions;
+  pending?: PendingAction;
+  /** True while any action anywhere in the queue is running. */
+  locked?: boolean;
 }) {
+  /** A spinner in place of the icon while this action runs. */
+  const icon = (action: PendingAction, fallback: React.ReactNode) =>
+    pending === action ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : fallback;
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
       <div className="flex flex-wrap items-start gap-3">
@@ -57,7 +74,12 @@ export function ArticleRow({
             )}
           </div>
 
-          <h3 className="font-display text-xl leading-tight">{article.kidHeadline}</h3>
+          {/* The headline is the natural way to open the story. */}
+          <h3 className="font-display text-xl leading-tight">
+            <button onClick={actions.onView} className="text-left hover:text-primary">
+              {article.kidHeadline}
+            </button>
+          </h3>
           <p className="mt-1 line-clamp-2 text-sm text-foreground/70">{article.summary}</p>
 
           <p className="mt-2 text-xs text-muted-foreground">
@@ -81,22 +103,30 @@ export function ArticleRow({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={actions.onView} disabled={locked}>
+            <Eye className="w-3.5 h-3.5" /> View
+          </Button>
           {article.status !== 'published' && (
-            <Button size="sm" onClick={actions.onPublish}>Publish</Button>
-          )}
-          {article.status !== 'rejected' && (
-            <Button size="sm" variant="outline" onClick={actions.onReject}>Reject</Button>
-          )}
-          {article.status !== 'pending_review' && (
-            <Button size="sm" variant="outline" onClick={actions.onUnpublish}>
-              <Undo2 className="w-3.5 h-3.5" /> Re-review
+            <Button size="sm" onClick={actions.onPublish} disabled={locked}>
+              {icon('publish', null)} Publish
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={actions.onEdit}>
+          {article.status !== 'rejected' && (
+            <Button size="sm" variant="outline" onClick={actions.onReject} disabled={locked}>
+              Reject
+            </Button>
+          )}
+          {article.status !== 'pending_review' && (
+            <Button size="sm" variant="outline" onClick={actions.onUnpublish} disabled={locked}>
+              {icon('unpublish', <Undo2 className="w-3.5 h-3.5" />)} Re-review
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={actions.onEdit} disabled={locked}>
             <Pencil className="w-3.5 h-3.5" /> Edit
           </Button>
-          <Button size="sm" variant="outline" onClick={actions.onRegenerate}>
-            <RotateCcw className="w-3.5 h-3.5" /> Regenerate
+          <Button size="sm" variant="outline" onClick={actions.onRegenerate} disabled={locked}>
+            {icon('regenerate', <RotateCcw className="w-3.5 h-3.5" />)}
+            {pending === 'regenerate' ? 'Regenerating…' : 'Regenerate'}
           </Button>
           {/* §7.2: open the sandbox pre-loaded with this article's raw text. */}
           <Link
@@ -108,11 +138,11 @@ export function ArticleRow({
           <Button
             size="sm"
             variant="danger"
-            disabled={article.status === 'published'}
+            disabled={locked || article.status === 'published'}
             title={article.status === 'published' ? 'Unpublish before deleting' : undefined}
             onClick={actions.onDelete}
           >
-            <Trash2 className="w-3.5 h-3.5" /> Delete
+            {icon('delete', <Trash2 className="w-3.5 h-3.5" />)} Delete
           </Button>
         </div>
       </div>

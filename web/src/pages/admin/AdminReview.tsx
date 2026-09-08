@@ -7,8 +7,11 @@ import {
   EMPTY_FILTERS, toQueryString,
   type AdminArticle, type BulkResult, type Filters, type FilterOptions, type StatusCounts,
 } from '../../admin/types';
-import { EditDialog, RegenerateDialog, RejectDialog } from './dialogs';
-import { ArticleRow } from './review/ArticleRow';
+import {
+  ConfirmDialog, EditDialog, RegenerateDialog, RejectDialog, ViewArticleDialog,
+  type Confirmation,
+} from './dialogs';
+import { ArticleRow, type PendingAction } from './review/ArticleRow';
 import { BulkBar, SkippedReport } from './review/BulkBar';
 import { FilterBar } from './review/FilterBar';
 
@@ -36,6 +39,10 @@ export function AdminReview() {
 
   const [rejecting, setRejecting] = useState<AdminArticle | null>(null);
   const [editing, setEditing] = useState<AdminArticle | null>(null);
+  const [viewing, setViewing] = useState<AdminArticle | null>(null);
+  const [confirming, setConfirming] = useState<Confirmation | null>(null);
+  /** Which row is mid-action, so its button can show a spinner. */
+  const [pending, setPending] = useState<{ id: string; action: PendingAction } | null>(null);
   const [regenerating, setRegenerating] = useState<{ current: AdminArticle; generated: AdminArticle } | null>(null);
 
   const query = useMemo(() => toQueryString(filters), [filters]);
@@ -76,10 +83,22 @@ export function AdminReview() {
 
   const { notice, setNotice, run: act } = useAdminAction(load);
 
+  /** Runs a row action while showing a spinner on the button that started it. */
+  const runRowAction = useCallback(
+    async (id: string, action: PendingAction, path: string, init: RequestInit, message: string) => {
+      setPending({ id, action });
+      try {
+        await act(path, init, message);
+      } finally {
+        setPending(null);
+      }
+    },
+    [act],
+  );
+
   async function runBulk(action: BulkAction) {
     const ids = [...selected];
     if (ids.length === 0) return;
-    if (action === 'delete' && !window.confirm(`Delete ${ids.length} article(s)? This cannot be undone.`)) return;
 
     let result: BulkResult;
     try {
@@ -104,6 +123,7 @@ export function AdminReview() {
 
   async function openRegenerate(article: AdminArticle) {
     setNotice(null);
+    setPending({ id: article.id, action: 'regenerate' });
     try {
       const res = await adminFetch(`/api/admin/articles/${article.id}/regenerate`, { method: 'POST' });
       if (!res.ok) {
@@ -113,6 +133,8 @@ export function AdminReview() {
       setRegenerating((await res.json()) as { current: AdminArticle; generated: AdminArticle });
     } catch {
       setNotice('⚠ Could not reach the server. Check it is running, then try again.');
+    } finally {
+      setPending(null);
     }
   }
 
@@ -165,7 +187,17 @@ export function AdminReview() {
         flaggedCount={flaggedSelectedCount}
         includeFlagged={includeFlagged}
         onIncludeFlaggedChange={setIncludeFlagged}
-        onAction={(action) => void runBulk(action)}
+        onAction={(action) => {
+          if (action !== 'delete') { void runBulk(action); return; }
+          // §4.2 delete cannot be undone, so it is always confirmed.
+          setConfirming({
+            title: `Delete ${selected.size} article${selected.size === 1 ? '' : 's'}?`,
+            body: 'They will be removed for good. Published articles in the selection are skipped — unpublish those first.',
+            confirmLabel: `Delete ${selected.size}`,
+            tone: 'danger',
+            onConfirm: () => void runBulk('delete'),
+          });
+        }}
         onClear={() => setSelected(new Set())}
       />
 
@@ -202,17 +234,30 @@ export function AdminReview() {
                     article={article}
                     selected={selected.has(article.id)}
                     onSelectedChange={(isSelected) => toggleSelected(article.id, isSelected)}
+                    pending={pending?.id === article.id ? pending.action : null}
+                    locked={pending !== null}
                     actions={{
-                      onPublish: () => void act(`/api/admin/articles/${article.id}/publish`, { method: 'PATCH' }, 'Published.'),
+                      onView: () => setViewing(article),
+                      onPublish: () => void runRowAction(article.id, 'publish',
+                        `/api/admin/articles/${article.id}/publish`, { method: 'PATCH' }, 'Published.'),
                       onReject: () => setRejecting(article),
-                      onUnpublish: () => void act(`/api/admin/articles/${article.id}/unpublish`, { method: 'PATCH' }, 'Moved back to pending review.'),
+                      onUnpublish: () => void runRowAction(article.id, 'unpublish',
+                        `/api/admin/articles/${article.id}/unpublish`, { method: 'PATCH' }, 'Moved back to pending review.'),
                       onEdit: () => setEditing(article),
                       onRegenerate: () => void openRegenerate(article),
-                      onDelete: () => {
-                        if (window.confirm('Delete this article? This cannot be undone.')) {
-                          void act(`/api/admin/articles/${article.id}`, { method: 'DELETE' }, 'Deleted.');
-                        }
-                      },
+                      onDelete: () => setConfirming({
+                        title: 'Delete this story?',
+                        body: (
+                          <>
+                            <strong>{article.kidHeadline}</strong> will be removed for good. The
+                            original article stays, so it can be simplified again later.
+                          </>
+                        ),
+                        confirmLabel: 'Delete',
+                        tone: 'danger',
+                        onConfirm: () => void runRowAction(article.id, 'delete',
+                          `/api/admin/articles/${article.id}`, { method: 'DELETE' }, 'Deleted.'),
+                      }),
                     }}
                   />
                 ))}
@@ -222,6 +267,24 @@ export function AdminReview() {
         )}
       </div>
 
+      {viewing && (
+        <ViewArticleDialog
+          article={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={() => { setEditing(viewing); setViewing(null); }}
+          onReject={() => { setRejecting(viewing); setViewing(null); }}
+          onPublish={() => {
+            const { id } = viewing;
+            setViewing(null);
+            void runRowAction(id, 'publish', `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published.');
+          }}
+        />
+      )}
+
+      {confirming && (
+        <ConfirmDialog confirmation={confirming} onCancel={() => setConfirming(null)} />
+      )}
+
       {rejecting && (
         <RejectDialog
           article={rejecting}
@@ -229,7 +292,8 @@ export function AdminReview() {
           onConfirm={(reason) => {
             const { id } = rejecting;
             setRejecting(null);
-            void act(`/api/admin/articles/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }, 'Rejected.');
+            void runRowAction(id, 'reject', `/api/admin/articles/${id}/reject`,
+              { method: 'PATCH', body: JSON.stringify({ reason }) }, 'Rejected.');
           }}
         />
       )}
