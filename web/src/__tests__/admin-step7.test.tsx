@@ -4,7 +4,7 @@
  * The rule that matters most: "Simplify with AI" must not save anything, and
  * the safety classification must not be settable from the submit form.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -196,13 +196,30 @@ describe('saving — requirements 2, 4, 5', () => {
   });
 
   it('Publish now asks for confirmation first', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderIn(<AdminSubmit />);
     await fillForm();
     await userEvent.click(screen.getByRole('button', { name: 'Publish now' }));
-    expect(confirm).toHaveBeenCalled();
+
+    // An in-app dialog, not window.confirm.
+    const dialog = await screen.findByRole('dialog', { name: 'Publish straight to the site?' });
+    expect(within(dialog).getByText(/skips the review queue/)).toBeInTheDocument();
     expect(calls.some((c) => c.path === '/api/admin/articles')).toBe(false);
-    confirm.mockRestore();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(calls.some((c) => c.path === '/api/admin/articles')).toBe(false);
+  });
+
+  it('Publish now posts only after the dialog is confirmed', async () => {
+    renderIn(<AdminSubmit />);
+    await fillForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Publish now' }));
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Publish now' }),
+    );
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === 'POST' && c.path === '/api/admin/articles');
+      expect(post?.body.status).toBe('published');
+    });
   });
 });
 
