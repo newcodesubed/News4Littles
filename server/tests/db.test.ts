@@ -19,11 +19,29 @@ beforeEach(() => {
 afterEach(() => { if (existsSync(dir)) rmSync(dir, { recursive: true, force: true }); });
 
 describe('schema (§8)', () => {
-  it('creates all nine tables', () => {
+  it('creates every table', () => {
     expect(initialiseSchema(path)).toEqual([
       'admin_users', 'app_settings', 'guard_config', 'kid_articles',
-      'prompt_drafts', 'prompt_versions', 'raw_articles', 'sources', 'translation_prompt_config',
+      'prompt_drafts', 'prompt_versions', 'raw_articles', 'scrape_runs', 'sources',
+      'translation_prompt_config',
     ]);
+  });
+
+  it('adds a new table to an existing database without losing data', () => {
+    // schema.sql is entirely CREATE ... IF NOT EXISTS, which is how a schema
+    // addition reaches a database that already has rows in it.
+    initialiseSchema(path);
+    seed(path);
+    const db = openDatabase(path);
+    db.prepare(`DROP TABLE scrape_runs`).run();
+    const sourcesBefore = countRows(db, 'sources');
+    db.close();
+
+    initialiseSchema(path);
+    const after = openDatabase(path);
+    expect(after.prepare(`SELECT 1 FROM sqlite_master WHERE name='scrape_runs'`).get()).toBeTruthy();
+    expect(countRows(after, 'sources')).toBe(sourcesBefore);
+    after.close();
   });
 
   it('is idempotent and preserves data', () => {
