@@ -44,7 +44,8 @@ function serveThenGoOffline() {
       loaded.add(path);
       if (path.includes('/counts')) return body({ pending_review: 1, published: 0, rejected: 0, total: 1 });
       if (path.includes('/filters')) return body({ categories: ['World'], sources: [{ id: 'bbc', name: 'BBC News' }], ageTargets: [8] });
-      if (path.includes('/sources')) return body(SOURCES);
+      if (path.includes('/scrape/status')) return body({ running: false, run: null, lastRuns: {} });
+    if (path.includes('/sources')) return body(SOURCES);
       if (path.includes('/guard-config')) return body({ denyList: ['war'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '' });
       if (path.includes('/prompt-config')) return body({ genericPrompt: 'p', ageOverrides: {}, versions: {}, inertUntilLlm: true });
       if (path.includes('/app-settings')) return body({ defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, apiKeyLocation: 'env' });

@@ -3,7 +3,8 @@ import { Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '../../../ui/Button';
 import { FIELD_CLASS_COMPACT, Select, Switch } from '../../../ui/Field';
 import { Section } from '../../../ui/Surface';
-import type { Save, Source } from './types';
+import { LastRunSummary, RunSourceButton, ScrapeAllControls } from './ScrapeControls';
+import type { Save, ScrapeStatus, Source } from './types';
 
 const TRUST_LEVELS = ['high', 'medium', 'low'] as const;
 const blankDraft = { id: '', name: '', url: '', trustLevel: 'high', parser: 'rss', enabled: true };
@@ -16,7 +17,14 @@ const blankDraft = { id: '', name: '', url: '', trustLevel: 'high', parser: 'rss
  * typed value sitting in the box while the database still held the old one —
  * the UI silently disagreed with the server.
  */
-function SourceRow({ source, save }: { source: Source; save: Save }) {
+function SourceRow({
+  source, save, status, onRun,
+}: {
+  source: Source;
+  save: Save;
+  status: ScrapeStatus | null;
+  onRun: (sourceId: string) => void;
+}) {
   const [draft, setDraft] = useState(source);
 
   // Re-sync whenever the server's version of this row changes.
@@ -81,10 +89,12 @@ function SourceRow({ source, save }: { source: Source; save: Save }) {
             </select>
           </div>
 
-          {/* §4.4 calls these "last-run results" — scraper state, read-only. */}
+          {/* §4.4 "last-run results" — read-only scraper state. */}
           <p className="mt-2 text-xs text-muted-foreground">
-            Last fetched: {source.lastFetchedAt ? new Date(source.lastFetchedAt).toLocaleString() : 'never'}
-            {' · '}newest item seen:{' '}
+            Last run: <LastRunSummary run={status?.lastRuns?.[source.id]} />
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Newest item seen:{' '}
             {source.lastFetchedItemPublishedAt
               ? new Date(source.lastFetchedItemPublishedAt).toLocaleString()
               : 'none'}
@@ -101,7 +111,8 @@ function SourceRow({ source, save }: { source: Source; save: Save }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <RunSourceButton sourceId={source.id} running={status?.running ?? false} onRun={onRun} />
           <span className="flex items-center gap-2 text-sm font-bold">
             <Switch
               checked={draft.enabled}
@@ -130,7 +141,15 @@ function SourceRow({ source, save }: { source: Source; save: Save }) {
   );
 }
 
-export function SourcesSection({ sources, save }: { sources: Source[]; save: Save }) {
+export function SourcesSection({
+  sources, save, status, onRun, onRunAll,
+}: {
+  sources: Source[];
+  save: Save;
+  status: ScrapeStatus | null;
+  onRun: (sourceId: string) => void;
+  onRunAll: () => void;
+}) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState(blankDraft);
 
@@ -140,9 +159,11 @@ export function SourcesSection({ sources, save }: { sources: Source[]; save: Sav
       blurb="Feeds the scraper pulls from. Disable a source to stop scraping it while keeping its stories."
       className="mb-6"
     >
+      <ScrapeAllControls status={status} onRunAll={onRunAll} />
+
       <div className="space-y-3">
         {sources.map((source) => (
-          <SourceRow key={source.id} source={source} save={save} />
+          <SourceRow key={source.id} source={source} save={save} status={status} onRun={onRun} />
         ))}
       </div>
 

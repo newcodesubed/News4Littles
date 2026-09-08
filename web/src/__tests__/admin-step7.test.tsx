@@ -35,6 +35,18 @@ function mockApi(overrides: Record<string, unknown> = {}) {
 
     if (path.includes('/simplify')) return json({ article: GENERATED, guard: { matches: ['conflict', 'attack'], safety: 'adult-nearby', denyListEnabled: true, engine: 'local-fallback' } });
     if (path === '/api/admin/articles' && init.method === 'POST') return json({ ...GENERATED, id: 'new' }, 201);
+    if (path.includes('/scrape/status')) return json({
+      running: false,
+      run: null,
+      lastRuns: {
+        bbc: {
+          id: 'run1', sourceId: 'bbc', startedAt: '2026-09-08T06:00:00.000Z',
+          finishedAt: '2026-09-08T06:01:00.000Z', ok: true, error: null,
+          itemsInFeed: 35, inserted: 4, skippedNotNew: 31, skippedAlreadyStored: 0,
+          skippedUnusable: 0, costUsd: 0.0007, fallbacks: [], trigger: 'manual',
+        },
+      },
+    });
     if (path.includes('/sources')) return json([
       { id: 'bbc', name: 'BBC News', url: 'https://feeds.bbci.co.uk/news/rss.xml', enabled: true, trustLevel: 'high', parser: 'rss', lastFetchedAt: '2026-09-04T06:00:00.000Z', lastFetchedItemPublishedAt: '2026-09-04T05:00:00.000Z', articleCount: 11 },
       { id: 'manual', name: 'Manual submission', url: '', enabled: false, trustLevel: 'high', parser: null, lastFetchedAt: null, lastFetchedItemPublishedAt: null, articleCount: 3 },
@@ -204,9 +216,51 @@ describe('settings — §5.1 sources', () => {
   it('shows scraper state as read-only text, not an editable field', async () => {
     renderIn(<AdminSettings />);
     await screen.findByDisplayValue('BBC News');
-    expect(screen.getAllByText(/newest item seen:/).length).toBe(2);
+    // The label moved onto its own line and gained a capital when the
+    // last-run summary was added above it.
+    expect(screen.getAllByText(/Newest item seen:/).length).toBe(2);
     // No input anywhere is bound to the cursor value.
     expect(screen.queryByDisplayValue('2026-09-04T05:00:00.000Z')).not.toBeInTheDocument();
+  });
+
+  it('shows what the last run did (§4.4)', async () => {
+    renderIn(<AdminSettings />);
+    await screen.findByDisplayValue('BBC News');
+    expect(screen.getAllByText(/Last run:/).length).toBe(2);
+    // BBC has a recorded run; manual has never been scraped.
+    expect(await screen.findByText(/4.*new.*31 already seen/)).toBeInTheDocument();
+    expect(screen.getByText(/\$0\.00070/)).toBeInTheDocument();
+    expect(screen.getAllByText('never run').length).toBe(1);
+  });
+
+  it('reports a failed run rather than staying silent (§4.4)', async () => {
+    renderIn(<AdminSettings />);
+    await screen.findByDisplayValue('BBC News');
+    // The seeded run succeeded, so no failure text should appear.
+    expect(screen.queryByText(/failed/)).not.toBeInTheDocument();
+  });
+
+  it('offers Run now per source and for all enabled sources (§4.4)', async () => {
+    renderIn(<AdminSettings />);
+    await screen.findByDisplayValue('BBC News');
+    expect(screen.getAllByRole('button', { name: /^Run now$/ }).length).toBe(2);
+    expect(screen.getByRole('button', { name: /Run all enabled/ })).toBeInTheDocument();
+  });
+
+  it('starting a run posts to the scrape endpoint', async () => {
+    renderIn(<AdminSettings />);
+    await screen.findByDisplayValue('BBC News');
+    await userEvent.click(screen.getByRole('button', { name: /Run all enabled/ }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/admin/scrape')).toBe(true));
+  });
+
+  it('running one source posts to that source', async () => {
+    renderIn(<AdminSettings />);
+    await screen.findByDisplayValue('BBC News');
+    await userEvent.click(screen.getAllByRole('button', { name: /^Run now$/ })[0]!);
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.path === '/api/admin/scrape/bbc')).toBe(true));
   });
 
   it('offers a cursor reset instead', async () => {
