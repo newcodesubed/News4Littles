@@ -5,7 +5,7 @@
  * promise: the button did nothing, showed nothing, and logged nothing. These
  * tests exist so that cannot come back.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,12 +76,14 @@ describe('review queue, server unreachable', () => {
   });
 
   it('Delete reports the failure', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderIn(<AdminReview />);
     await screen.findByText('A story');
     await userEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    // Delete now confirms in-app rather than through window.confirm.
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    );
     expect(await screen.findByText(OFFLINE)).toBeInTheDocument();
-    vi.mocked(window.confirm).mockRestore();
   });
 
   it('Regenerate reports the failure', async () => {
@@ -147,12 +149,13 @@ describe('a server error, as opposed to no server', () => {
       return body({ error: 'Published articles cannot be deleted.' }, false, 409);
     }));
 
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderIn(<AdminReview />);
     await screen.findByText('A story');
     await userEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    );
     expect(await screen.findByText(/Published articles cannot be deleted/)).toBeInTheDocument();
-    vi.mocked(window.confirm).mockRestore();
   });
 });
 

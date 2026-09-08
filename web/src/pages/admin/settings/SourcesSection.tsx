@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '../../../ui/Button';
+import { ConfirmDialog, type Confirmation } from '../dialogs';
 import { FIELD_CLASS_COMPACT, Select, Switch } from '../../../ui/Field';
 import { Section } from '../../../ui/Surface';
 import { LastRunSummary, RunSourceButton, ScrapeAllControls } from './ScrapeControls';
@@ -18,12 +19,13 @@ const blankDraft = { id: '', name: '', url: '', trustLevel: 'high', parser: 'rss
  * the UI silently disagreed with the server.
  */
 function SourceRow({
-  source, save, status, onRun,
+  source, save, status, onRun, onConfirm,
 }: {
   source: Source;
   save: Save;
   status: ScrapeStatus | null;
   onRun: (sourceId: string) => void;
+  onConfirm: (confirmation: Confirmation) => void;
 }) {
   const [draft, setDraft] = useState(source);
 
@@ -99,11 +101,12 @@ function SourceRow({
               ? new Date(source.lastFetchedItemPublishedAt).toLocaleString()
               : 'none'}
             <button
-              onClick={() => {
-                if (window.confirm(`Reset the scrape cursor for ${source.name}? The next run will re-check every item in the feed.`)) {
-                  void save(`/api/admin/sources/${source.id}/reset-cursor`, { method: 'POST' }, 'Cursor reset.');
-                }
-              }}
+              onClick={() => onConfirm({
+                title: `Re-check the whole ${source.name} feed?`,
+                body: 'The next run will look at every item in the feed again, not just new ones. Stories already stored are still skipped, so nothing is duplicated.',
+                confirmLabel: 'Reset',
+                onConfirm: () => void save(`/api/admin/sources/${source.id}/reset-cursor`, { method: 'POST' }, 'Cursor reset.'),
+              })}
               className="ml-2 inline-flex items-center gap-1 font-semibold text-primary hover:underline"
             >
               <RotateCcw className="w-3 h-3" /> reset
@@ -127,11 +130,15 @@ function SourceRow({
           <Button
             variant="danger"
             aria-label={`Delete ${source.name}`}
-            onClick={() => {
-              if (window.confirm(`Delete ${source.name}?`)) {
-                void save(`/api/admin/sources/${source.id}`, { method: 'DELETE' }, 'Source deleted.');
-              }
-            }}
+            onClick={() => onConfirm({
+              title: `Delete ${source.name}?`,
+              body: source.articleCount > 0
+                ? `${source.name} has ${source.articleCount} stored article(s), so it cannot be deleted. Turn it off instead — its stories stay readable and it stops being scraped.`
+                : 'It will be removed from the sources list. Nothing else is affected.',
+              confirmLabel: 'Delete',
+              tone: 'danger',
+              onConfirm: () => void save(`/api/admin/sources/${source.id}`, { method: 'DELETE' }, 'Source deleted.'),
+            })}
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -152,6 +159,7 @@ export function SourcesSection({
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState(blankDraft);
+  const [confirming, setConfirming] = useState<Confirmation | null>(null);
 
   return (
     <Section
@@ -163,7 +171,8 @@ export function SourcesSection({
 
       <div className="space-y-3">
         {sources.map((source) => (
-          <SourceRow key={source.id} source={source} save={save} status={status} onRun={onRun} />
+          <SourceRow key={source.id} source={source} save={save} status={status} onRun={onRun}
+            onConfirm={setConfirming} />
         ))}
       </div>
 
@@ -203,6 +212,8 @@ export function SourcesSection({
           <Plus className="w-4 h-4" /> Add source
         </Button>
       )}
+
+      {confirming && <ConfirmDialog confirmation={confirming} onCancel={() => setConfirming(null)} />}
     </Section>
   );
 }

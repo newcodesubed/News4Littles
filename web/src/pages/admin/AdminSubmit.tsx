@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { CategoryBadge, CATEGORIES, SafetyBadge } from '../../components/Badges';
+import { ConfirmDialog, type Confirmation } from './dialogs';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
 import { Button } from '../../ui/Button';
 import { FIELD_CLASS, FIELD_CLASS_COMPACT } from '../../ui/Field';
@@ -41,6 +42,7 @@ export function AdminSubmit() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<Confirmation | null>(null);
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -266,7 +268,12 @@ export function AdminSubmit() {
         </Button>
         <Button
           variant="outline" size="xl" disabled={!complete || busy}
-          onClick={() => { if (window.confirm('Publish straight to the site, without going through the review queue?')) void save('published'); }}
+          onClick={() => setConfirming({
+            title: 'Publish straight to the site?',
+            body: 'This skips the review queue, so readers will see it immediately. Send it for review instead if you want a second pair of eyes.',
+            confirmLabel: 'Publish now',
+            onConfirm: () => void save('published'),
+          })}
         >
           Publish now
         </Button>
@@ -274,6 +281,8 @@ export function AdminSubmit() {
           You can save without simplifying — the pipeline runs on the server either way.
         </p>
       </div>
+
+      {confirming && <ConfirmDialog confirmation={confirming} onCancel={() => setConfirming(null)} />}
     </div>
   );
 }
