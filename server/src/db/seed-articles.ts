@@ -19,6 +19,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { DATABASE_PATH, openDatabase } from './connection.js';
+import { createArticleRepository } from './repositories/articleRepository.js';
 import { seed as seedReferenceData } from './seed.js';
 
 const SAMPLE_ID_PREFIX = 'sample-';
@@ -321,6 +322,7 @@ export function seedArticles(path: string = DATABASE_PATH): { rawArticles: numbe
   seedReferenceData(path);
 
   const db = openDatabase(path);
+  const articles = createArticleRepository(db);
 
   const run = db.transaction(() => {
     // Children first — originalId is ON DELETE RESTRICT.
@@ -331,17 +333,6 @@ export function seedArticles(path: string = DATABASE_PATH): { rawArticles: numbe
       `INSERT INTO raw_articles
          (id, sourceId, sourceName, sourceUrl, url, headline, body, topic, publishedAt, fetchedAt)
        VALUES (@id, @sourceId, @sourceName, @sourceUrl, @url, @headline, @body, @topic, @publishedAt, @fetchedAt)`,
-    );
-
-    const insertKid = db.prepare(
-      `INSERT INTO kid_articles
-         (id, originalId, ageTarget, kidHeadline, summary, whatHappened, whyItMatters, vocab,
-          thinkAbout, feelingNote, safety, contentWarnings, category, readingMinutes,
-          sourceName, sourceUrl, status, rejectReason, editedByHuman, createdAt, publishedAt)
-       VALUES
-         (@id, @originalId, @ageTarget, @kidHeadline, @summary, @whatHappened, @whyItMatters, @vocab,
-          @thinkAbout, @feelingNote, @safety, @contentWarnings, @category, @readingMinutes,
-          @sourceName, @sourceUrl, @status, @rejectReason, @editedByHuman, @createdAt, @publishedAt)`,
     );
 
     for (const sample of SAMPLES) {
@@ -357,28 +348,12 @@ export function seedArticles(path: string = DATABASE_PATH): { rawArticles: numbe
         fetchedAt: createdAt,
       });
 
-      insertKid.run({
+      articles.insert({
+        ...sample.kid,
         id: kidId,
         originalId: rawId,
-        ageTarget: sample.kid.ageTarget,
-        kidHeadline: sample.kid.kidHeadline,
-        summary: sample.kid.summary,
-        whatHappened: sample.kid.whatHappened,
-        whyItMatters: sample.kid.whyItMatters,
-        vocab: JSON.stringify(sample.kid.vocab),
-        thinkAbout: sample.kid.thinkAbout,
-        feelingNote: sample.kid.feelingNote,
-        safety: sample.kid.safety,
-        contentWarnings: sample.kid.contentWarnings === null
-          ? null
-          : JSON.stringify(sample.kid.contentWarnings),
-        category: sample.kid.category,
-        readingMinutes: sample.kid.readingMinutes,
         sourceName: sample.original.sourceName,
         sourceUrl: sample.original.url,
-        status: sample.kid.status,
-        rejectReason: sample.kid.rejectReason,
-        editedByHuman: sample.kid.editedByHuman ? 1 : 0,
         createdAt,
         // Schema CHECK: status 'published' requires publishedAt.
         publishedAt: sample.kid.status === 'published' ? createdAt : null,

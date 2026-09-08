@@ -9,8 +9,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DATABASE_PATH, openDatabase } from './connection.js';
 
-/** Bumped whenever schema.sql changes in a way an existing database must migrate to. */
-export const SCHEMA_VERSION = 1;
+/**
+ * Bumped whenever schema.sql changes in a way an existing database must migrate
+ * to. Every statement in schema.sql is CREATE ... IF NOT EXISTS, so re-running
+ * `npm run db:init` adds new tables to an existing database without touching
+ * the data already in it.
+ *
+ * 2 — added scrape_runs (§4.4 last-run results).
+ */
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 

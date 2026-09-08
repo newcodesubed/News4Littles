@@ -4,7 +4,7 @@
  * Deterministic and dependency-free: no LLM, no network, no clock, no database.
  * Everything here is a pure function of its arguments.
  */
-import type { VocabEntry } from '../db/mappers.js';
+import type { VocabEntry } from '../core/article.js';
 
 /** §9.2: "Sentence truncation by age: <=7 -> max 14 words/sentence; <=10 -> 20; else 28." */
 export function maxWordsForAge(ageTarget: number): number {

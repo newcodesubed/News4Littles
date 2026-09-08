@@ -13,6 +13,11 @@
  * NOTE: an age override REPLACES the generic prompt rather than extending it
  * (§9.1: "age-specific override if it exists, else generic"), so each override
  * must be a complete, standalone prompt.
+ *
+ * The safety criteria below are deliberately explicit. With only the three-line
+ * description they replaced, a real model rated a story about four people killed
+ * and eleven wounded as "calm" — 2 of 5 test articles classified correctly. With
+ * these criteria it was 5 of 5, in the same single call.
  */
 
 export const GENERIC_SIMPLIFICATION_PROMPT = `You are rewriting a real news story for a {{age}}-year-old child.
@@ -48,12 +53,29 @@ Return ONLY a JSON object — no markdown fences, no commentary — in exactly t
 
 Field notes:
 - "safety" must be exactly one of "calm", "adult-nearby" or "skip-young".
-  - "calm" — nothing here would upset a child.
-  - "adult-nearby" — fine to read, but better with a grown-up nearby.
-  - "skip-young" — not suitable for the youngest readers.
-- "feelingNote" must be null when "safety" is "calm".
-- "contentWarnings" holds short labels for anything a grown-up should know about, or an empty list.
-- "vocab" holds two to four words that actually appear in the story.
+
+  Judge the SUBJECT of the story, not how gently you rewrote it. A kind rewrite
+  of a hard story is still a hard story.
+
+  "skip-young" — the story is centrally about war or armed conflict, killing or
+    death, a shooting, bombing or attack, serious violence, a disaster with
+    casualties, or people being seriously hurt.
+  "adult-nearby" — not violent, but a child could still find it worrying or
+    confusing: people losing their jobs, families losing homes or being
+    separated, serious illness, a frightening accident, crime, political
+    conflict, harm to the climate or to animals, anyone in danger.
+  "calm" — nothing in the subject would worry a child: discovery, science,
+    sport, culture, animals, food, achievement, everyday life.
+
+  If you are unsure between two levels, choose the STRICTER one.
+
+- "feelingNote" must be null when "safety" is "calm", and must be written when
+  it is not.
+- "contentWarnings" holds short labels for anything a grown-up should know about,
+  or an empty list.
+- "vocab" holds two to four words that ACTUALLY APPEAR in the story. Never proper
+  nouns, brand names or people's names — choose words a child would need
+  explained.
 - "readingMinutes" is a whole number, at least 1.`;
 
 export const AGE_6_SIMPLIFICATION_PROMPT = `You are rewriting a real news story for a 6-year-old child who is just learning to read.
@@ -90,6 +112,20 @@ Return ONLY a JSON object — no markdown fences, no commentary — in exactly t
 
 Field notes:
 - "safety" must be exactly one of "calm", "adult-nearby" or "skip-young".
-- "feelingNote" must be null when "safety" is "calm".
-- "vocab" holds exactly two words that appear in the story, each explained in under 12 words.
+
+  Judge the SUBJECT of the story, not how gently you rewrote it.
+
+  "skip-young" — war or armed conflict, killing or death, a shooting, bombing or
+    attack, serious violence, a disaster with casualties, people badly hurt.
+  "adult-nearby" — not violent, but still worrying for a child: people losing
+    jobs or homes, families separated, serious illness, a frightening accident,
+    crime, political conflict, harm to the climate or to animals.
+  "calm" — nothing in the subject would worry a child.
+
+  If you are unsure between two levels, choose the STRICTER one.
+
+- "feelingNote" must be null when "safety" is "calm", and must be written when
+  it is not.
+- "vocab" holds exactly two words that appear in the story, each explained in
+  under 12 words. Never proper nouns, brand names or people's names.
 - "readingMinutes" is a whole number, at least 1.`;

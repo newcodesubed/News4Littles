@@ -10,12 +10,8 @@
  * to use in a check.
  */
 import { openDatabase } from '../src/db/connection.js';
-import {
-  getSource,
-  scrapeAllEnabledSources,
-  scrapeSource,
-  type ScrapeResult,
-} from '../src/ingestion/rssScraper.js';
+import type { ScrapeResult } from '../src/ingestion/rssScraper.js';
+import { startScrapeRun, type RunState } from '../src/services/scrapeService.js';
 
 function flag(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
@@ -59,18 +55,17 @@ async function main(): Promise<void> {
     }
 
     const sourceId = flag('source');
-    let results: ScrapeResult[];
 
-    if (sourceId) {
-      const source = getSource(db, sourceId);
-      if (!source) throw new Error(`No source with id '${sourceId}'.`);
-      if (source.enabled !== 1) {
-        console.warn(`Note: source '${sourceId}' is disabled; running it anyway because you asked for it by name.\n`);
+    // Shares the service the admin "Run now" button uses, so a CLI scrape is
+    // recorded in scrape_runs and shows up as the last run in admin settings.
+    const state = await new Promise<RunState>((resolve, reject) => {
+      try {
+        startScrapeRun(db, { sourceId, limit, trigger: 'manual', onFinished: resolve });
+      } catch (error: unknown) {
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
-      results = [await scrapeSource(db, source, { limit })];
-    } else {
-      results = await scrapeAllEnabledSources(db, { limit });
-    }
+    });
+    const results: ScrapeResult[] = state.results;
 
     if (results.length === 0) {
       console.log('No enabled sources with a feed URL. Enable one in the sources table.');

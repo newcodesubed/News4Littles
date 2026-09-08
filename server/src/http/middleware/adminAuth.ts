@@ -11,6 +11,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import type { Database } from 'better-sqlite3';
+import { UnauthorizedError } from '../../core/errors.js';
 import type { NextFunction, Request, Response } from 'express';
 
 const REALM = 'News4Littles Admin';
@@ -30,10 +31,14 @@ function cacheKey(header: string): string {
   return createHash('sha256').update(header).digest('hex');
 }
 
-function unauthorized(res: Response, message: string): void {
-  // The header is what makes a browser show its own login prompt.
+/**
+ * Sets the header a browser needs to show its own login prompt, then throws so
+ * the central error handler writes the body. Declared as `never` so callers can
+ * use it as a statement without an unreachable `return` after it.
+ */
+function unauthorized(res: Response, message: string): never {
   res.setHeader('WWW-Authenticate', `Basic realm="${REALM}", charset="UTF-8"`);
-  res.status(401).json({ error: message });
+  throw new UnauthorizedError(message);
 }
 
 /** Constant-time string compare, for the username. */
@@ -52,7 +57,6 @@ export function createAdminAuth(db: Database) {
 
     if (!header || !header.startsWith('Basic ')) {
       unauthorized(res, 'Admin authentication required.');
-      return;
     }
 
     const key = cacheKey(header);
@@ -70,14 +74,12 @@ export function createAdminAuth(db: Database) {
       decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
     } catch {
       unauthorized(res, 'Malformed authorization header.');
-      return;
     }
 
     // Only the FIRST colon separates the pair; a password may contain colons.
     const separator = decoded.indexOf(':');
     if (separator === -1) {
       unauthorized(res, 'Malformed credentials.');
-      return;
     }
 
     const username = decoded.slice(0, separator);
@@ -92,7 +94,6 @@ export function createAdminAuth(db: Database) {
 
     if (!row || !safeEqual(username, row.username) || !passwordOk) {
       unauthorized(res, 'Invalid admin credentials.');
-      return;
     }
 
     verified.set(key, Date.now() + VERIFIED_TTL_MS);

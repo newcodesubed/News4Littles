@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "db": "tsx scripts/db.ts",
     "db:init": "tsx src/db/init.ts",
     "db:seed": "tsx src/db/seed.ts",
     "seed": "tsx src/db/seed-articles.ts",
@@ -13,7 +14,11 @@
     "pipeline:demo": "tsx scripts/try-pipeline.ts",
     "try:rss": "tsx scripts/try-rss.ts",
     "scrape": "tsx scripts/scrape.ts",
-    "scrape:bbc": "tsx scripts/scrape.ts --source bbc"
+    "scrape:bbc": "tsx scripts/scrape.ts --source bbc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "llm:check": "tsx scripts/check-llm.ts",
+    "db:update-prompts": "tsx scripts/update-seeded-prompts.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -31,6 +36,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.10.5",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.11"
   }
 }

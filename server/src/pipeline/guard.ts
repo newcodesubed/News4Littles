@@ -5,7 +5,7 @@
  * is out of scope, but the strictest-wins combinator below is built to take it
  * as a second input when it arrives.
  */
-import type { Safety } from '../db/mappers.js';
+import type { Safety } from '../core/article.js';
 
 /** Strictness order, least to most restrictive (§6 "Safety semantics"). */
 const SEVERITY: Record<Safety, number> = {

@@ -250,6 +250,42 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 
 -- -----------------------------------------------------------------------------
+-- scrape_runs — PRD §4.4 "Run now buttons ... with last-run results".
+--
+-- The sources table already records WHEN a fetch happened; this records what it
+-- did. Kept as history rather than one column per source, so a run that failed
+-- is still visible after the next one succeeds.
+--
+-- ON DELETE CASCADE, unlike raw_articles: run history is a log, and should
+-- never be the reason a source cannot be removed.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS scrape_runs (
+  id                   TEXT    PRIMARY KEY,
+  sourceId             TEXT    NOT NULL
+                       REFERENCES sources (id) ON UPDATE CASCADE ON DELETE CASCADE,
+  startedAt            TEXT    NOT NULL,                          -- ISO
+  finishedAt           TEXT    NOT NULL,                          -- ISO
+  ok                   INTEGER NOT NULL CHECK (ok IN (0, 1)),     -- boolean
+  error                TEXT,                                      -- set when ok = 0
+  itemsInFeed          INTEGER NOT NULL DEFAULT 0,
+  inserted             INTEGER NOT NULL DEFAULT 0,
+  skippedNotNew        INTEGER NOT NULL DEFAULT 0,
+  skippedAlreadyStored INTEGER NOT NULL DEFAULT 0,
+  skippedUnusable      INTEGER NOT NULL DEFAULT 0,
+  costUsd              REAL    NOT NULL DEFAULT 0,                -- USD spent on the LLM
+  fallbacks            TEXT    NOT NULL DEFAULT '[]',             -- JSON: string[] (§9.1 step 4)
+  trigger              TEXT    NOT NULL
+                       CHECK (trigger IN ('manual', 'scheduled')),
+
+  CHECK (json_valid(fallbacks))
+);
+
+-- "the last run for this source", the query the settings page makes.
+CREATE INDEX IF NOT EXISTS idx_scrape_runs_source_finished
+  ON scrape_runs (sourceId, finishedAt DESC);
+
+
+-- -----------------------------------------------------------------------------
 -- admin_users — PRD §8.7
 -- Single shared admin account is fine for v1 (§2.2 non-goals: no RBAC).
 -- passwordHash is a bcrypt hash; a plaintext password must never be stored.
