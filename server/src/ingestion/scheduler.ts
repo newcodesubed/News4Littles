@@ -12,7 +12,7 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import type { Database } from 'better-sqlite3';
 import { SCRAPE_ENABLED, SCRAPE_TIMEZONE } from '../env.js';
-import { scrapeAllEnabledSources } from './rssScraper.js';
+import { startScrapeRun, type RunState } from '../services/scrapeService.js';
 
 /** "06:00" -> "0 6 * * *" (every day at 06:00). */
 export function timeToCron(time: string): string {
@@ -46,7 +46,12 @@ export async function runScheduledScrape(db: Database): Promise<void> {
   console.log(`[scrape] scheduled run starting at ${startedAt}`);
 
   try {
-    const results = await scrapeAllEnabledSources(db);
+    // Shares the manual path, so a scheduled run is recorded in scrape_runs and
+    // cannot collide with one an editor started (§4.4).
+    const state = await new Promise<RunState>((resolve) => {
+      startScrapeRun(db, { trigger: 'scheduled', onFinished: resolve });
+    });
+    const results = state.results;
 
     for (const result of results) {
       if (result.ok) {
