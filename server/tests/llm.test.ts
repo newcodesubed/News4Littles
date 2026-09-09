@@ -350,3 +350,76 @@ describe('the seeded prompts must keep their safety criteria', () => {
     expect(GENERIC_SIMPLIFICATION_PROMPT).toContain('Never proper');
   });
 });
+
+describe('sharing one prompt-guard verdict across ages', () => {
+  let ctx: TestContext;
+  beforeEach(() => { ctx = createTestContext(); });
+  afterEach(() => ctx.close());
+
+  const RAW_INPUT = {
+    id: 'r1', headline: 'A reef was surveyed', body: 'A rover surveyed the reef today.',
+    topic: 'World', sourceName: 'BBC News', sourceUrl: 'https://example.com/a',
+  };
+
+  const GOOD_REPLY = JSON.stringify({
+    kidHeadline: 'A reef was looked at', summary: 'Divers looked at a reef.',
+    whatHappened: 'They went down deep.', whyItMatters: 'Reefs matter.',
+    thinkAbout: 'What lives on a reef?', safety: 'calm', readingMinutes: 2,
+    vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
+  });
+
+  /** Counts how many completions the client is asked for. */
+  function countingClient(reply: string) {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: reply } }],
+          usage: { total_tokens: 10 },
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    return {
+      client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
+      calls: () => calls,
+    };
+  }
+
+  const enableGuard = () =>
+    ctx.db.prepare(
+      `UPDATE guard_config SET promptGuardEnabled = 1, promptGuardText = 'Classify: {{body}}'
+       WHERE id = 'default'`,
+    ).run();
+
+  it('makes its own guard call when none is supplied', async () => {
+    enableGuard();
+    const { client, calls } = countingClient(GOOD_REPLY);
+
+    await simplifyArticle(ctx.db, RAW_INPUT, { ageTarget: 8, client });
+
+    // One guard call plus one simplification call.
+    expect(calls()).toBe(2);
+  });
+
+  it('uses a supplied verdict instead of calling the guard again', async () => {
+    enableGuard();
+    const { client, calls } = countingClient(GOOD_REPLY);
+
+    const outcome = await simplifyArticle(ctx.db, RAW_INPUT, {
+      ageTarget: 8,
+      client,
+      promptGuard: {
+        ok: true, raw: 'skip', result: { guard: 'prompt-guard', safety: 'skip-young', matches: [] },
+      },
+    });
+
+    // Only the simplification call. Ten ages sharing one verdict is the point.
+    expect(calls()).toBe(1);
+    // And the supplied verdict still counts as a guard: strictest wins (§6).
+    expect(outcome.article.safety).toBe('skip-young');
+  });
+});

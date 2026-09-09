@@ -49,6 +49,13 @@ export interface SimplifyOptions extends LocalPipelineOptions {
   /** Overrides the configured model. */
   model?: string;
   client?: OpenRouterClient;
+  /**
+   * A prompt-guard verdict already obtained for this article. §6.2's guard
+   * judges the SOURCE text, which does not vary by age, so a caller producing
+   * one version per age runs it once and passes the same outcome in for all
+   * ten — otherwise the guard costs ten calls per story instead of one.
+   */
+  promptGuard?: PromptGuardOutcome;
 }
 
 export async function simplifyArticle(
@@ -98,9 +105,13 @@ export async function simplifyArticle(
     sourceName: raw.sourceName,
     age: config.ageTarget,
   };
-  const promptGuard = guardConfig.promptGuardEnabled
-    ? await runPromptGuard(guardConfig.promptGuardText, promptContext, client)
-    : undefined;
+  // A caller doing one version per age supplies the verdict rather than paying
+  // for it once per age.
+  const promptGuard =
+    options.promptGuard ??
+    (guardConfig.promptGuardEnabled
+      ? await runPromptGuard(guardConfig.promptGuardText, promptContext, client)
+      : undefined);
 
   const result = await client.complete({
     prompt: renderPrompt(chosen.template, promptContext),
@@ -171,8 +182,9 @@ export async function simplifyArticle(
       guard: { ...guard, matches: denyMatches },
       engine: 'llm',
       model: result.model,
-      // Both calls are billed, so both are reported.
-      costUsd: (result.costUsd ?? 0) + (promptGuard?.costUsd ?? 0),
+      // Both calls are billed, so both are reported — but a verdict supplied by
+      // the caller was billed to the caller, not again to every version.
+      costUsd: (result.costUsd ?? 0) + (options.promptGuard ? 0 : (promptGuard?.costUsd ?? 0)),
       elapsedMs: result.elapsedMs,
       promptSource: chosen.source,
       promptGuard,
