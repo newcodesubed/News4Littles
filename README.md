@@ -69,13 +69,15 @@ Everything under `/admin` needs the admin password.
 ## How a story reaches a reader
 
 ```
-BBC RSS feed ─┐
-              ├─→ raw_articles ─→ guard + simplify ─→ kid_articles
-paste by hand ┘                                        (pending_review)
-                                                            │
-                                              an editor approves it
-                                                            ↓
-                                                       published → the site
+BBC RSS feed ─┐                  first 10 per run
+              ├─→ raw_articles ─┬─→ guard + simplify ─→ kid_articles
+paste by hand ┘                 │                        (pending_review)
+                                │                             │
+                                │                 an editor approves it
+                                │                             ↓
+                                │                        published → the site
+                                └─→ the rest wait, unsimplified and free,
+                                    under "Not yet simplified" in /admin/review
 ```
 
 Two things never change:
@@ -100,7 +102,8 @@ cd server
 npm run try:rss              # just prove the feed fetch works
 npm run scrape               # every enabled source
 npm run scrape:bbc           # one source
-npm run scrape -- --limit 5  # cap it (see the warning below)
+npm run scrape -- --limit 5  # cap items fetched (see the warning below)
+npm run scrape -- --budget 3 # simplify at most 3 this run
 ```
 
 Or click **Run all enabled** / **Run now** in `/admin/settings`, which shows
@@ -117,6 +120,36 @@ a server restart** — the cron jobs are registered at boot.
 > **`--limit` is a testing aid, not a shortcut.** The feed is not sorted by date,
 > so capping a run advances the incremental cursor past items it never stored.
 > Those stories are then skipped forever. Use the plain command for real work.
+> `--budget` is the safe one: it stores everything and only defers the
+> simplifying.
+
+### The simplification budget
+
+A run stores **every** new article it finds, but simplifies only the first
+`app_settings.simplifyBudget` of them (default **10**, editable in
+`/admin/settings`). Four enabled feeds offer 40–50 new stories a day and an
+editor triages maybe ten, so simplifying all of them spent roughly four times
+what it needed to.
+
+The budget is spread round-robin across sources, newest story first, so one busy
+feed cannot take the whole allowance. A source with fewer new stories than its
+share hands the remainder back, so a budget of 10 spends 10 whenever 10 stories
+are waiting.
+
+Everything else sits in `raw_articles` with `simplifiedAt = NULL`, costing
+nothing. It is listed under **Not yet simplified** in `/admin/review`, where an
+editor can simplify one row or a selection on demand; the next scheduled run
+also works through the backlog before it runs out of budget.
+
+Set the budget to `0` to simplify nothing automatically and do it all by hand.
+
+Deleting a kid article leaves `simplifiedAt` set, so a story an editor has
+rejected and deleted does not reappear in the backlog asking to be paid for
+again.
+
+This diverges from PRD §5.2, which runs steps 4–7 as a single pass over every
+item. Steps 1–5 live in `ingestion/rssScraper.ts`; steps 6–7 moved to
+`services/simplifyService.ts`.
 
 ---
 
@@ -148,8 +181,10 @@ cd server
 npm run llm:check    # runs 3 real articles through both paths and reports the cost
 ```
 
-Roughly **$0.0002 per article** on the default model, so a full 35-item scrape
-costs well under a penny. Several guards keep it that way, all in `.env`:
+Roughly **$0.0002 per article** on the default model. A run costs the
+simplification budget, not the size of the feed, so the default of 10 is about
+$0.002 a day however much the feeds publish. Several guards keep it that way —
+the budget in `/admin/settings`, and these in `.env`:
 
 | Setting              | Default                        | Why                                                                     |
 | -------------------- | ------------------------------ | ----------------------------------------------------------------------- |
@@ -242,14 +277,14 @@ already has rows in it.
 | Table                               | Holds                                                     |
 | ----------------------------------- | --------------------------------------------------------- |
 | `sources`                           | Feeds to scrape, plus a `manual` row for hand submissions |
-| `raw_articles`                      | Original articles as fetched                              |
+| `raw_articles`                      | Original articles as fetched; `simplifiedAt` NULL means still waiting |
 | `kid_articles`                      | Rewritten stories and their review status                 |
 | `guard_config`                      | Deny-list and the safety-guard prompt                     |
 | `translation_prompt_config`         | Live simplification prompts                               |
 | `prompt_drafts` / `prompt_versions` | Sandbox drafts and promotion history                      |
-| `app_settings`                      | Default reading age, scrape times, LLM provider           |
+| `app_settings`                      | Default reading age, scrape times, simplification budget, LLM provider |
 | `admin_users`                       | The single admin account (bcrypt)                         |
-| `scrape_runs`                       | What each scrape did                                      |
+| `scrape_runs`                       | What each scrape stored, simplified and left raw          |
 
 Some constraints are load-bearing rather than decorative: a `published` row must
 have a `publishedAt`; deleting a source with stored articles is refused (disable
@@ -309,7 +344,8 @@ server/src/
   pipeline/           the safety guard and rule-based simplification
   llm/                the OpenRouter client and response parsing
   ingestion/          RSS fetching, parsing, scheduling
-  services/           use cases: submit, regenerate, sandbox, scrape runs
+  services/           use cases: submit, regenerate, sandbox, scrape runs,
+                      simplification (simplifyService, simplifyBudget, jobLock)
   routes/             public/ and admin/
 
 web/src/
