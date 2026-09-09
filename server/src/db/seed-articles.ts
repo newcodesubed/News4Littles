@@ -331,8 +331,10 @@ export function seedArticles(path: string = DATABASE_PATH): { rawArticles: numbe
 
     const insertRaw = db.prepare(
       `INSERT INTO raw_articles
-         (id, sourceId, sourceName, sourceUrl, url, headline, body, topic, publishedAt, fetchedAt)
-       VALUES (@id, @sourceId, @sourceName, @sourceUrl, @url, @headline, @body, @topic, @publishedAt, @fetchedAt)`,
+         (id, sourceId, sourceName, sourceUrl, url, headline, body, topic, publishedAt,
+          fetchedAt, simplifiedAt)
+       VALUES (@id, @sourceId, @sourceName, @sourceUrl, @url, @headline, @body, @topic,
+               @publishedAt, @fetchedAt, @simplifiedAt)`,
     );
 
     for (const sample of SAMPLES) {
@@ -346,6 +348,8 @@ export function seedArticles(path: string = DATABASE_PATH): { rawArticles: numbe
         topic: sample.kid.category,
         publishedAt: createdAt,
         fetchedAt: createdAt,
+        // Every sample ships with a kid article, so it is simplified by definition.
+        simplifiedAt: createdAt,
       });
 
       articles.insert({

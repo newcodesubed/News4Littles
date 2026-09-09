@@ -7,6 +7,8 @@ import { openDatabase } from '../src/db/connection.js';
 import { initialiseSchema, SCHEMA_VERSION } from '../src/db/init.js';
 import { seed } from '../src/db/seed.js';
 import { isArticleStatus, toKidArticle, type KidArticleRow } from '../src/core/article.js';
+import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
+import { createManualArticle } from '../src/services/submitArticle.js';
 import { countRows } from './helpers.js';
 
 let dir: string;
@@ -249,5 +251,94 @@ describe('row -> API mapping (§8.3)', () => {
   it('recognises the three valid statuses and nothing else', () => {
     for (const s of ['pending_review', 'published', 'rejected']) expect(isArticleStatus(s)).toBe(true);
     for (const s of ['draft', '', 'PUBLISHED']) expect(isArticleStatus(s)).toBe(false);
+  });
+});
+
+describe('the waiting backlog (raw_articles.simplifiedAt)', () => {
+  let db: ReturnType<typeof openDatabase>;
+
+  const raw = (id: string, over: Record<string, unknown> = {}) => ({
+    id, sourceId: 'bbc', sourceName: 'BBC News', sourceUrl: 'https://feed',
+    url: `https://example.com/${id}`, headline: `Headline ${id}`, body: 'Body text here',
+    topic: 'World', publishedAt: null, fetchedAt: '2026-09-08T00:00:00.000Z',
+    simplifiedAt: null, ...over,
+  });
+
+  beforeEach(() => {
+    initialiseSchema(path);
+    seed(path);
+    db = openDatabase(path);
+  });
+  afterEach(() => db.close());
+
+  it('lists only unsimplified rows, newest published first, undated last', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('older', { publishedAt: '2026-09-01T00:00:00.000Z' }));
+    repo.insert(raw('newer', { publishedAt: '2026-09-07T00:00:00.000Z' }));
+    repo.insert(raw('undated'));
+    repo.insert(raw('done', {
+      publishedAt: '2026-09-09T00:00:00.000Z', simplifiedAt: '2026-09-09T01:00:00.000Z',
+    }));
+
+    expect(repo.listWaiting().map((a) => a.id)).toEqual(['newer', 'older', 'undated']);
+    expect(repo.countWaiting()).toBe(3);
+  });
+
+  it('reports the body length so the editor can judge a stub before spending a call', () => {
+    createRawArticleRepository(db).insert(raw('r1', { body: 'twelve chars' }));
+    expect(createRawArticleRepository(db).listWaiting()[0].bodyLength).toBe(12);
+  });
+
+  it('filters by source and honours a limit', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('b1'));
+    repo.insert(raw('b2'));
+    repo.insert(raw('m1', { sourceId: 'manual', sourceName: 'Manual submission' }));
+
+    expect(repo.listWaiting({ sourceId: 'manual' }).map((a) => a.id)).toEqual(['m1']);
+    expect(repo.listWaiting({ limit: 1 })).toHaveLength(1);
+    expect(repo.countWaitingForSource('bbc')).toBe(2);
+  });
+
+  it('groups waiting ids by source, newest first — the round-robin input', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('b-old', { publishedAt: '2026-09-01T00:00:00.000Z' }));
+    repo.insert(raw('b-new', { publishedAt: '2026-09-05T00:00:00.000Z' }));
+    repo.insert(raw('m-one', {
+      sourceId: 'manual', sourceName: 'Manual submission', publishedAt: '2026-09-03T00:00:00.000Z',
+    }));
+
+    expect(repo.waitingIdsBySource()).toEqual([
+      { sourceId: 'bbc', rawIds: ['b-new', 'b-old'] },
+      { sourceId: 'manual', rawIds: ['m-one'] },
+    ]);
+  });
+
+  it('markSimplified claims a row exactly once', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('r1'));
+
+    expect(repo.markSimplified('r1', '2026-09-09T10:00:00.000Z')).toBe(true);
+    // A second claim — two browser tabs submitting the same id — must lose,
+    // which is what stops a second kid article being written for one raw.
+    expect(repo.markSimplified('r1', '2026-09-09T10:00:05.000Z')).toBe(false);
+    expect(repo.findById('r1')?.simplifiedAt).toBe('2026-09-09T10:00:00.000Z');
+    expect(repo.countWaiting()).toBe(0);
+  });
+
+  it('a manual submission is never in the backlog', async () => {
+    // §4.3 submissions arrive already simplified, so they must not show up as
+    // waiting for a simplification they have already had.
+    await createManualArticle(
+      db,
+      {
+        headline: 'Editor wrote this', body: 'A long enough body for the pipeline to chew on.',
+        category: 'World', sourceName: 'Editor', sourceUrl: 'https://example.com/manual',
+        ageTarget: 8,
+      },
+      {},
+      'pending_review',
+    );
+    expect(createRawArticleRepository(db).countWaiting()).toBe(0);
   });
 });

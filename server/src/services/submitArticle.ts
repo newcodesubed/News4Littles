@@ -159,6 +159,9 @@ export async function createManualArticle(
       topic: submission.category,
       publishedAt: now,
       fetchedAt: now,
+      // §4.3 submissions arrive already simplified, in the same transaction, so
+      // they must never appear in the "not yet simplified" backlog.
+      simplifiedAt: now,
     });
 
     createArticleRepository(db).insert(stored);

@@ -128,6 +128,7 @@ async function storeItems(
         topic: DEFAULT_TOPIC,
         publishedAt: item.publishedAt,
         fetchedAt,
+        simplifiedAt: null,
       });
 
       // Step 7: never auto-publish, whatever the guard decided.

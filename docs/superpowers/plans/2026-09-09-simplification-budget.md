@@ -420,11 +420,16 @@ describe('the waiting backlog (raw_articles.simplifiedAt)', () => {
   it('a manual submission is never in the backlog', async () => {
     // §4.3 submissions arrive already simplified, so they must not show up as
     // waiting for a simplification they have already had.
-    await submitArticle(db, {
-      headline: 'Editor wrote this', body: 'A long enough body for the pipeline to chew on.',
-      category: 'World', sourceName: 'Editor', sourceUrl: 'https://example.com/manual',
-      ageTarget: 8,
-    });
+    await createManualArticle(
+      db,
+      {
+        headline: 'Editor wrote this', body: 'A long enough body for the pipeline to chew on.',
+        category: 'World', sourceName: 'Editor', sourceUrl: 'https://example.com/manual',
+        ageTarget: 8,
+      },
+      {},
+      'pending_review',
+    );
     expect(createRawArticleRepository(db).countWaiting()).toBe(0);
   });
 });
@@ -434,10 +439,10 @@ Add these two imports to `server/tests/db.test.ts` (`afterEach`, `beforeEach`, `
 
 ```ts
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
-import { submitArticle } from '../src/services/submitArticle.js';
+import { createManualArticle } from '../src/services/submitArticle.js';
 ```
 
-The `Submission` shape `submitArticle` takes is `{ headline, sourceName, sourceUrl, body, category, ageTarget }` — all six are required, and the test above passes all six.
+The real export is `createManualArticle(db, submission, overrides, status)` — there is no `submitArticle` function despite the filename. `Submission` is `{ headline, sourceName, sourceUrl, body, category, ageTarget }`, all six required.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
