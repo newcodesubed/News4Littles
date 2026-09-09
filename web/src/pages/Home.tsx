@@ -13,7 +13,7 @@ import { useSettings } from '../settings/SettingsContext';
 export function Home() {
   const { readingAge, isSourceEnabled } = useSettings();
   const [category, setCategory] = useState<string | null>(null);
-  const state = useAsync(fetchPublishedArticles, []);
+  const state = useAsync(() => fetchPublishedArticles(readingAge), [readingAge]);
 
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
@@ -21,8 +21,9 @@ export function Home() {
     day: 'numeric',
   });
 
-  // Source toggles (§3.6) filter the feed; the reading-age slider does not —
-  // it drives the badge and the default age for new simplifications (§11.1).
+  // Source toggles (§3.6) filter the feed. The reading-age slider changes the
+  // TEXT: a story exists in one version per age, and the API serves the version
+  // for this reader (§6), so moving the slider refetches rather than relabels.
   const published = state.status === 'ready' ? state.data.filter((a) => isSourceEnabled(a.sourceName)) : [];
   const visible = category ? published.filter((a) => a.category === category) : published;
 

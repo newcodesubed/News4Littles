@@ -17,47 +17,61 @@ describe('API base URL', () => {
 });
 
 describe('fetchPublishedArticles', () => {
-  it('asks only for published stories (§11.1)', async () => {
+  it('asks for the reader’s reading age (§6)', async () => {
     respond([]);
-    await fetchPublishedArticles();
-    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('status=published');
+    await fetchPublishedArticles(11);
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('age=11');
+  });
+
+  it('no longer sends a status, because the server decides it (§2.2)', async () => {
+    // The endpoint serves published stories only, and not because the caller
+    // asked: a status parameter used to make that promise the caller's job.
+    respond([]);
+    await fetchPublishedArticles(8);
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).not.toContain('status=');
   });
 
   it('returns the parsed body', async () => {
     respond([{ id: 'a' }]);
-    expect(await fetchPublishedArticles()).toEqual([{ id: 'a' }]);
+    expect(await fetchPublishedArticles(8)).toEqual([{ id: 'a' }]);
   });
 });
 
 describe('fetchArticle', () => {
   it('encodes the id so an odd one cannot break the URL', async () => {
     respond({});
-    await fetchArticle('a b/c');
+    await fetchArticle('a b/c', 8);
     expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('a%20b%2Fc');
+  });
+
+  it('sends the reading age, so the slider works on a story page (§6)', async () => {
+    respond({});
+    await fetchArticle('a1', 13);
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('age=13');
   });
 });
 
 describe('error handling', () => {
   it('turns an unreachable API into a message naming the cause', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
-    await expect(fetchPublishedArticles()).rejects.toThrow(/Is the server running/);
+    await expect(fetchPublishedArticles(8)).rejects.toThrow(/Is the server running/);
   });
 
   it("surfaces the server's own error message", async () => {
     respond({ error: 'No article with id ‘x’.' }, false, 404);
-    await expect(fetchArticle('x')).rejects.toThrow(/No article with id/);
+    await expect(fetchArticle('x', 8)).rejects.toThrow(/No article with id/);
   });
 
   it('falls back to the status code when the body is not JSON', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: false, status: 500, json: async () => { throw new Error('not json'); },
     }) as unknown as Response));
-    await expect(fetchArticle('x')).rejects.toThrow(/500/);
+    await expect(fetchArticle('x', 8)).rejects.toThrow(/500/);
   });
 
   it('carries the status code on the error', async () => {
     respond({ error: 'gone' }, false, 404);
-    await expect(fetchArticle('x')).rejects.toMatchObject({ status: 404, name: 'ApiError' });
+    await expect(fetchArticle('x', 8)).rejects.toMatchObject({ status: 404, name: 'ApiError' });
     expect(new ApiError('x', 404)).toBeInstanceOf(Error);
   });
 });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Headphones, MessageCircle, Pause, Play } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/States';
 import { fetchPublishedArticles } from '../lib/api';
+import { useSettings } from '../settings/SettingsContext';
 import { useAsync } from '../lib/useAsync';
 import type { KidArticle } from '../lib/types';
 
@@ -28,7 +29,8 @@ function segmentScript(article: KidArticle): string {
 
 export function Podcast() {
   const [playing, setPlaying] = useState(false);
-  const state = useAsync(fetchPublishedArticles, []);
+  const { readingAge } = useSettings();
+  const state = useAsync(() => fetchPublishedArticles(readingAge), [readingAge]);
 
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'long',

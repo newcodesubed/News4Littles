@@ -1,4 +1,4 @@
-import type { KidArticle } from './types';
+import type { PublicArticle } from './types';
 
 /**
  * Base URL of the /server API. Configured in web/.env as VITE_API_BASE_URL —
@@ -40,11 +40,17 @@ async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** Home and podcast show published stories only (PRD §11.1). */
-export function fetchPublishedArticles(): Promise<KidArticle[]> {
-  return getJson<KidArticle[]>('/api/articles?status=published');
+/**
+ * Home, the podcast page and Settings show published stories only (PRD §11.1),
+ * one per story at the reader's reading age (§3.6, §6).
+ */
+export function fetchPublishedArticles(age: number): Promise<PublicArticle[]> {
+  return getJson<PublicArticle[]>(`/api/articles?age=${encodeURIComponent(age)}`);
 }
 
-export function fetchArticle(id: string): Promise<KidArticle> {
-  return getJson<KidArticle>(`/api/articles/${encodeURIComponent(id)}`);
+/** The id names one version; the reader gets that story at their age. */
+export function fetchArticle(id: string, age: number): Promise<PublicArticle> {
+  return getJson<PublicArticle>(
+    `/api/articles/${encodeURIComponent(id)}?age=${encodeURIComponent(age)}`,
+  );
 }

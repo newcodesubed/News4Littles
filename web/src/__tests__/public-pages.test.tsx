@@ -1,11 +1,12 @@
 /** Public pages and shared components — PRD §3. */
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CategoryBadge, SafetyBadge } from '../components/Badges';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { StoryCard } from '../components/StoryCard';
+import { Home } from '../pages/Home';
 import { Podcast } from '../pages/Podcast';
 import { Settings } from '../pages/Settings';
 import { About } from '../pages/About';
@@ -174,5 +175,70 @@ describe('About (§3.7)', () => {
     renderIn(<About />);
     expect(screen.getByText(/Our mission/)).toBeInTheDocument();
     expect(screen.getByText(/Editorial guardrails/)).toBeInTheDocument();
+  });
+});
+
+describe('the reading-age slider changes the story (§6)', () => {
+  /** Serves a different headline per requested age, so a change is visible. */
+  function mockByAge() {
+    const requested: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const path = String(url);
+      requested.push(path);
+      const age = new URL(path, 'http://x').searchParams.get('age') ?? 'none';
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{
+          ...article({
+            id: `a-${age}`,
+            ageTarget: Number(age),
+            kidHeadline: `Written for age ${age}`,
+          }),
+          ageMatched: true,
+        }],
+      } as unknown as Response;
+    }));
+    return { requested };
+  }
+
+  /** The stored shape SettingsProvider reads on mount. */
+  const storeAge = (readingAge: number) =>
+    window.localStorage.setItem(
+      'news4littles.settings',
+      JSON.stringify({ readingAge, disabledSources: [] }),
+    );
+
+  it('asks the API for the reader’s age', async () => {
+    const { requested } = mockByAge();
+    storeAge(11);
+
+    renderIn(<Home />);
+
+    await waitFor(() => expect(requested.some((p) => p.includes('age=11'))).toBe(true));
+  });
+
+  it('shows the story written for that age', async () => {
+    mockByAge();
+    storeAge(11);
+
+    renderIn(<Home />);
+
+    expect(await screen.findByText('Written for age 11')).toBeInTheDocument();
+  });
+
+  it('refetches when the reader moves the slider', async () => {
+    const { requested } = mockByAge();
+    storeAge(6);
+
+    renderIn(<Settings />);
+    const slider = await screen.findByLabelText('Default reading age');
+
+    // fireEvent.change, not userEvent: jsdom does not implement range-input
+    // dragging or arrow-key stepping, so a keyboard press never reaches
+    // onChange. This is the documented way to move a slider in a test.
+    fireEvent.change(slider, { target: { value: '7' } });
+
+    await waitFor(() => expect(requested.some((p) => p.includes('age=7'))).toBe(true));
   });
 });

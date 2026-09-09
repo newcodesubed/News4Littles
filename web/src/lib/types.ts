@@ -42,6 +42,15 @@ export interface KidArticle {
  * The one safety rule the UI must never get wrong (PRD §3.4, §11.1):
  * the feeling note and the safety badge appear only for non-calm stories.
  */
+/**
+ * A published story as the public API serves it: one version, chosen for the
+ * reader's age. `ageMatched` is false when their age had no version and a
+ * nearer one was served, so the UI can say so rather than implying a match.
+ */
+export interface PublicArticle extends KidArticle {
+  ageMatched: boolean;
+}
+
 export function needsFeelingNote(article: Pick<KidArticle, 'safety'>): boolean {
   return article.safety !== 'calm';
 }
