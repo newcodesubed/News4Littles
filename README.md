@@ -5,10 +5,6 @@ filters and rewrites them for children, and presents them in a calm, readable
 interface. Every story is read by a human editor before a child sees it — nothing
 publishes automatically.
 
-Built to an internal spec (`PRD.md`), which is kept out of this repo. The code
-refers back to it by section (`§4.2`, `§9.2`) in about 350 places, so keep the
-two together.
-
 - `/server` — Node.js + Express + SQLite (better-sqlite3), raw SQL, no ORM
 - `/web` — React 18 + Vite + TypeScript + Tailwind
 
@@ -49,24 +45,24 @@ and everything works end to end — just with plainer output. See
 
 ### Readers
 
-| Route | What it is |
-|---|---|
-| `/` | Today's stories |
-| `/story/:id` | One story: what happened, why it matters, words to know, a feeling note |
-| `/podcast` | Daily episode. The player is a **placeholder** — real audio is out of scope (§14) |
-| `/about` | The mission and the editorial guardrails |
-| `/settings` | Reading age and which sources to show. Saved in the browser only; there are no accounts |
+| Route        | What it is                                                                              |
+| ------------ | --------------------------------------------------------------------------------------- |
+| `/`          | Today's stories                                                                         |
+| `/story/:id` | One story: what happened, why it matters, words to know, a feeling note                 |
+| `/podcast`   | Daily episode. The player is a **placeholder** — real audio is out of scope (§14)       |
+| `/about`     | The mission and the editorial guardrails                                                |
+| `/settings`  | Reading age and which sources to show. Saved in the browser only; there are no accounts |
 
 ### Editors
 
 Everything under `/admin` needs the admin password.
 
-| Route | What it is |
-|---|---|
-| `/admin/review` | The review queue. Read, approve, reject, edit, regenerate, delete |
-| `/admin/submit` | Paste an article by hand and simplify it |
-| `/admin/settings` | Sources, guardrails, prompts, app defaults, and **Run now** scraping |
-| `/admin/sandbox` | Edit a prompt and see what it does to a real article before promoting it |
+| Route             | What it is                                                               |
+| ----------------- | ------------------------------------------------------------------------ |
+| `/admin/review`   | The review queue. Read, approve, reject, edit, regenerate, delete        |
+| `/admin/submit`   | Paste an article by hand and simplify it                                 |
+| `/admin/settings` | Sources, guardrails, prompts, app defaults, and **Run now** scraping     |
+| `/admin/sandbox`  | Edit a prompt and see what it does to a real article before promoting it |
 
 ---
 
@@ -133,11 +129,11 @@ dictionary. Truthful, and quite plain.
 With a key, an LLM rewrites the story properly (§9.1) and the difference is
 large:
 
-| | |
-|---|---|
+|          |                                                           |
+| -------- | --------------------------------------------------------- |
 | Original | Volkswagen board approves plan to cut another 50,000 jobs |
-| Local | Volkswagen board approves plan to cut another 50,000 jobs |
-| LLM | Car Company Plans Big Changes |
+| Local    | Volkswagen board approves plan to cut another 50,000 jobs |
+| LLM      | Car Company Plans Big Changes                             |
 
 Put an [OpenRouter](https://openrouter.ai) key in `server/.env`:
 
@@ -155,13 +151,13 @@ npm run llm:check    # runs 3 real articles through both paths and reports the c
 Roughly **$0.0002 per article** on the default model, so a full 35-item scrape
 costs well under a penny. Several guards keep it that way, all in `.env`:
 
-| Setting | Default | Why |
-|---|---|---|
-| `LLM_ENABLED` | `true` | Set to `false` to fall back to the free local path instantly |
-| `LLM_MODEL` | `google/gemini-2.5-flash-lite` | Any OpenRouter model id |
-| `LLM_MAX_BODY_CHARS` | `6000` | Article text is truncated first, so one huge paste cannot run up a bill |
-| `LLM_MAX_TOKENS` | `1500` | Caps the priced half of each response |
-| `LLM_MAX_RETRIES` | `1` | Transient failures only (429, 5xx) — never a retry storm |
+| Setting              | Default                        | Why                                                                     |
+| -------------------- | ------------------------------ | ----------------------------------------------------------------------- |
+| `LLM_ENABLED`        | `true`                         | Set to `false` to fall back to the free local path instantly            |
+| `LLM_MODEL`          | `google/gemini-2.5-flash-lite` | Any OpenRouter model id                                                 |
+| `LLM_MAX_BODY_CHARS` | `6000`                         | Article text is truncated first, so one huge paste cannot run up a bill |
+| `LLM_MAX_TOKENS`     | `1500`                         | Caps the priced half of each response                                   |
+| `LLM_MAX_RETRIES`    | `1`                            | Transient failures only (429, 5xx) — never a retry storm                |
 
 If a call fails or the response cannot be parsed, the article falls back to the
 local pipeline and the reason is recorded, so a dead API degrades rather than
@@ -243,17 +239,17 @@ Every statement in `schema.sql` is `CREATE ... IF NOT EXISTS`, so `npm run
 db:init` is safe to re-run and is how a schema addition reaches a database that
 already has rows in it.
 
-| Table | Holds |
-|---|---|
-| `sources` | Feeds to scrape, plus a `manual` row for hand submissions |
-| `raw_articles` | Original articles as fetched |
-| `kid_articles` | Rewritten stories and their review status |
-| `guard_config` | Deny-list and the safety-guard prompt |
-| `translation_prompt_config` | Live simplification prompts |
-| `prompt_drafts` / `prompt_versions` | Sandbox drafts and promotion history |
-| `app_settings` | Default reading age, scrape times, LLM provider |
-| `admin_users` | The single admin account (bcrypt) |
-| `scrape_runs` | What each scrape did |
+| Table                               | Holds                                                     |
+| ----------------------------------- | --------------------------------------------------------- |
+| `sources`                           | Feeds to scrape, plus a `manual` row for hand submissions |
+| `raw_articles`                      | Original articles as fetched                              |
+| `kid_articles`                      | Rewritten stories and their review status                 |
+| `guard_config`                      | Deny-list and the safety-guard prompt                     |
+| `translation_prompt_config`         | Live simplification prompts                               |
+| `prompt_drafts` / `prompt_versions` | Sandbox drafts and promotion history                      |
+| `app_settings`                      | Default reading age, scrape times, LLM provider           |
+| `admin_users`                       | The single admin account (bcrypt)                         |
+| `scrape_runs`                       | What each scrape did                                      |
 
 Some constraints are load-bearing rather than decorative: a `published` row must
 have a `publishedAt`; deleting a source with stored articles is refused (disable
@@ -282,18 +278,18 @@ covers `src` only, so files under `server/scripts/` are not typechecked.
 
 `server/.env` — see [`.env.example`](server/.env.example) for all of it.
 
-| | Default |
-|---|---|
-| `PORT` | `4000` |
-| `CORS_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` |
-| `DATABASE_PATH` | `data/news4littles.db` (relative to `/server`) |
-| `SCRAPE_ENABLED` | `true` — `false` stops cron registering |
-| `SCRAPE_TIMEZONE` | the server's own zone |
+|                   | Default                                        |
+| ----------------- | ---------------------------------------------- |
+| `PORT`            | `4000`                                         |
+| `CORS_ORIGIN`     | `http://localhost:5173,http://127.0.0.1:5173`  |
+| `DATABASE_PATH`   | `data/news4littles.db` (relative to `/server`) |
+| `SCRAPE_ENABLED`  | `true` — `false` stops cron registering        |
+| `SCRAPE_TIMEZONE` | the server's own zone                          |
 
 `web/.env`:
 
-| | Default |
-|---|---|
+|                     | Default                 |
+| ------------------- | ----------------------- |
 | `VITE_API_BASE_URL` | `http://localhost:4000` |
 
 Point the web app at a different host by changing `VITE_API_BASE_URL` **and**
