@@ -40,11 +40,18 @@ async function getJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** Home and podcast show published stories only (PRD §11.1). */
-export function fetchPublishedArticles(): Promise<KidArticle[]> {
-  return getJson<KidArticle[]>('/api/articles?status=published');
+/**
+ * Home, the podcast page and Settings show published stories only (PRD §11.1),
+ * one per story, in the version written for the reader's reading age (§3.6,
+ * §6). A story with no version for that age is simply not in the feed.
+ */
+export function fetchPublishedArticles(age: number): Promise<KidArticle[]> {
+  return getJson<KidArticle[]>(`/api/articles?age=${encodeURIComponent(age)}`);
 }
 
-export function fetchArticle(id: string): Promise<KidArticle> {
-  return getJson<KidArticle>(`/api/articles/${encodeURIComponent(id)}`);
+/** The id names one version; the reader gets that story at their age. */
+export function fetchArticle(id: string, age: number): Promise<KidArticle> {
+  return getJson<KidArticle>(
+    `/api/articles/${encodeURIComponent(id)}?age=${encodeURIComponent(age)}`,
+  );
 }

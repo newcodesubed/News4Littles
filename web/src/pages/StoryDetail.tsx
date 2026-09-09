@@ -4,6 +4,7 @@ import { StoryPreview } from '../components/StoryPreview';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { fetchArticle } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
+import { useSettings } from '../settings/SettingsContext';
 
 function BackLink() {
   return (
@@ -19,7 +20,10 @@ function BackLink() {
 /** Story detail — PRD §3.4. The rendering itself lives in StoryPreview. */
 export function StoryDetail() {
   const { id = '' } = useParams();
-  const state = useAsync(() => fetchArticle(id), [id]);
+  // The slider must keep working one click deeper: the id names one version,
+  // and the reader gets that story at their age (§6).
+  const { readingAge } = useSettings();
+  const state = useAsync(() => fetchArticle(id, readingAge), [id, readingAge]);
 
   if (state.status === 'loading') {
     return (

@@ -33,32 +33,40 @@ export function createArticleBulkRouter(db: Database): Router {
     const outcome: BulkOutcome = { applied: [], skipped: [] };
 
     db.transaction(() => {
+      // §5: actions are story-scoped, so several selected versions of one story
+      // are one action. Deduplicated by originalId, or a story with ten
+      // versions selected would be reported as ten approvals.
+      const done = new Set<string>();
+
       for (const id of ids) {
-        const state = articles.findState(id);
+        const state = articles.findStoryState(id);
         if (!state) {
           outcome.skipped.push({ id, reason: 'not found' });
           continue;
         }
+        if (done.has(state.originalId)) continue;
 
         if (action === 'approve') {
           // §4.2: bulk approve must leave skip-young out unless the editor
-          // explicitly opted in.
+          // explicitly opted in — judged on the story's STRICTEST version, so
+          // selecting a calm age-14 row cannot publish a skip-young age-5 one.
           if (state.safety === 'skip-young' && !includeFlagged) {
             outcome.skipped.push({ id, reason: 'flagged skip-young' });
             continue;
           }
-          articles.publish(id, now);
+          articles.publishStory(id, now);
         } else if (action === 'reject') {
-          articles.reject(id, reason);
+          articles.rejectStory(id, reason);
         } else {
           // §4.2: delete only for non-published items.
           if (state.status === 'published') {
             outcome.skipped.push({ id, reason: 'published — unpublish first' });
             continue;
           }
-          articles.remove(id);
+          articles.removeStory(id);
         }
 
+        done.add(state.originalId);
         outcome.applied.push(id);
       }
     })();

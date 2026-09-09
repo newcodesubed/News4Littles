@@ -78,10 +78,23 @@ describe('strictest-wins combinator (§6)', () => {
 });
 
 describe('sentence simplification (§9.2)', () => {
-  it.each([[5, 14], [7, 14], [8, 20], [10, 20], [11, 28], [14, 28]])(
+  it.each([[5, 10], [6, 12], [7, 14], [8, 16], [9, 18], [10, 20], [11, 22], [12, 24], [13, 26], [14, 28]])(
     'age %i allows %i words per sentence',
     (age, limit) => expect(maxWordsForAge(age)).toBe(limit),
   );
+
+  it('keeps §9.2’s three stated anchors exactly', () => {
+    // The PRD gives "<=7 -> 14; <=10 -> 20; else 28". age * 2 reproduces all
+    // three at the boundary ages, which is why it is a safe generalisation.
+    expect(maxWordsForAge(7)).toBe(14);
+    expect(maxWordsForAge(10)).toBe(20);
+    expect(maxWordsForAge(14)).toBe(28);
+  });
+
+  it('gives every age its own limit, so ten versions really differ', () => {
+    const limits = Array.from({ length: 10 }, (_, i) => maxWordsForAge(5 + i));
+    expect(new Set(limits).size).toBe(10);
+  });
 
   it('leaves a sentence at exactly the limit untouched', () => {
     // 14 words exactly.

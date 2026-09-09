@@ -2,8 +2,8 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { EditDialog, Modal, RegenerateDialog, RejectDialog } from '../pages/admin/dialogs';
-import type { AdminArticle } from '../admin/types';
+import { EditDialog, Modal, RegenerateDialog, RejectDialog, ViewArticleDialog } from '../pages/admin/dialogs';
+import type { AdminArticle, AdminStory } from '../admin/types';
 
 const BASE: AdminArticle = {
   id: 'a1', originalId: 'r1', ageTarget: 8, kidHeadline: 'A story headline',
@@ -168,5 +168,59 @@ describe('RegenerateDialog (§4.2)', () => {
     expect(onApply).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(onDiscard).toHaveBeenCalled();
+  });
+});
+
+describe('reading every age version before approving (§5)', () => {
+  const story: AdminStory = {
+    originalId: 'raw-1',
+    versions: [
+      article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, kidHeadline: 'Headline for fives', summary: 'Summary for fives.' }),
+      article({ id: 'v9', originalId: 'raw-1', ageTarget: 9, kidHeadline: 'Headline for nines', summary: 'Summary for nines.' }),
+      article({ id: 'v14', originalId: 'raw-1', ageTarget: 14, kidHeadline: 'Headline for fourteens', summary: 'Summary for fourteens.' }),
+    ],
+    safety: 'calm',
+    status: 'pending_review',
+    kidHeadline: 'Headline for fives',
+    category: 'World',
+    sourceId: 'bbc',
+    originalHeadline: 'Original headline',
+    createdAt: '2026-09-04T10:00:00.000Z',
+  };
+
+  const open = () =>
+    render(
+      <ViewArticleDialog
+        story={story}
+        onClose={() => {}}
+        onEdit={() => {}}
+        onPublish={() => {}}
+        onReject={() => {}}
+      />,
+    );
+
+  it('opens on the youngest version', () => {
+    open();
+    expect(screen.getByText('Headline for fives')).toBeInTheDocument();
+  });
+
+  it('offers every age and switches the text', async () => {
+    const user = userEvent.setup();
+    open();
+
+    for (const age of [5, 9, 14]) {
+      expect(screen.getByRole('button', { name: `Age ${age}` })).toBeInTheDocument();
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Age 14' }));
+
+    expect(screen.getByText('Headline for fourteens')).toBeInTheDocument();
+    expect(screen.getByText('Summary for fourteens.')).toBeInTheDocument();
+    expect(screen.queryByText('Headline for fives')).not.toBeInTheDocument();
+  });
+
+  it('says how many versions Publish will approve', () => {
+    open();
+    expect(screen.getByRole('button', { name: /publish all 3/i })).toBeInTheDocument();
   });
 });

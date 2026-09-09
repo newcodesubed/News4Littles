@@ -6,11 +6,20 @@
  */
 import type { VocabEntry } from '../core/article.js';
 
-/** §9.2: "Sentence truncation by age: <=7 -> max 14 words/sentence; <=10 -> 20; else 28." */
+/**
+ * Words per sentence for one reading age.
+ *
+ * §9.2 states three bands: "<=7 -> max 14 words/sentence; <=10 -> 20; else 28".
+ * A story now exists in one version per age (5-14), so three bands would make
+ * ages 5, 6 and 7 byte-identical and the reading-age slider would still change
+ * nothing across most of its travel.
+ *
+ * `age * 2` reproduces all three of §9.2's anchors exactly — 7 -> 14, 10 -> 20,
+ * 14 -> 28 — while giving every age its own limit. Ages below an anchor do get
+ * shorter sentences than before (age 5 goes from 14 to 10), which is the point.
+ */
 export function maxWordsForAge(ageTarget: number): number {
-  if (ageTarget <= 7) return 14;
-  if (ageTarget <= 10) return 20;
-  return 28;
+  return ageTarget * 2;
 }
 
 /**

@@ -117,10 +117,18 @@ describe('safety badge', () => {
 });
 
 describe('published-only (§11.1)', () => {
-  it('home requests published articles only', async () => {
+  it('home does not ask for a status, because the server decides it', async () => {
+    // This used to assert the client sent ?status=published. That guarantee
+    // moved into the server: the public endpoint hardcodes published-only in
+    // SQL, because a status parameter made §2.2's promise depend on whichever
+    // caller happened to ask. Enforced now in server/tests/public-api.test.ts.
     renderHome([article()]);
     await waitFor(() => expect(fetch).toHaveBeenCalled());
-    expect(vi.mocked(fetch).mock.calls[0][0]).toContain('status=published');
+
+    const requested = String(vi.mocked(fetch).mock.calls[0][0]);
+    expect(requested).not.toContain('status=');
+    // What it does send is the reader's age (§6).
+    expect(requested).toMatch(/age=\d+/);
   });
 
   it('a story still in review is withheld, headline included', async () => {

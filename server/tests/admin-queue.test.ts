@@ -117,3 +117,85 @@ describe('admin rows carry the extras the queue needs', () => {
     expect(article.originalHeadline).toBe('A hand typed original headline');
   });
 });
+
+describe('story-level reads (§5)', () => {
+  it('returns one row per story with every version nested', async () => {
+    const raw = insertRawArticle(ctx.db, {
+      id: 'story-raw', headline: 'Adult headline', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    for (const age of [5, 6, 7]) {
+      insertKidArticle(ctx.db, {
+        id: `v-${age}`, originalId: raw, ageTarget: age, status: 'pending_review',
+        kidHeadline: `Version for ${age}`, createdAt: '2026-09-06T10:00:00.000Z',
+      });
+    }
+
+    const body = await (await ctx.api('/api/admin/stories?status=pending_review')).json();
+    const story = body.stories.find((s: any) => s.originalId === raw);
+
+    expect(story.versions).toHaveLength(3);
+    expect(story.versions.map((v: any) => v.ageTarget)).toEqual([5, 6, 7]);
+    // Labelled by the youngest version.
+    expect(story.kidHeadline).toBe('Version for 5');
+    expect(story.originalHeadline).toBe('Adult headline');
+  });
+
+  it('reports the strictest safety across a story’s versions', async () => {
+    const raw = insertRawArticle(ctx.db, {
+      id: 'mixed-raw', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    insertKidArticle(ctx.db, { id: 'mixed-5', originalId: raw, ageTarget: 5, safety: 'skip-young' });
+    insertKidArticle(ctx.db, { id: 'mixed-14', originalId: raw, ageTarget: 14, safety: 'calm' });
+
+    const body = await (await ctx.api('/api/admin/stories?status=pending_review')).json();
+    const story = body.stories.find((s: any) => s.originalId === raw);
+
+    // §6: the strictest wins. Showing 'calm' here would hide a skip-young
+    // version from the editor about to approve the whole story.
+    expect(story.safety).toBe('skip-young');
+  });
+
+  it('returns a whole story when any one version matches the filter', async () => {
+    const raw = insertRawArticle(ctx.db, {
+      id: 'agefilter-raw', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    insertKidArticle(ctx.db, { id: 'af-5', originalId: raw, ageTarget: 5 });
+    insertKidArticle(ctx.db, { id: 'af-14', originalId: raw, ageTarget: 14 });
+
+    const body = await (await ctx.api('/api/admin/stories?ageTarget=14')).json();
+    const story = body.stories.find((s: any) => s.originalId === raw);
+
+    // Filtered on age 14, but both versions come back: the editor reviews the
+    // whole story, not the one version that matched.
+    expect(story.versions.map((v: any) => v.ageTarget)).toEqual([5, 14]);
+  });
+
+  it('counts stories, not versions', async () => {
+    const raw = insertRawArticle(ctx.db, {
+      id: 'counted-raw', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    for (const age of [5, 6, 7, 8]) {
+      insertKidArticle(ctx.db, { id: `c-${age}`, originalId: raw, ageTarget: age, status: 'rejected' });
+    }
+
+    const counts = await (await ctx.api('/api/admin/articles/counts')).json();
+
+    // Asserted as a relationship rather than a literal: this file uses
+    // beforeAll, so row counts depend on test order, and a literal here would
+    // break every time a test is added above it.
+    const versionRows = ctx.db
+      .prepare(`SELECT COUNT(*) c FROM kid_articles WHERE status = 'rejected'`).pluck().get();
+    const storyRows = ctx.db
+      .prepare(`SELECT COUNT(DISTINCT originalId) c FROM kid_articles WHERE status = 'rejected'`)
+      .pluck().get();
+
+    // The fixture above makes these differ, which is what makes the test mean
+    // something: four versions, one story.
+    expect(versionRows).toBeGreaterThan(storyRows as number);
+    expect(counts.rejected).toBe(storyRows);
+  });
+
+  it('needs admin auth', async () => {
+    expect((await ctx.anon('/api/admin/stories')).status).toBe(401);
+  });
+});

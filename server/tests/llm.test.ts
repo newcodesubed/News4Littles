@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenRouterClient, stripCodeFence } from '../src/llm/openRouterClient.js';
 import { parseLlmContent, renderPrompt, selectPrompt, LlmResponseError } from '../src/llm/llmSimplifier.js';
-import { simplifyArticle } from '../src/pipeline/simplifyArticle.js';
+import { simplifyArticle, simplifyArticleForAllAges } from '../src/pipeline/simplifyArticle.js';
 import { AGE_6_SIMPLIFICATION_PROMPT, GENERIC_SIMPLIFICATION_PROMPT } from '../src/db/seed-prompts.js';
 import { createTestContext, type TestContext } from './helpers.js';
 
@@ -348,5 +348,223 @@ describe('the seeded prompts must keep their safety criteria', () => {
   it('generic prompt forbids proper nouns as vocabulary', () => {
     // It picked "Volkswagen, Audi, Porsche, Skoda" as words to know.
     expect(GENERIC_SIMPLIFICATION_PROMPT).toContain('Never proper');
+  });
+});
+
+describe('sharing one prompt-guard verdict across ages', () => {
+  let ctx: TestContext;
+  beforeEach(() => { ctx = createTestContext(); });
+  afterEach(() => ctx.close());
+
+  const RAW_INPUT = {
+    id: 'r1', headline: 'A reef was surveyed', body: 'A rover surveyed the reef today.',
+    topic: 'World', sourceName: 'BBC News', sourceUrl: 'https://example.com/a',
+  };
+
+  const GOOD_REPLY = JSON.stringify({
+    kidHeadline: 'A reef was looked at', summary: 'Divers looked at a reef.',
+    whatHappened: 'They went down deep.', whyItMatters: 'Reefs matter.',
+    thinkAbout: 'What lives on a reef?', safety: 'calm', readingMinutes: 2,
+    vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
+  });
+
+  /** Counts how many completions the client is asked for. */
+  function countingClient(reply: string) {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: reply } }],
+          usage: { total_tokens: 10 },
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    return {
+      client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
+      calls: () => calls,
+    };
+  }
+
+  const enableGuard = () =>
+    ctx.db.prepare(
+      `UPDATE guard_config SET promptGuardEnabled = 1, promptGuardText = 'Classify: {{body}}'
+       WHERE id = 'default'`,
+    ).run();
+
+  it('makes its own guard call when none is supplied', async () => {
+    enableGuard();
+    const { client, calls } = countingClient(GOOD_REPLY);
+
+    await simplifyArticle(ctx.db, RAW_INPUT, { ageTarget: 8, client });
+
+    // One guard call plus one simplification call.
+    expect(calls()).toBe(2);
+  });
+
+  it('uses a supplied verdict instead of calling the guard again', async () => {
+    enableGuard();
+    const { client, calls } = countingClient(GOOD_REPLY);
+
+    const outcome = await simplifyArticle(ctx.db, RAW_INPUT, {
+      ageTarget: 8,
+      client,
+      promptGuard: {
+        ok: true, raw: 'skip', result: { guard: 'prompt-guard', safety: 'skip-young', matches: [] },
+      },
+    });
+
+    // Only the simplification call. Ten ages sharing one verdict is the point.
+    expect(calls()).toBe(1);
+    // And the supplied verdict still counts as a guard: strictest wins (§6).
+    expect(outcome.article.safety).toBe('skip-young');
+  });
+});
+
+describe('simplifyArticleForAllAges', () => {
+  let ctx: TestContext;
+  beforeEach(() => { ctx = createTestContext(); });
+  afterEach(() => ctx.close());
+
+  const RAW_INPUT = {
+    id: 'r1', headline: 'A reef was surveyed', body: 'A rover surveyed the reef today.',
+    topic: 'World', sourceName: 'BBC News', sourceUrl: 'https://example.com/a',
+  };
+
+  const reply = (headline: string) => JSON.stringify({
+    kidHeadline: headline, summary: 'Divers looked at a reef.',
+    whatHappened: 'They went down deep.', whyItMatters: 'Reefs matter.',
+    thinkAbout: 'What lives on a reef?', safety: 'calm', readingMinutes: 2,
+    vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
+  });
+
+  /**
+   * A client whose reply is decided by the PROMPT it receives, not by the call
+   * index: a 500 is transient, so the client retries it and a call-index rule
+   * would see the retry succeed. Keying on the prompt fails every attempt for
+   * that age, which is what "this age fell back" actually means.
+   *
+   * `usage.cost` is set because that is the only field costUsd is read from.
+   */
+  function scriptedClient(replyFor: (prompt: string) => { ok: boolean; body: string }) {
+    let calls = 0;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      calls += 1;
+      const prompt = JSON.parse(String(init.body)).messages[0].content as string;
+      const { ok, body } = replyFor(prompt);
+      return {
+        ok,
+        status: ok ? 200 : 500,
+        json: async () =>
+          ok
+            ? {
+                choices: [{ message: { content: body } }],
+                usage: { total_tokens: 10, cost: 0.00002 },
+              }
+            : { error: { message: body } },
+      };
+    }) as unknown as typeof fetch;
+
+    return {
+      client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
+      calls: () => calls,
+    };
+  }
+
+  it('returns one version per age, in ascending age order', async () => {
+    const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+
+    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+
+    expect(outcome.versions).toHaveLength(10);
+    expect(outcome.versions.map((v) => v.article.ageTarget)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(outcome.versions.every((v) => v.article.status === 'pending_review')).toBe(true);
+    expect(outcome.versions.every((v) => v.article.publishedAt === null)).toBe(true);
+  });
+
+  it('gives every version its own id but the same originalId source', async () => {
+    const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+
+    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+
+    const ids = outcome.versions.map((v) => v.article.id);
+    expect(new Set(ids).size).toBe(10);
+    expect(outcome.versions.every((v) => v.article.originalId === 'r1')).toBe(true);
+  });
+
+  it('runs the prompt guard once, not once per age', async () => {
+    ctx.db.prepare(
+      `UPDATE guard_config SET promptGuardEnabled = 1, promptGuardText = 'Classify: {{body}}'
+       WHERE id = 'default'`,
+    ).run();
+    const { client, calls } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+
+    await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+
+    // One guard call + ten simplification calls. Eleven, not twenty.
+    expect(calls()).toBe(11);
+  });
+
+  it('falls back only for the age whose call failed', async () => {
+    // Every attempt for age 7 fails; the other nine ages succeed. The seeded
+    // generic prompt renders "{{age}}-year-old", so the age is in the prompt.
+    const { client } = scriptedClient((prompt) =>
+      prompt.includes('7-year-old')
+        ? { ok: false, body: 'upstream exploded' }
+        : { ok: true, body: reply('A kid headline') },
+    );
+
+    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+
+    const engines = new Map(outcome.versions.map((v) => [v.article.ageTarget, v.engine]));
+    expect(engines.get(7)).toBe('local-fallback');
+    expect(engines.get(6)).toBe('llm');
+    expect(engines.get(8)).toBe('llm');
+    // The reason names the age, so a reviewer knows which version is weaker.
+    expect(outcome.fallbacks.some((reason) => reason.includes('age 7'))).toBe(true);
+    expect(outcome.fallbacks).toHaveLength(1);
+  });
+
+  it('sums the cost across every version', async () => {
+    const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+
+    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+
+    expect(outcome.costUsd).toBeGreaterThan(0);
+  });
+
+  it('uses each age’s own prompt when one is configured', async () => {
+    ctx.db.prepare(
+      `UPDATE translation_prompt_config
+         SET genericPrompt = 'GENERIC for {{age}}: {{body}}',
+             ageOverrides = '{"9":"AGE NINE ONLY: {{body}}"}'
+       WHERE id = 'default'`,
+    ).run();
+
+    const prompts: string[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      prompts.push(JSON.parse(String(init.body)).messages[0].content);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: reply('A kid headline') } }],
+          usage: { total_tokens: 10 },
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    await simplifyArticleForAllAges(ctx.db, RAW_INPUT, {
+      client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
+    });
+
+    expect(prompts.filter((p) => p.includes('AGE NINE ONLY'))).toHaveLength(1);
+    expect(prompts.filter((p) => p.includes('GENERIC for'))).toHaveLength(9);
+    // The generic prompt is rendered with each age, not a single default.
+    expect(prompts.some((p) => p.includes('GENERIC for 5'))).toBe(true);
+    expect(prompts.some((p) => p.includes('GENERIC for 14'))).toBe(true);
   });
 });

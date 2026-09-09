@@ -36,6 +36,7 @@ function report(result: ScrapeResult): void {
   console.log(`  skipped (unusable)   ${result.skippedUnusable}`);
   console.log(`  STORED (raw)         ${result.inserted}`);
   console.log(`  SIMPLIFIED           ${result.simplified.length}`);
+  console.log(`  VERSIONS             ${result.versionsCreated}`);
   console.log(`  still waiting        ${result.leftWaiting}`);
   console.log(`  cursor now at        ${result.newestItemPublishedAt ?? '(none)'}`);
 
@@ -92,11 +93,13 @@ async function main(): Promise<void> {
 
     const inserted = results.reduce((total, r) => total + r.inserted, 0);
     const simplified = results.reduce((total, r) => total + r.simplified.length, 0);
+    const versions = results.reduce((total, r) => total + r.versionsCreated, 0);
     const failed = results.filter((r) => !r.ok);
 
     console.log('─'.repeat(78));
     console.log(
-      `Total stored: ${inserted}   Simplified: ${simplified}   Sources failed: ${failed.length}`,
+      `Total stored: ${inserted}   Simplified: ${simplified} stories / ${versions} versions   ` +
+        `Sources failed: ${failed.length}`,
     );
     console.log('Everything simplified is status = pending_review (§5.2 step 7).');
 

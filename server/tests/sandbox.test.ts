@@ -192,9 +192,19 @@ describe('POST /prompts/test — §7.4: writes nothing', () => {
 
   it('reports the words-per-sentence check against the age limit (§7.3)', async () => {
     const body = await (await post('/api/admin/prompts/test', testBody({ age: 6 }))).json();
-    expect(body.draft.validation.ageLimit).toBe(14);
+    // age * 2: every reading age has its own limit now that a story exists in
+    // one version per age. Age 6 is 12, where the old three-band rule said 14.
+    expect(body.draft.validation.ageLimit).toBe(12);
     expect(typeof body.draft.validation.longestSentenceWords).toBe('number');
     expect(typeof body.draft.validation.withinAgeLimit).toBe('boolean');
+  });
+
+  it('reports a different limit for a different age, proving it honours the age', async () => {
+    const younger = await (await post('/api/admin/prompts/test', testBody({ age: 5 }))).json();
+    const older = await (await post('/api/admin/prompts/test', testBody({ age: 14 }))).json();
+
+    expect(younger.draft.validation.ageLimit).toBe(10);
+    expect(older.draft.validation.ageLimit).toBe(28);
   });
 
   it('comparison mode returns both runs (§7.3)', async () => {

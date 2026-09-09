@@ -22,6 +22,19 @@ const ARTICLE = {
   publishedAt: null, sourceId: 'bbc', originalHeadline: 'Original',
 };
 
+/** The one-version story shape the grouped queue reads (§5). */
+const storyOf = (a: typeof ARTICLE) => ({
+  originalId: a.originalId,
+  versions: [a],
+  safety: a.safety,
+  status: a.status,
+  kidHeadline: a.kidHeadline,
+  category: a.category,
+  sourceId: a.sourceId,
+  originalHeadline: a.originalHeadline,
+  createdAt: a.createdAt,
+});
+
 const SOURCES = [{
   id: 'bbc', name: 'BBC News', url: 'https://feeds.example/rss', enabled: true,
   trustLevel: 'high', parser: 'rss', lastFetchedAt: null,
@@ -49,6 +62,8 @@ function serveThenGoOffline() {
       if (path.includes('/guard-config')) return body({ denyList: ['war'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '' });
       if (path.includes('/prompt-config')) return body({ genericPrompt: 'p', ageOverrides: {}, versions: {}, inertUntilLlm: true });
       if (path.includes('/app-settings')) return body({ defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, apiKeyLocation: 'env' });
+      // §5: the queue reads stories, not versions.
+      if (path.includes('/stories')) return body({ stories: [storyOf(ARTICLE)], total: 1 });
       return body({ articles: [ARTICLE], total: 1 });
     }
 
@@ -144,8 +159,8 @@ describe('a server error, as opposed to no server', () => {
 
       if (path.includes('/counts')) return body({ pending_review: 1, published: 0, rejected: 0, total: 1 });
       if (path.includes('/filters')) return body({ categories: [], sources: [], ageTargets: [] });
-      if (path.includes('/api/admin/articles?') && first) { first = false; return body({ articles: [ARTICLE], total: 1 }); }
-      if (path.includes('/api/admin/articles?')) return body({ articles: [ARTICLE], total: 1 });
+      if (path.includes('/api/admin/stories?') && first) { first = false; return body({ stories: [storyOf(ARTICLE)], total: 1 }); }
+      if (path.includes('/api/admin/stories?')) return body({ stories: [storyOf(ARTICLE)], total: 1 });
       return body({ error: 'Published articles cannot be deleted.' }, false, 409);
     }));
 

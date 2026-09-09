@@ -59,7 +59,7 @@ Everything under `/admin` needs the admin password.
 
 | Route             | What it is                                                               |
 | ----------------- | ------------------------------------------------------------------------ |
-| `/admin/review`   | The review queue. Read, approve, reject, edit, regenerate, delete        |
+| `/admin/review`   | The review queue — one row per story, every reading age approved together |
 | `/admin/submit`   | Paste an article by hand and simplify it                                 |
 | `/admin/settings` | Sources, guardrails, prompts, app defaults, and **Run now** scraping     |
 | `/admin/sandbox`  | Edit a prompt and see what it does to a real article before promoting it |
@@ -71,11 +71,13 @@ Everything under `/admin` needs the admin password.
 ```
 BBC RSS feed ─┐                  first 10 per run
               ├─→ raw_articles ─┬─→ guard + simplify ─→ kid_articles
-paste by hand ┘                 │                        (pending_review)
+paste by hand ┘                 │   (once per age, 5-14)  (10 versions,
+                                │                          pending_review)
                                 │                             │
                                 │                 an editor approves it
                                 │                             ↓
                                 │                        published → the site
+                                │                          (at the reader's age)
                                 └─→ the rest wait, unsimplified and free,
                                     under "Not yet simplified" in /admin/review
 ```
@@ -151,6 +153,75 @@ This diverges from PRD §5.2, which runs steps 4–7 as a single pass over every
 item. Steps 1–5 live in `ingestion/rssScraper.ts`; steps 6–7 moved to
 `services/simplifyService.ts`.
 
+### One version per reading age
+
+A story is rewritten once for **every reading age from 5 to 14**, so the
+reading-age slider on `/settings` selects real content rather than relabelling
+a single version. Ten `kid_articles` rows share one `originalId`, one per
+`ageTarget`.
+
+Each age gets its own model call, using that age's prompt override if one
+exists and the generic prompt with `{{age}}` substituted otherwise
+(`selectPrompt`, §9.1). So a budget of 10 stories is **100 model calls**, about
+$0.87 a month on the default model, and a run takes a few minutes rather than
+seconds.
+
+A combined single call would have cost about $0.47 a month, but every stored
+prompt template embeds the article and its own JSON envelope — combining them
+would mean sending the article ten times or mangling the templates. Forty cents
+a month was not worth losing per-age prompt control or the sandbox's fidelity
+to production (§7.4).
+
+Failures are per age: if the age-7 call fails, age 7 falls back to the
+rule-based pipeline (§9.2) and the other nine keep their model versions.
+
+**The queue is grouped by story.** One row covers all ten versions, and its
+safety badge shows the strictest verdict across them — a story that is
+`skip-young` at age 5 never presents as `calm` because age 14 is. **View**
+opens every version behind an age selector, because §2.2 promises a human read
+every word a child sees and one Publish covers all ten.
+
+Publish, reject, re-review and delete are **story-scoped**: they take any one
+version's id and apply to every version of that story, so a story's versions
+always share one status. The endpoint URLs are unchanged from when a story had
+one version — `PATCH /api/admin/articles/:id/publish` now publishes the story
+that id belongs to. **Edit is the exception** and stays per-version, so one
+age's wording can be fixed without touching the other nine, and
+`editedByHuman` stays a per-version flag.
+
+Bulk approve still excludes `skip-young` unless you opt in, and that check uses
+the story's strictest version — selecting a calm age-14 row cannot publish a
+skip-young age-5 one.
+
+Tab counts show stories, not versions, so Pending reads 10 where you have ten
+stories to read rather than 100.
+
+**The slider on `/settings` picks the text.** `GET /api/articles?age=N` returns
+the version of each story that was **written for age N** — an exact match, no
+nearest-age guessing. A story exists in one version per age, so a missing age
+means it was never simplified for that reader, and it is simply absent from the
+feed. Showing a five-year-old an age-12 rewrite is worse than showing nothing.
+`GET /api/articles/:id?age=N` applies the same rule inside one story, so the
+slider keeps working after a reader has opened something, and 404s for an age
+the story does not have — consistent with the feed, which would not have
+offered it.
+
+An absent, non-numeric or out-of-range `age` falls back to
+`app_settings.defaultAge` rather than erroring — this is the path a child's
+browser hits, and answering beats a 400 because a query string was odd. The
+status filter stays hardcoded regardless.
+
+A story simplified before this feature has one version, at whatever the default
+age was then, so it appears only at that age. Re-simplify it to give it all ten.
+
+The §6 guards run **once per story** — they judge the source article, which does
+not vary by age — so the prompt guard costs one call, not ten.
+
+Without an API key the rule-based pipeline handles every age, using
+`age * 2` words per sentence. That reproduces §9.2's three stated anchors
+exactly (7 → 14, 10 → 20, 14 → 28) while giving every age its own limit, so the
+slider still changes the text offline.
+
 ---
 
 ## Turning on the LLM
@@ -181,10 +252,10 @@ cd server
 npm run llm:check    # runs 3 real articles through both paths and reports the cost
 ```
 
-Roughly **$0.0002 per article** on the default model. A run costs the
-simplification budget, not the size of the feed, so the default of 10 is about
-$0.002 a day however much the feeds publish. Several guards keep it that way —
-the budget in `/admin/settings`, and these in `.env`:
+Roughly **$0.0002 per article version** on the default model. A run costs the
+budget times ten, because each story is rewritten for every reading age — so
+the default of 10 stories is 100 calls, about $0.03 a day. Several guards keep
+it that way — the budget in `/admin/settings`, and these in `.env`:
 
 | Setting              | Default                        | Why                                                                     |
 | -------------------- | ------------------------------ | ----------------------------------------------------------------------- |
@@ -278,13 +349,13 @@ already has rows in it.
 | ----------------------------------- | --------------------------------------------------------- |
 | `sources`                           | Feeds to scrape, plus a `manual` row for hand submissions |
 | `raw_articles`                      | Original articles as fetched; `simplifiedAt` NULL means still waiting |
-| `kid_articles`                      | Rewritten stories and their review status                 |
+| `kid_articles`                      | Rewritten stories, one row per reading age, and their review status |
 | `guard_config`                      | Deny-list and the safety-guard prompt                     |
 | `translation_prompt_config`         | Live simplification prompts                               |
 | `prompt_drafts` / `prompt_versions` | Sandbox drafts and promotion history                      |
 | `app_settings`                      | Default reading age, scrape times, simplification budget, LLM provider |
 | `admin_users`                       | The single admin account (bcrypt)                         |
-| `scrape_runs`                       | What each scrape stored, simplified and left raw          |
+| `scrape_runs`                       | What each scrape stored, simplified, versioned and left raw |
 
 Some constraints are load-bearing rather than decorative: a `published` row must
 have a `publishedAt`; deleting a source with stored articles is refused (disable

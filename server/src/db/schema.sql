@@ -287,6 +287,7 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
   itemsInFeed          INTEGER NOT NULL DEFAULT 0,
   inserted             INTEGER NOT NULL DEFAULT 0,             -- raw articles stored
   simplified           INTEGER NOT NULL DEFAULT 0,             -- of those, how many were simplified
+  versions             INTEGER NOT NULL DEFAULT 0,             -- age versions written across those stories
   leftWaiting          INTEGER NOT NULL DEFAULT 0,             -- this source's raws still waiting after the run
   skippedNotNew        INTEGER NOT NULL DEFAULT 0,
   skippedAlreadyStored INTEGER NOT NULL DEFAULT 0,

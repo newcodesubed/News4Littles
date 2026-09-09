@@ -47,6 +47,8 @@ export interface ScrapeRun {
   inserted: number;
   /** Of what the run stored, how many were simplified. */
   simplified: number;
+  /** Age versions written across those stories. */
+  versions: number;
   /** This source's raws still waiting when the run finished. */
   leftWaiting: number;
   skippedNotNew: number;

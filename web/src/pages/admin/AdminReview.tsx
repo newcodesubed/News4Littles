@@ -5,13 +5,14 @@ import { useAdminAction } from '../../admin/useAdminAction';
 import { Notice } from '../../ui/Surface';
 import {
   EMPTY_FILTERS, toQueryString,
-  type AdminArticle, type BulkResult, type Filters, type FilterOptions, type StatusCounts,
+  type AdminArticle, type AdminStory, type BulkResult, type Filters, type FilterOptions,
+  type StatusCounts,
 } from '../../admin/types';
 import {
   ConfirmDialog, EditDialog, RegenerateDialog, RejectDialog, ViewArticleDialog,
   type Confirmation,
 } from './dialogs';
-import { ArticleRow, type PendingAction } from './review/ArticleRow';
+import { StoryRow, type PendingAction } from './review/StoryRow';
 import { BulkBar, SkippedReport } from './review/BulkBar';
 import { FilterBar } from './review/FilterBar';
 import { WaitingPanel } from './review/WaitingPanel';
@@ -35,7 +36,7 @@ export function AdminReview() {
 
   const [tab, setTab] = useState<TabKey>('pending_review');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [articles, setArticles] = useState<AdminArticle[]>([]);
+  const [stories, setStories] = useState<AdminStory[]>([]);
   const [counts, setCounts] = useState<StatusCounts | null>(null);
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -46,7 +47,7 @@ export function AdminReview() {
 
   const [rejecting, setRejecting] = useState<AdminArticle | null>(null);
   const [editing, setEditing] = useState<AdminArticle | null>(null);
-  const [viewing, setViewing] = useState<AdminArticle | null>(null);
+  const [viewing, setViewing] = useState<AdminStory | null>(null);
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
   /** Which row is mid-action, so its button can show a spinner. */
   const [pending, setPending] = useState<{ id: string; action: PendingAction } | null>(null);
@@ -75,11 +76,13 @@ export function AdminReview() {
     setLoading(true);
     setError(null);
     try {
-      const listRes = await adminFetch(`/api/admin/articles${query}`);
+      // §5: one row per story. The flat /articles list still exists for the
+      // filter dropdowns, but the queue reviews stories.
+      const listRes = await adminFetch(`/api/admin/stories${query}`);
       if (!listRes.ok) {
         throw new Error(((await listRes.json()) as { error?: string }).error ?? 'Could not load articles.');
       }
-      setArticles(((await listRes.json()) as { articles: AdminArticle[] }).articles);
+      setStories(((await listRes.json()) as { stories: AdminStory[] }).stories);
       await loadCounts();
       setSelected(new Set());
     } catch (caught: unknown) {
@@ -167,8 +170,13 @@ export function AdminReview() {
       return next;
     });
 
-  const allSelected = articles.length > 0 && selected.size === articles.length;
-  const flaggedSelectedCount = articles.filter((a) => selected.has(a.id) && a.safety === 'skip-young').length;
+  const allSelected =
+    stories.length > 0 && stories.every((story) => selected.has(story.versions[0].id));
+  // The story's strictest safety, so the bulk bar's warning matches what the
+  // server will actually refuse to publish.
+  const flaggedSelectedCount = stories.filter(
+    (story) => selected.has(story.versions[0].id) && story.safety === 'skip-young',
+  ).length;
 
   return (
     <div className="container max-w-6xl py-10">
@@ -243,53 +251,67 @@ export function AdminReview() {
                 <input
                   type="checkbox"
                   checked={allSelected}
-                  disabled={articles.length === 0}
-                  onChange={(e) => setSelected(e.target.checked ? new Set(articles.map((a) => a.id)) : new Set())}
+                  disabled={stories.length === 0}
+                  onChange={(e) =>
+                    setSelected(e.target.checked ? new Set(stories.map((s) => s.versions[0].id)) : new Set())
+                  }
                 />
-                Select all {articles.length > 0 && `(${articles.length} shown)`}
+                Select all {stories.length > 0 && `(${stories.length} shown)`}
               </label>
-              <span className="text-sm text-muted-foreground">{articles.length} result(s)</span>
+              <span className="text-sm text-muted-foreground">{stories.length} result(s)</span>
             </div>
 
-            {articles.length === 0 ? (
+            {stories.length === 0 ? (
               <p className="rounded-3xl border border-border bg-card px-6 py-14 text-center text-muted-foreground">
                 Nothing matches these filters.
               </p>
             ) : (
               <div className="space-y-3">
-                {articles.map((article) => (
-                  <ArticleRow
-                    key={article.id}
-                    article={article}
-                    selected={selected.has(article.id)}
-                    onSelectedChange={(isSelected) => toggleSelected(article.id, isSelected)}
-                    pending={pending?.id === article.id ? pending.action : null}
-                    locked={pending !== null}
-                    actions={{
-                      onView: () => setViewing(article),
-                      onPublish: () => void runRowAction(article.id, 'publish',
-                        `/api/admin/articles/${article.id}/publish`, { method: 'PATCH' }, 'Published.'),
-                      onReject: () => setRejecting(article),
-                      onUnpublish: () => void runRowAction(article.id, 'unpublish',
-                        `/api/admin/articles/${article.id}/unpublish`, { method: 'PATCH' }, 'Moved back to pending review.'),
-                      onEdit: () => setEditing(article),
-                      onRegenerate: () => void openRegenerate(article),
-                      onDelete: () => setConfirming({
-                        title: 'Delete this story?',
-                        body: (
-                          <>
-                            <strong>{article.kidHeadline}</strong> will be removed for good. The
-                            original article stays, so it can be simplified again later.
-                          </>
-                        ),
-                        confirmLabel: 'Delete',
-                        tone: 'danger',
-                        onConfirm: () => void runRowAction(article.id, 'delete',
-                          `/api/admin/articles/${article.id}`, { method: 'DELETE' }, 'Deleted.'),
-                      }),
-                    }}
-                  />
-                ))}
+                {stories.map((story) => {
+                  // Any version resolves to the story server-side; the youngest
+                  // is the deterministic choice.
+                  const id = story.versions[0].id;
+                  return (
+                    <StoryRow
+                      key={story.originalId}
+                      story={story}
+                      selected={selected.has(id)}
+                      onSelectedChange={(isSelected) => toggleSelected(id, isSelected)}
+                      pending={pending?.id === id ? pending.action : null}
+                      locked={pending !== null}
+                      actions={{
+                        onView: () => setViewing(story),
+                        onPublish: () => void runRowAction(id, 'publish',
+                          `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published every age version.'),
+                        onReject: () => setRejecting(story.versions[0]),
+                        onUnpublish: () => void runRowAction(id, 'unpublish',
+                          `/api/admin/articles/${id}/unpublish`, { method: 'PATCH' }, 'Moved back to pending review.'),
+                        onEdit: () => setEditing(story.versions[0]),
+                        onRegenerate: () => void openRegenerate(story.versions[0]),
+                        onDelete: () => setConfirming({
+                          // Names the count only when there is more than one:
+                          // "Delete all 1 versions" reads like a bug.
+                          title: story.versions.length > 1
+                            ? `Delete all ${story.versions.length} versions of this story?`
+                            : 'Delete this story?',
+                          body: (
+                            <>
+                              <strong>{story.kidHeadline}</strong> will be removed for good
+                              {story.versions.length > 1 ? ', at every reading age' : ''}. The original
+                              article stays, so it can be simplified again later.
+                            </>
+                          ),
+                          confirmLabel: story.versions.length > 1
+                            ? `Delete ${story.versions.length}`
+                            : 'Delete',
+                          tone: 'danger',
+                          onConfirm: () => void runRowAction(id, 'delete',
+                            `/api/admin/articles/${id}`, { method: 'DELETE' }, 'Deleted every version.'),
+                        }),
+                      }}
+                    />
+                  );
+                })}
               </div>
             )}
           </>
@@ -300,12 +322,12 @@ export function AdminReview() {
 
       {viewing && (
         <ViewArticleDialog
-          article={viewing}
+          story={viewing}
           onClose={() => setViewing(null)}
-          onEdit={() => { setEditing(viewing); setViewing(null); }}
-          onReject={() => { setRejecting(viewing); setViewing(null); }}
+          onEdit={() => { setEditing(viewing.versions[0]); setViewing(null); }}
+          onReject={() => { setRejecting(viewing.versions[0]); setViewing(null); }}
           onPublish={() => {
-            const { id } = viewing;
+            const { id } = viewing.versions[0];
             setViewing(null);
             void runRowAction(id, 'publish', `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published.');
           }}

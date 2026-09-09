@@ -23,7 +23,16 @@ const BASE: AdminArticle = {
   createdAt: '2026-09-04T10:00:00.000Z', publishedAt: null,
   sourceId: 'bbc', originalHeadline: 'Original adult headline',
 };
-const article = (o: Partial<AdminArticle> = {}): AdminArticle => ({ ...BASE, ...o });
+/**
+ * A fixture article. `originalId` defaults to one derived from the id, so each
+ * article is its own STORY unless a test deliberately groups several under one
+ * originalId — which is what the §5 grouping tests do.
+ */
+const article = (o: Partial<AdminArticle> = {}): AdminArticle => ({
+  ...BASE,
+  originalId: `raw-${o.id ?? BASE.id}`,
+  ...o,
+});
 
 let articles: AdminArticle[] = [];
 let bulkBody: any = null;
@@ -53,14 +62,36 @@ function mockApi() {
     if (path.includes('/regenerate')) {
       return json({ current: articles[0], generated: { ...articles[0], kidHeadline: 'Regenerated headline', summary: 'New summary.' } });
     }
+    if (path.includes('/api/admin/stories')) {
+      // Group the flat fixture the way the server does.
+      const byStory = new Map<string, AdminArticle[]>();
+      for (const a of articles) {
+        const list = byStory.get(a.originalId);
+        if (list) list.push(a);
+        else byStory.set(a.originalId, [a]);
+      }
+      const rank: Record<string, number> = { calm: 0, 'adult-nearby': 1, 'skip-young': 2 };
+      const stories = [...byStory.entries()].map(([originalId, versions]) => ({
+        originalId,
+        versions,
+        safety: versions.reduce((w, v) => (rank[v.safety] > rank[w] ? v.safety : w), 'calm' as string),
+        status: versions[0].status,
+        kidHeadline: versions[0].kidHeadline,
+        category: versions[0].category,
+        sourceId: versions[0].sourceId,
+        originalHeadline: versions[0].originalHeadline,
+        createdAt: versions[0].createdAt,
+      }));
+      return json({ stories, total: stories.length });
+    }
     if (path.includes('/api/admin/articles')) return json({ articles, total: articles.length });
     return json({});
   }));
 }
 
-/** The most recent /api/admin/articles list call (counts + filters run in parallel). */
+/** The most recent queue list call (counts + filters run in parallel). */
 const lastListCall = () =>
-  [...calls].reverse().find((c) => c.startsWith('GET /api/admin/articles?')) ?? '';
+  [...calls].reverse().find((c) => c.startsWith('GET /api/admin/stories?')) ?? '';
 
 const renderPage = () => render(
   <MemoryRouter><AdminAuthProvider><AdminReview /></AdminAuthProvider></MemoryRouter>,
@@ -282,5 +313,49 @@ describe('auth', () => {
     const call = vi.mocked(fetch).mock.calls[0];
     const headers = (call[1] as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe(`Basic ${btoa('admin:admin123')}`);
+  });
+});
+
+describe('one row per story (§5)', () => {
+  it('shows a single row for a story with several age versions', async () => {
+    articles = [
+      article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, kidHeadline: 'A calm story' }),
+      article({ id: 'v8', originalId: 'raw-1', ageTarget: 8, kidHeadline: 'A calm story' }),
+      article({ id: 'v14', originalId: 'raw-1', ageTarget: 14, kidHeadline: 'A calm story' }),
+    ];
+    renderPage();
+
+    // One row, not three.
+    await waitFor(() => expect(screen.getAllByText('A calm story')).toHaveLength(1));
+    expect(await screen.findByText(/3 reading ages/i)).toBeInTheDocument();
+  });
+
+  it('shows the strictest safety across the versions', async () => {
+    articles = [
+      article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, safety: 'skip-young', feelingNote: 'note' }),
+      article({ id: 'v14', originalId: 'raw-1', ageTarget: 14, safety: 'calm' }),
+    ];
+    renderPage();
+
+    // The editor is about to approve both, so the row must warn about age 5.
+    // SafetyBadge renders the friendly label, not the raw value.
+    expect(await screen.findByText(/Skip for young kids/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Calm$/)).not.toBeInTheDocument();
+  });
+
+  it('sends one version id when approving, and the server applies it to the story', async () => {
+    articles = [
+      article({ id: 'v5', originalId: 'raw-1', ageTarget: 5 }),
+      article({ id: 'v14', originalId: 'raw-1', ageTarget: 14 }),
+    ];
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('A calm story');
+
+    await user.click(screen.getByRole('button', { name: /publish all/i }));
+
+    await waitFor(() => {
+      expect(calls.some((c) => c === 'PATCH /api/admin/articles/v5/publish')).toBe(true);
+    });
   });
 });

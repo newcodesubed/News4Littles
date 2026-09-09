@@ -46,7 +46,7 @@ function Switch({
 
 export function Settings() {
   const { readingAge, setReadingAge, isSourceEnabled, toggleSource } = useSettings();
-  const state = useAsync(fetchPublishedArticles, []);
+  const state = useAsync(() => fetchPublishedArticles(readingAge), [readingAge]);
 
   const sources =
     state.status === 'ready'
@@ -84,6 +84,11 @@ export function Settings() {
           <span>6 (default)</span>
           <span>{MAX_AGE}</span>
         </div>
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Every story is rewritten for each age, so moving this changes the words —
+          shorter sentences and simpler words for younger readers.
+        </p>
       </div>
 
       <div className="bg-card rounded-3xl border border-border p-6 shadow-soft">

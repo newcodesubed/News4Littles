@@ -62,12 +62,29 @@ export function denyListGuard(text: string, denyList: string[]): GuardResult {
   return { guard: 'deny-list', safety, matches };
 }
 
+/**
+ * §6: "the strictest result wins", over bare verdicts.
+ *
+ * The one place that knows the severity order. A story's ten age versions, a
+ * set of guard results and a review-queue row all need "the worst of these",
+ * and three copies of this comparison would be three chances to let a
+ * skip-young story present as calm.
+ *
+ * An empty list is 'calm': no guard said otherwise.
+ */
+export function strictestSafety(safeties: Safety[]): Safety {
+  return safeties.reduce<Safety>(
+    (worst, safety) => (SEVERITY[safety] > SEVERITY[worst] ? safety : worst),
+    'calm',
+  );
+}
+
 /** §6: "all enabled guards; the strictest result wins." */
 export function strictest(results: GuardResult[]): GuardResult {
   if (results.length === 0) {
     return { guard: 'none', safety: 'calm', matches: [] };
   }
-  return results.reduce((worst, current) =>
-    SEVERITY[current.safety] > SEVERITY[worst.safety] ? current : worst,
-  );
+  const worst = strictestSafety(results.map((result) => result.safety));
+  // The first result at the winning level, so its `matches` come with it.
+  return results.find((result) => result.safety === worst) ?? results[0];
 }

@@ -20,7 +20,9 @@ export function LastRunSummary({ run }: { run: ScrapeRun | undefined }) {
   return (
     <span>
       {when} · <strong>{run.inserted}</strong> new
-      {run.simplified > 0 && <>, <strong>{run.simplified}</strong> simplified</>}
+      {run.simplified > 0 && (
+        <>, <strong>{run.simplified}</strong> simplified into <strong>{run.versions}</strong> versions</>
+      )}
       {run.leftWaiting > 0 && `, ${run.leftWaiting} still raw`}
       {run.skippedNotNew > 0 && `, ${run.skippedNotNew} already seen`}
       {run.skippedAlreadyStored > 0 && `, ${run.skippedAlreadyStored} duplicate`}
