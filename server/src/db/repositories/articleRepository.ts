@@ -72,11 +72,17 @@ const ADMIN_SELECT = `
 
 export interface ArticleRepository {
   insert(article: KidArticle): void;
-  findById(id: string): KidArticle | undefined;
+  /**
+   * The public reads. Both hardcode status = 'published' rather than taking it
+   * as an argument: this is the only path a child's browser can reach, and
+   * §2.2 promises a human read every word first. A `status` parameter here is
+   * one forgetful caller away from serving the review queue to the public.
+   */
+  listPublished(): KidArticle[];
+  findPublishedById(id: string): KidArticle | undefined;
   findAdminById(id: string): AdminArticle | undefined;
   /** Status + safety only — enough to decide whether an action is allowed. */
   findState(id: string): { id: string; status: ArticleStatus; safety: Safety } | undefined;
-  listPublic(status?: ArticleStatus): KidArticle[];
   query(query: ArticleQuery): AdminArticle[];
   countsByStatus(): Record<ArticleStatus, number> & { total: number };
   distinctCategories(): string[];
@@ -94,11 +100,14 @@ export interface ArticleRepository {
 export function createArticleRepository(db: Database): ArticleRepository {
   const statements = {
     insert: db.prepare(INSERT_SQL),
-    byId: db.prepare(`SELECT * FROM kid_articles WHERE id = ?`),
     adminById: db.prepare(`${ADMIN_SELECT} WHERE k.id = ?`),
     state: db.prepare(`SELECT id, status, safety FROM kid_articles WHERE id = ?`),
-    allPublic: db.prepare(`SELECT * FROM kid_articles ORDER BY createdAt DESC`),
-    byStatus: db.prepare(`SELECT * FROM kid_articles WHERE status = ? ORDER BY createdAt DESC`),
+    published: db.prepare(
+      `SELECT * FROM kid_articles WHERE status = 'published' ORDER BY createdAt DESC`,
+    ),
+    publishedById: db.prepare(
+      `SELECT * FROM kid_articles WHERE id = ? AND status = 'published'`,
+    ),
     counts: db.prepare(`SELECT status, COUNT(*) AS n FROM kid_articles GROUP BY status`),
     categories: db.prepare(`SELECT DISTINCT category FROM kid_articles ORDER BY category`),
     ages: db.prepare(`SELECT DISTINCT ageTarget FROM kid_articles ORDER BY ageTarget`),
@@ -146,11 +155,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
       statements.insert.run(toKidArticleRow(article));
     },
 
-    findById(id) {
-      const row = statements.byId.get(id) as KidArticleRow | undefined;
-      return row ? toKidArticle(row) : undefined;
-    },
-
     findAdminById(id) {
       const row = statements.adminById.get(id) as AdminArticleRow | undefined;
       return row ? toAdminArticle(row) : undefined;
@@ -162,9 +166,13 @@ export function createArticleRepository(db: Database): ArticleRepository {
         | undefined;
     },
 
-    listPublic(status) {
-      const rows = (status ? statements.byStatus.all(status) : statements.allPublic.all()) as KidArticleRow[];
-      return rows.map(toKidArticle);
+    listPublished() {
+      return (statements.published.all() as KidArticleRow[]).map(toKidArticle);
+    },
+
+    findPublishedById(id) {
+      const row = statements.publishedById.get(id) as KidArticleRow | undefined;
+      return row ? toKidArticle(row) : undefined;
     },
 
     query(query) {

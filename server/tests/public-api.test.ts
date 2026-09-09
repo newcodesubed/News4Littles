@@ -24,16 +24,27 @@ describe('GET /api/articles', () => {
     expect(dates).toEqual([...dates].sort().reverse());
   });
 
-  it('filters by status', async () => {
-    const rows = await (await ctx.anon('/api/articles?status=published')).json();
+  it('serves published stories only', async () => {
+    // §2.2: nothing reaches a child without a human reading it first. This
+    // endpoint is unauthenticated, so the guarantee has to hold here.
+    const rows = await (await ctx.anon('/api/articles')).json();
+
     expect(rows).toHaveLength(3);
     expect(rows.every((a: any) => a.status === 'published')).toBe(true);
+    expect(rows.map((a: any) => a.id)).not.toContain('pending-1');
+    expect(rows.map((a: any) => a.id)).not.toContain('rejected-1');
   });
 
-  it('rejects an unknown status with a helpful message', async () => {
-    const res = await ctx.anon('/api/articles?status=bogus');
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('pending_review');
+  it('ignores a caller-supplied status, including one asking for unreviewed stories', async () => {
+    for (const query of ['?status=pending_review', '?status=rejected', '?status=bogus']) {
+      const rows = await (await ctx.anon(`/api/articles${query}`)).json();
+      expect(rows.every((a: any) => a.status === 'published')).toBe(true);
+    }
+  });
+
+  it('still answers the frontend’s existing request unchanged', async () => {
+    const rows = await (await ctx.anon('/api/articles?status=published')).json();
+    expect(rows).toHaveLength(3);
   });
 
   it('parses JSON columns into real values', async () => {
@@ -64,6 +75,16 @@ describe('GET /api/articles/:id', () => {
     expect(res.status).toBe(404);
     expect(typeof (await res.json()).error).toBe('string');
   });
+
+  it.each([['pending-1'], ['rejected-1']])(
+    '404s for %s, which is not published',
+    async (id) => {
+      // 404 rather than 403: a 403 would confirm the story exists, which lets
+      // someone enumerate what is sitting unreviewed in the queue.
+      const res = await ctx.anon(`/api/articles/${id}`);
+      expect(res.status).toBe(404);
+    },
+  );
 });
 
 describe('unknown routes', () => {
