@@ -167,6 +167,19 @@ ten ages. Its prompt lives in `pipeline/approvalGuard.ts` and is deliberately
 not editable from admin settings: it is a safety gate, and one careless edit
 would silently approve everything.
 
+The story text is **fenced and treated as data**. The RSS feed is third-party and
+the kid text is generated *from* it, so an instruction can reach the judge
+without anyone typing it: feed → simplifier → judge. So the text sits inside
+`<<<STORY>>>` markers, the rules come *after* it (the last thing the model reads
+is the instruction, not the untrusted text), each field is capped at 1,000
+characters, and a story whose own text reads as an instruction is **refused
+before any call is made** — the model is never asked to resist something it does
+not need to see.
+
+That is defence in depth, not a guarantee. A judge can still be wrong about
+ordinary content, only the age-5 version is judged, and the judge is the same
+model that wrote the story. `approvedBy` is how you find its mistakes.
+
 It fails **closed**. A story is published only on an explicit `approved: true`.
 A timeout, an unreachable provider, HTML instead of JSON, a missing field, a
 non-boolean field or a plain "no" all leave the story exactly as it was, in
