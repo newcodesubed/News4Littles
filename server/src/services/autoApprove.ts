@@ -31,14 +31,22 @@ export interface AutoApproveReport {
 }
 
 export interface AutoApproveOptions {
-  client?: OpenRouterClient;
+  /**
+   * REQUIRED, deliberately. This was optional once, and because the caller's
+   * own `client` is a test-and-sandbox seam that is undefined in production,
+   * auto mode silently held every story with "no LLM client available" instead
+   * of judging any. Making it required moves that from a runtime surprise to a
+   * compile error, and keeps the service free of a default that would make
+   * paid calls from a unit test.
+   */
+  client: OpenRouterClient;
   now?: () => string;
 }
 
 export async function autoApproveStories(
   db: Database,
   originalIds: string[],
-  options: AutoApproveOptions = {},
+  options: AutoApproveOptions,
 ): Promise<AutoApproveReport> {
   const articles = createArticleRepository(db);
   const clock = options.now ?? (() => new Date().toISOString());
@@ -66,13 +74,7 @@ export async function autoApproveStories(
     // The age-5 version: the strictest reading level and the most sensitive
     // reader. Publishing is story-scoped, so one verdict covers all ten.
     const youngest = story.versions[0];
-    const client = options.client;
-    if (!client) {
-      report.held.push({ originalId, reason: 'held: no LLM client available' });
-      continue;
-    }
-
-    const verdict = await judgeStory(client, youngest);
+    const verdict = await judgeStory(options.client, youngest);
     report.costUsd += verdict.costUsd ?? 0;
 
     if (!verdict.approved) {

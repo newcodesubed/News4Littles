@@ -25,7 +25,7 @@ import {
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { createSourceRepository } from '../db/repositories/sourceRepository.js';
 import { scrapeSource, type ScrapeResult, type SourceRow } from '../ingestion/rssScraper.js';
-import type { OpenRouterClient } from '../llm/openRouterClient.js';
+import { OpenRouterClient } from '../llm/openRouterClient.js';
 import { AUTO_APPROVE_ENABLED } from '../env.js';
 import { autoApproveStories } from './autoApprove.js';
 import { acquireJob, releaseJob } from './jobLock.js';
@@ -207,10 +207,14 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
       // trades that away, so it is off unless asked for, and anything the
       // judge does not explicitly approve stays in pending_review.
       if (options.autoApprove ?? AUTO_APPROVE_ENABLED) {
+        // The composition root supplies the client: options.client is the
+        // test seam and is undefined in production, so a default is built here
+        // rather than inside the service. AUTO_APPROVE_ENABLED already implies
+        // LLM_ENABLED, so a key exists whenever this runs.
         const judged = await autoApproveStories(
           db,
           report.simplified.map((row) => row.rawId),
-          { client: options.client },
+          { client: options.client ?? new OpenRouterClient({}) },
         );
         state.autoPublished = judged.published.length;
 

@@ -295,3 +295,105 @@ describe('the flag gates it', () => {
     }
   });
 });
+
+describe('a scrape run reaches the judge', () => {
+  /**
+   * The end-to-end gap that let auto mode ship broken: every unit test passed
+   * its own client, so nobody noticed the production caller passed undefined.
+   *
+   * One stub serves both jobs, told apart by the judge prompt's fence.
+   */
+  function dualClient(approve: boolean) {
+    let judgeCalls = 0;
+    const version = JSON.stringify({
+      kidHeadline: 'A calm story', summary: 'Divers looked at a reef.',
+      whatHappened: 'They went down deep.', whyItMatters: 'Reefs matter.',
+      thinkAbout: 'What lives on a reef?', safety: 'calm', readingMinutes: 2,
+      vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
+    });
+
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const prompt = JSON.parse(String(init.body)).messages[0].content as string;
+      const isJudge = prompt.includes('<<<STORY>>>');
+      if (isJudge) judgeCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: isJudge ? JSON.stringify({ approved: approve, reason: 'r' }) : version,
+            },
+          }],
+          usage: { total_tokens: 10, cost: 0.00001 },
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    return {
+      client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
+      judgeCalls: () => judgeCalls,
+    };
+  }
+
+  /**
+   * A raw article waiting to be simplified, on the 'manual' source.
+   *
+   * Deliberately not 'bbc': that source carries the real BBC RSS URL, so a run
+   * naming it FETCHES THE LIVE FEED and simplifies whatever it finds instead of
+   * this fixture. 'manual' has url = '', so phase 1 is a genuine no-op and
+   * phase 2 works only the backlog seeded here.
+   */
+  const seedWaiting = (id: string) =>
+    insertRawArticle(ctx.db, {
+      id, sourceId: 'manual', sourceName: 'Manual submission', sourceUrl: '',
+      headline: `Adult headline ${id}`, url: `https://example.com/${id}`,
+      body: 'A rover surveyed the reef and found the coral healthy this year.',
+      simplifiedAt: null,
+    });
+
+  it('publishes what the judge approves, end to end', async () => {
+    const { startScrapeRun, resetRunState } = await import('../src/services/scrapeService.js');
+    resetRunState();
+    seedWaiting('w1');
+    const { client, judgeCalls } = dualClient(true);
+
+    try {
+      // 'manual' has no feed URL, so phase 1 is a no-op and nothing touches
+      // the network; phase 2 works the backlog seeded above.
+      const state = await new Promise<{ autoPublished: number }>((resolve) => {
+        startScrapeRun(ctx.db, {
+          sourceId: 'manual', budget: 1, autoApprove: true, client, onFinished: resolve,
+        });
+      });
+
+      expect(judgeCalls()).toBe(1);
+      expect(state.autoPublished).toBe(1);
+      expect(statuses('w1')).toEqual(['published']);
+      expect(approvedBy('w1')).toEqual(['auto']);
+    } finally {
+      resetRunState();
+    }
+  });
+
+  it('leaves everything pending when the judge refuses', async () => {
+    const { startScrapeRun, resetRunState } = await import('../src/services/scrapeService.js');
+    resetRunState();
+    seedWaiting('w1');
+    const { client } = dualClient(false);
+
+    try {
+      const state = await new Promise<{ autoPublished: number }>((resolve) => {
+        startScrapeRun(ctx.db, {
+          sourceId: 'manual', budget: 1, autoApprove: true, client, onFinished: resolve,
+        });
+      });
+
+      expect(state.autoPublished).toBe(0);
+      expect(statuses('w1')).toEqual(['pending_review']);
+      expect(approvedBy('w1')).toEqual([null]);
+    } finally {
+      resetRunState();
+    }
+  });
+});
