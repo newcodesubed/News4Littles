@@ -95,6 +95,13 @@ export function StoryRow({
             {story.versions.some((version) => version.editedByHuman) && (
               <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-bold">edited by a person</span>
             )}
+            {/* Auto mode published this with no editor. Worth saying loudly:
+                it is the one case where §2.2's promise was not kept. */}
+            {story.approvedBy === 'auto' && (
+              <span className="rounded-full bg-surface-sun px-2.5 py-1 text-xs font-bold text-amber-800">
+                published by the judge, not a person
+              </span>
+            )}
           </div>
 
           {/* The headline is the natural way to open the story. */}

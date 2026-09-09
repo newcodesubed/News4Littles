@@ -21,7 +21,7 @@ const BASE: AdminArticle = {
   sourceName: 'BBC News', sourceUrl: 'https://example.com/a', status: 'pending_review',
   rejectReason: null, editedByHuman: false,
   createdAt: '2026-09-04T10:00:00.000Z', publishedAt: null,
-  sourceId: 'bbc', originalHeadline: 'Original adult headline',
+  sourceId: 'bbc', originalHeadline: 'Original adult headline', approvedBy: null,
 };
 /**
  * A fixture article. `originalId` defaults to one derived from the id, so each
@@ -76,6 +76,7 @@ function mockApi() {
         versions,
         safety: versions.reduce((w, v) => (rank[v.safety] > rank[w] ? v.safety : w), 'calm' as string),
         status: versions[0].status,
+        approvedBy: versions[0].approvedBy ?? null,
         kidHeadline: versions[0].kidHeadline,
         category: versions[0].category,
         sourceId: versions[0].sourceId,
@@ -357,5 +358,24 @@ describe('one row per story (§5)', () => {
     await waitFor(() => {
       expect(calls.some((c) => c === 'PATCH /api/admin/articles/v5/publish')).toBe(true);
     });
+  });
+});
+
+describe('auto mode is visible in the queue', () => {
+  it('marks a story the judge published, not a person', async () => {
+    articles = [article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, status: 'published', approvedBy: 'auto' })];
+    renderPage();
+
+    // §2.2 says a human reads every story first. When auto mode did not, the
+    // queue has to say so — it is the only way to find and undo it.
+    expect(await screen.findByText(/published by the judge, not a person/i)).toBeInTheDocument();
+  });
+
+  it('says nothing for a story a person published', async () => {
+    articles = [article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, status: 'published', approvedBy: null })];
+    renderPage();
+
+    await screen.findByText('A calm story');
+    expect(screen.queryByText(/published by the judge/i)).not.toBeInTheDocument();
   });
 });

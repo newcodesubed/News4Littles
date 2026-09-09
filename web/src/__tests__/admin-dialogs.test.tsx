@@ -13,7 +13,7 @@ const BASE: AdminArticle = {
   category: 'World', readingMinutes: 3, sourceName: 'BBC News', sourceUrl: 'https://x',
   status: 'pending_review', rejectReason: null, editedByHuman: false,
   createdAt: '2026-09-04T10:00:00.000Z', publishedAt: null,
-  sourceId: 'bbc', originalHeadline: 'Original headline',
+  sourceId: 'bbc', originalHeadline: 'Original headline', approvedBy: null,
 };
 const article = (o: Partial<AdminArticle> = {}): AdminArticle => ({ ...BASE, ...o });
 
@@ -181,6 +181,7 @@ describe('reading every age version before approving (§5)', () => {
     ],
     safety: 'calm',
     status: 'pending_review',
+    approvedBy: null,
     kidHeadline: 'Headline for fives',
     category: 'World',
     sourceId: 'bbc',

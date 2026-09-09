@@ -62,6 +62,8 @@ export async function regenerateArticle(db: Database, id: string): Promise<Regen
       editedByHuman: false,
       sourceId: current.sourceId,
       originalHeadline: current.originalHeadline,
+      // Regenerating text does not change who approved the story.
+      approvedBy: current.approvedBy,
     },
   };
 }

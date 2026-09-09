@@ -4,6 +4,8 @@ import type { ArticleStatus, KidArticle, Safety } from '../lib/types';
 export interface AdminArticle extends KidArticle {
   sourceId: string;
   originalHeadline: string;
+  /** 'auto' when the auto-mode judge published it; null whenever a person did. */
+  approvedBy: string | null;
 }
 
 /**
@@ -17,6 +19,8 @@ export interface AdminStory {
   versions: AdminArticle[];
   safety: Safety;
   status: ArticleStatus;
+  /** 'auto' when the judge published it, null when a person did. */
+  approvedBy: string | null;
   kidHeadline: string;
   category: string;
   sourceId: string;

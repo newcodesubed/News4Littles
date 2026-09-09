@@ -81,6 +81,18 @@ export const OPENROUTER_KEY = readString('OPENROUTER_KEY', '');
 export const LLM_ENABLED =
   readString('LLM_ENABLED', 'true').toLowerCase() !== 'false' && OPENROUTER_KEY !== '';
 
+/**
+ * Auto mode: an LLM judges freshly simplified stories and publishes the ones it
+ * approves, with no editor involved.
+ *
+ * Defaults to FALSE, unlike SCRAPE_ENABLED and LLM_ENABLED. Those default on
+ * because they add capability; this one removes the human review §2.2 promises,
+ * so it has to be asked for explicitly. Requires a working LLM: no key means no
+ * judge, and no judge means nothing is auto-published.
+ */
+export const AUTO_APPROVE_ENABLED =
+  readString('AUTO_APPROVE_ENABLED', 'false').toLowerCase() === 'true' && LLM_ENABLED;
+
 export const LLM_MODEL = readString('LLM_MODEL', 'google/gemini-2.5-flash-lite');
 
 /** Upper bound on the priced half of a response. */

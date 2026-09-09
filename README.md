@@ -3,7 +3,7 @@
 A daily kid-friendly news aggregator. It pulls stories from trusted news feeds,
 filters and rewrites them for children, and presents them in a calm, readable
 interface. Every story is read by a human editor before a child sees it — nothing
-publishes automatically.
+publishes automatically, unless auto mode is switched on (see below).
 
 - `/server` — Node.js + Express + SQLite (better-sqlite3), raw SQL, no ORM
 - `/web` — React 18 + Vite + TypeScript + Tailwind
@@ -84,7 +84,7 @@ paste by hand ┘                 │   (once per age, 5-14)  (10 versions,
 
 Two things never change:
 
-- **Nothing auto-publishes.** Scraped and pasted articles both land as
+- **Nothing auto-publishes** by default. Scraped and pasted articles both land as
   `pending_review` (§5.2).
 - **The safety guard has the final word.** Every article is classified `calm`,
   `adult-nearby` or `skip-young`. A keyword deny-list and the LLM both get a
@@ -152,6 +152,39 @@ again.
 This diverges from PRD §5.2, which runs steps 4–7 as a single pass over every
 item. Steps 1–5 live in `ingestion/rssScraper.ts`; steps 6–7 moved to
 `services/simplifyService.ts`.
+
+### Auto mode (off by default)
+
+Set `AUTO_APPROVE_ENABLED=true` and an LLM judges each story a scrape just
+simplified, publishing the ones it approves with **no editor involved**. It
+defaults to `false`, unlike every other flag here, because it trades away the
+human review this product otherwise promises. It also needs a working LLM: no
+API key means no judge, and no judge means nothing is auto-published.
+
+The judge reads the **age-5 version** — the strictest reading level and the most
+sensitive reader — and since publishing is story-scoped, one verdict covers all
+ten ages. Its prompt lives in `pipeline/approvalGuard.ts` and is deliberately
+not editable from admin settings: it is a safety gate, and one careless edit
+would silently approve everything.
+
+It fails **closed**. A story is published only on an explicit `approved: true`.
+A timeout, an unreachable provider, HTML instead of JSON, a missing field, a
+non-boolean field or a plain "no" all leave the story exactly as it was, in
+`pending_review`, with the reason logged. There is no error path that can
+publish something by accident.
+
+Two things it will never touch:
+
+- **`skip-young` stories.** Not judged at all, not even a call made. §6 makes
+  those an explicit human decision, so the content most likely to upset a child
+  stays human-only.
+- **Anything already published or rejected.** A person's decision is never
+  overwritten or relabelled as the judge's.
+
+Every auto-publish sets `kid_articles.approvedBy = 'auto'`, and the review queue
+marks those rows "published by the judge, not a person". That column is the
+record of which live stories no human ever read — so if the judge turns out to
+be a bad one, you can find them all and un-publish them.
 
 ### One version per reading age
 
@@ -390,6 +423,7 @@ covers `src` only, so files under `server/scripts/` are not typechecked.
 | `CORS_ORIGIN`     | `http://localhost:5173,http://127.0.0.1:5173`  |
 | `DATABASE_PATH`   | `data/news4littles.db` (relative to `/server`) |
 | `SCRAPE_ENABLED`  | `true` — `false` stops cron registering        |
+| `AUTO_APPROVE_ENABLED` | **`false`** — `true` lets an LLM publish without an editor |
 | `SCRAPE_TIMEZONE` | the server's own zone                          |
 
 `web/.env`:

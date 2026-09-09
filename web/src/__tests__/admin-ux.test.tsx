@@ -49,6 +49,7 @@ function mockApi({ slowMutations = false } = {}) {
           versions: [a],
           safety: a.safety,
           status: a.status,
+          approvedBy: (a as { approvedBy?: string | null }).approvedBy ?? null,
           kidHeadline: a.kidHeadline,
           category: a.category,
           sourceId: a.sourceId,
