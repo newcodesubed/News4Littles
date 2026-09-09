@@ -62,6 +62,7 @@ function mockApi() {
         ageTargets: [], safety: [], statuses: [], sortFields: [],
       });
     }
+    if (path.includes('/stories')) return json({ stories: [], total: 0 });
     if (path.includes('/articles')) return json({ articles: [], total: 0 });
     return json({});
   }));

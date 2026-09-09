@@ -1,9 +1,27 @@
-import type { KidArticle } from '../lib/types';
+import type { ArticleStatus, KidArticle, Safety } from '../lib/types';
 
 /** What /api/admin/articles returns: a KidArticle plus two admin-only extras. */
 export interface AdminArticle extends KidArticle {
   sourceId: string;
   originalHeadline: string;
+}
+
+/**
+ * One story as the grouped review queue shows it (§5): every age version, plus
+ * the story-level facts an editor decides on. `safety` is the strictest across
+ * versions, because approving the row approves all of them.
+ */
+export interface AdminStory {
+  originalId: string;
+  /** Every version, ascending by ageTarget. Never empty. */
+  versions: AdminArticle[];
+  safety: Safety;
+  status: ArticleStatus;
+  kidHeadline: string;
+  category: string;
+  sourceId: string;
+  originalHeadline: string;
+  createdAt: string;
 }
 
 export interface StatusCounts {

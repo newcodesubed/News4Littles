@@ -40,6 +40,24 @@ function mockApi({ slowMutations = false } = {}) {
 
     if (path.includes('/counts')) return json({ pending_review: 1, published: 0, rejected: 0, total: 1 });
     if (path.includes('/filters')) return json({ categories: ['Environment'], sources: [{ id: 'bbc', name: 'BBC News' }], ageTargets: [8] });
+    // §5: the queue reads stories. One story per fixture article, since these
+    // fixtures each have their own originalId.
+    if (path.includes('/stories')) {
+      return json({
+        stories: articles.map((a) => ({
+          originalId: a.originalId,
+          versions: [a],
+          safety: a.safety,
+          status: a.status,
+          kidHeadline: a.kidHeadline,
+          category: a.category,
+          sourceId: a.sourceId,
+          originalHeadline: a.originalHeadline,
+          createdAt: a.createdAt,
+        })),
+        total: articles.length,
+      });
+    }
     if (method === 'GET') return json({ articles, total: articles.length });
 
     if (slowMutations) {
