@@ -323,7 +323,7 @@ export function AdminReview() {
 
       {viewing && (
         <ViewArticleDialog
-          article={viewing.versions[0]}
+          story={viewing}
           onClose={() => setViewing(null)}
           onEdit={() => { setEditing(viewing.versions[0]); setViewing(null); }}
           onReject={() => { setRejecting(viewing.versions[0]); setViewing(null); }}
