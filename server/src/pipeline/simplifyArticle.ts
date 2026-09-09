@@ -8,7 +8,7 @@
  */
 import type { Database } from 'better-sqlite3';
 import { LLM_ENABLED, LLM_MODEL } from '../env.js';
-import type { KidArticle } from '../core/article.js';
+import { MAX_AGE, MIN_AGE, type KidArticle } from '../core/article.js';
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { OpenRouterClient } from '../llm/openRouterClient.js';
 import {
@@ -201,4 +201,78 @@ export async function simplifyArticle(
       elapsedMs: result.elapsedMs,
     };
   }
+}
+
+/** Every reading age the slider offers (§3.6), ascending. */
+const ALL_AGES = Array.from({ length: MAX_AGE - MIN_AGE + 1 }, (_, i) => MIN_AGE + i);
+
+export interface AllAgesOutcome {
+  /** One per age, MIN_AGE..MAX_AGE, in ascending age order. */
+  versions: SimplifyOutcome[];
+  /** The shared §6.2 verdict, present only when the guard ran. */
+  promptGuard?: PromptGuardOutcome;
+  /** Summed across every version plus the one guard call. */
+  costUsd: number;
+  /** One entry per age that fell back, already prefixed with its age. */
+  fallbacks: string[];
+}
+
+/**
+ * One version of a story per reading age (§3.6), so the public slider selects
+ * real content rather than relabelling one version.
+ *
+ * Ten calls, not one combined call: every stored prompt template embeds the
+ * article and its own JSON envelope, so combining them would either send the
+ * article ten times or mangle the templates — and the saving was 40 cents a
+ * month against losing per-age prompt control and the sandbox's fidelity to
+ * production (§7.4).
+ *
+ * The §6.2 prompt guard runs ONCE and is shared, because it judges the source
+ * article and that does not vary by age.
+ *
+ * Sequential on purpose. A run is already a background job that warns it takes
+ * minutes, and limited concurrency is a later change that has to consider the
+ * provider's rate limits.
+ */
+export async function simplifyArticleForAllAges(
+  db: Database,
+  raw: RawArticleInput,
+  options: Omit<SimplifyOptions, 'ageTarget' | 'promptGuard'> = {},
+): Promise<AllAgesOutcome> {
+  const settings = createSettingsRepository(db);
+  const guardConfig = settings.getGuardConfig();
+
+  // Shared across all ten ages. Uses the youngest age purely to render the
+  // guard prompt's {{age}} variable; the verdict is about the source text.
+  let promptGuard: PromptGuardOutcome | undefined;
+  if (guardConfig.promptGuardEnabled && !options.forceLocal) {
+    const client = options.client ?? new OpenRouterClient({ model: options.model });
+    promptGuard = await runPromptGuard(
+      guardConfig.promptGuardText,
+      {
+        headline: raw.headline,
+        body: raw.body,
+        category: raw.topic,
+        sourceName: raw.sourceName,
+        age: MIN_AGE,
+      },
+      client,
+    );
+  }
+
+  const versions: SimplifyOutcome[] = [];
+  const fallbacks: string[] = [];
+  let costUsd = promptGuard?.costUsd ?? 0;
+
+  for (const ageTarget of ALL_AGES) {
+    const outcome = await simplifyArticle(db, raw, { ...options, ageTarget, promptGuard });
+
+    versions.push(outcome);
+    costUsd += outcome.costUsd ?? 0;
+    // Prefixed with the age: a reviewer needs to know WHICH version is weaker,
+    // and with per-age calls a story can be nine parts LLM and one part local.
+    if (outcome.fallbackReason) fallbacks.push(`age ${ageTarget}: ${outcome.fallbackReason}`);
+  }
+
+  return { versions, promptGuard, costUsd, fallbacks };
 }
