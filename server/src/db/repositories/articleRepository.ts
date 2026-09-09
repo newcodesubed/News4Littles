@@ -51,6 +51,21 @@ export interface AdminStory {
   createdAt: string;
 }
 
+/**
+ * A published story as a reader gets it: one version, chosen for their reading
+ * age. `ageMatched` is response-only and is never stored.
+ */
+export interface PublicArticle extends KidArticle {
+  /** False when the reader's age had no version and a nearer one was served. */
+  ageMatched: boolean;
+}
+
+/** Tags a served version with whether it was an exact match for the reader. */
+const withAgeMatch = (article: KidArticle, age: number): PublicArticle => ({
+  ...article,
+  ageMatched: article.ageTarget === age,
+});
+
 export function toAdminArticle(row: AdminArticleRow): AdminArticle {
   const { sourceId, originalHeadline, ...rest } = row;
   return { ...toKidArticle(rest), sourceId, originalHeadline };
@@ -108,6 +123,9 @@ export interface ArticleRepository {
    */
   listPublished(): KidArticle[];
   findPublishedById(id: string): KidArticle | undefined;
+  /** §6: one published version per story, chosen for the reader's age. */
+  listPublishedForAge(age: number): PublicArticle[];
+  findPublishedForAge(id: string, age: number): PublicArticle | undefined;
   findAdminById(id: string): AdminArticle | undefined;
   /** Status + safety only — enough to decide whether an action is allowed. */
   findState(id: string): { id: string; status: ArticleStatus; safety: Safety } | undefined;
@@ -148,6 +166,31 @@ export function createArticleRepository(db: Database): ArticleRepository {
     ),
     publishedById: db.prepare(
       `SELECT * FROM kid_articles WHERE id = ? AND status = 'published'`,
+    ),
+    // §6: one row per story — the version for @age, else the nearest published.
+    // ABS() finds the nearest; the ageTarget tie-break makes a tie prefer the
+    // YOUNGER version, because reading down is safer than reading up for a
+    // children's product. Window functions need SQLite 3.25+; the pinned
+    // better-sqlite3 reports 3.49.2.
+    publishedForAge: db.prepare(
+      `SELECT * FROM (
+         SELECT *, ROW_NUMBER() OVER (
+           PARTITION BY originalId ORDER BY ABS(ageTarget - @age), ageTarget
+         ) AS rn
+         FROM kid_articles WHERE status = 'published'
+       ) WHERE rn = 1 ORDER BY createdAt DESC`,
+    ),
+    // The same rule inside ONE story, resolved from any of its version ids, so
+    // the slider keeps working on a story page.
+    publishedForAgeById: db.prepare(
+      `SELECT * FROM (
+         SELECT *, ROW_NUMBER() OVER (
+           PARTITION BY originalId ORDER BY ABS(ageTarget - @age), ageTarget
+         ) AS rn
+         FROM kid_articles
+         WHERE status = 'published'
+           AND originalId = (SELECT originalId FROM kid_articles WHERE id = @id)
+       ) WHERE rn = 1`,
     ),
     counts: db.prepare(`SELECT status, COUNT(*) AS n FROM kid_articles GROUP BY status`),
     versionsForStories: (count: number) =>
@@ -243,6 +286,16 @@ export function createArticleRepository(db: Database): ArticleRepository {
     findPublishedById(id) {
       const row = statements.publishedById.get(id) as KidArticleRow | undefined;
       return row ? toKidArticle(row) : undefined;
+    },
+
+    listPublishedForAge(age) {
+      return (statements.publishedForAge.all({ age }) as KidArticleRow[])
+        .map((row) => withAgeMatch(toKidArticle(row), age));
+    },
+
+    findPublishedForAge(id, age) {
+      const row = statements.publishedForAgeById.get({ id, age }) as KidArticleRow | undefined;
+      return row ? withAgeMatch(toKidArticle(row), age) : undefined;
     },
 
     query(query) {

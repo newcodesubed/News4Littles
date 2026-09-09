@@ -1,6 +1,8 @@
 /** Public article routes — PRD §3, §11.1. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestContext, insertKidArticle, type TestContext } from './helpers.js';
+import {
+  createTestContext, insertKidArticle, insertRawArticle, type TestContext,
+} from './helpers.js';
 
 let ctx: TestContext;
 
@@ -115,5 +117,144 @@ describe('central error handling', () => {
   it('never leaks a stack trace or a file path', async () => {
     const text = await (await ctx.api('/api/admin/articles/bulk', { method: 'POST', body: '{ bad' })).text();
     expect(text).not.toMatch(/node_modules|\/home\/|at .*\(/);
+  });
+});
+
+describe('one version per reading age (§6)', () => {
+  /** A published story with one version per given age. */
+  const seedStory = (rawId: string, ages: number[]) => {
+    const raw = insertRawArticle(ctx.db, {
+      id: rawId, headline: `Adult headline ${rawId}`, simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    for (const age of ages) {
+      insertKidArticle(ctx.db, {
+        id: `${rawId}-v${age}`, originalId: raw, ageTarget: age, status: 'published',
+        kidHeadline: `Written for age ${age}`, createdAt: '2026-09-07T10:00:00.000Z',
+      });
+    }
+    return raw;
+  };
+
+  const storyFrom = (rows: any[], rawId: string) => rows.filter((a) => a.originalId === rawId);
+
+  it('serves the version matching the requested age', async () => {
+    const raw = seedStory('ages-all', [5, 6, 7, 8]);
+
+    const rows = await (await ctx.anon('/api/articles?age=7')).json();
+    const mine = storyFrom(rows, raw);
+
+    // One entry for the story, not four.
+    expect(mine).toHaveLength(1);
+    expect(mine[0].kidHeadline).toBe('Written for age 7');
+    expect(mine[0].ageTarget).toBe(7);
+    expect(mine[0].ageMatched).toBe(true);
+  });
+
+  it('serves the nearest published version when the age has none', async () => {
+    const raw = seedStory('ages-gap', [5, 12]);
+
+    const rows = await (await ctx.anon('/api/articles?age=11')).json();
+    const mine = storyFrom(rows, raw);
+
+    expect(mine[0].ageTarget).toBe(12);
+    // Flagged, so the UI can say it was written for a different age.
+    expect(mine[0].ageMatched).toBe(false);
+  });
+
+  it('prefers the younger version on a tie', async () => {
+    // Age 9 sits exactly between 8 and 10. Reading down is the safer default
+    // for a children's product, so 8 wins.
+    const raw = seedStory('ages-tie', [8, 10]);
+
+    const rows = await (await ctx.anon('/api/articles?age=9')).json();
+
+    expect(storyFrom(rows, raw)[0].ageTarget).toBe(8);
+  });
+
+  it('never serves an unpublished version, even when it is the closest age', async () => {
+    const raw = insertRawArticle(ctx.db, {
+      id: 'ages-unpub', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    insertKidArticle(ctx.db, {
+      id: 'ages-unpub-v9', originalId: raw, ageTarget: 9, status: 'pending_review',
+      kidHeadline: 'Unreviewed age 9',
+    });
+    insertKidArticle(ctx.db, {
+      id: 'ages-unpub-v5', originalId: raw, ageTarget: 5, status: 'published',
+      kidHeadline: 'Published age 5',
+    });
+
+    const rows = await (await ctx.anon('/api/articles?age=9')).json();
+    const mine = storyFrom(rows, raw);
+
+    // Age 9 is the exact match but is unreviewed (§2.2), so age 5 is served.
+    expect(mine[0].kidHeadline).toBe('Published age 5');
+    expect(mine[0].ageMatched).toBe(false);
+  });
+
+  it('omits a story with no published version at any age', async () => {
+    const raw = insertRawArticle(ctx.db, {
+      id: 'ages-none', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    insertKidArticle(ctx.db, { id: 'ages-none-v5', originalId: raw, ageTarget: 5, status: 'pending_review' });
+    insertKidArticle(ctx.db, { id: 'ages-none-v6', originalId: raw, ageTarget: 6, status: 'rejected' });
+
+    const rows = await (await ctx.anon('/api/articles?age=5')).json();
+
+    expect(storyFrom(rows, raw)).toHaveLength(0);
+  });
+
+  it.each([['?age=99'], ['?age=abc'], ['?age=-3'], ['?age='], ['']])(
+    'falls back to the default age for %s rather than erroring',
+    async (query) => {
+      const res = await ctx.anon(`/api/articles${query}`);
+
+      // A public read path for a children's site answers, rather than 400ing
+      // because a query string was odd.
+      expect(res.status).toBe(200);
+      expect(Array.isArray(await res.json())).toBe(true);
+    },
+  );
+
+  it('serves a single-version story to every age', async () => {
+    // The stories that existed before this feature have one version each, and
+    // must not vanish from the feed as the slider moves.
+    const raw = seedStory('ages-one', [8]);
+
+    for (const age of [5, 8, 14]) {
+      const rows = await (await ctx.anon(`/api/articles?age=${age}`)).json();
+      expect(storyFrom(rows, raw)).toHaveLength(1);
+    }
+  });
+});
+
+describe('GET /api/articles/:id?age= (§6)', () => {
+  it('serves the sibling version for the requested age', async () => {
+    // The slider has to keep working when a reader is already on a story page:
+    // the id names one version, but the reader wants that STORY at their age.
+    const raw = insertRawArticle(ctx.db, {
+      id: 'detail-raw', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    insertKidArticle(ctx.db, {
+      id: 'detail-v5', originalId: raw, ageTarget: 5, status: 'published',
+      kidHeadline: 'Written for age 5',
+    });
+    insertKidArticle(ctx.db, {
+      id: 'detail-v14', originalId: raw, ageTarget: 14, status: 'published',
+      kidHeadline: 'Written for age 14',
+    });
+
+    const article = await (await ctx.anon('/api/articles/detail-v5?age=14')).json();
+
+    expect(article.kidHeadline).toBe('Written for age 14');
+    expect(article.ageMatched).toBe(true);
+  });
+
+  it('still 404s for an unpublished story', async () => {
+    expect((await ctx.anon('/api/articles/pending-1?age=8')).status).toBe(404);
+  });
+
+  it('still 404s for an unknown id', async () => {
+    expect((await ctx.anon('/api/articles/nope?age=8')).status).toBe(404);
   });
 });
