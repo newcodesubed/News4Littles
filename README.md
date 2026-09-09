@@ -197,25 +197,22 @@ Tab counts show stories, not versions, so Pending reads 10 where you have ten
 stories to read rather than 100.
 
 **The slider on `/settings` picks the text.** `GET /api/articles?age=N` returns
-one entry per story — the version written for age N, or the nearest published
-one — chosen with a window function that partitions by `originalId` and orders
-by `ABS(ageTarget - N)`. A tie prefers the **younger** version: age 9 with
-versions 8 and 10 available gets 8, because reading down is safer than reading
-up. `GET /api/articles/:id?age=N` applies the same rule inside one story, so
-the slider keeps working after a reader has opened something.
+the version of each story that was **written for age N** — an exact match, no
+nearest-age guessing. A story exists in one version per age, so a missing age
+means it was never simplified for that reader, and it is simply absent from the
+feed. Showing a five-year-old an age-12 rewrite is worse than showing nothing.
+`GET /api/articles/:id?age=N` applies the same rule inside one story, so the
+slider keeps working after a reader has opened something, and 404s for an age
+the story does not have — consistent with the feed, which would not have
+offered it.
 
 An absent, non-numeric or out-of-range `age` falls back to
 `app_settings.defaultAge` rather than erroring — this is the path a child's
 browser hits, and answering beats a 400 because a query string was odd. The
 status filter stays hardcoded regardless.
 
-When the reader's age has no version, the response says `ageMatched: false` and
-the card and story page both say "Written for age N — the closest version we
-have for this story", so a parent is never shown an out-of-band version as if
-it were age-matched.
-
-Stories that predate this feature have one version each and are served to every
-age by the same nearest-age rule, so they never vanish from the feed.
+A story simplified before this feature has one version, at whatever the default
+age was then, so it appears only at that age. Re-simplify it to give it all ten.
 
 The §6 guards run **once per story** — they judge the source article, which does
 not vary by age — so the prompt guard costs one call, not ten.

@@ -243,24 +243,15 @@ describe('the reading-age slider changes the story (§6)', () => {
   });
 });
 
-describe('the out-of-band note (§6)', () => {
-  it('says so when the served version was written for another age', () => {
-    renderIn(<StoryCard article={{ ...article({ ageTarget: 12 }), ageMatched: false }} />);
+describe('exact age matching (§6)', () => {
+  it('shows the story the API served, with no age caveat', () => {
+    // Exact match only: a story exists in one version per age, so whatever the
+    // feed returns IS the version written for this reader. There is no
+    // "closest version" note, because there is no closest-version behaviour.
+    renderIn(<StoryCard article={article({ ageTarget: 7, kidHeadline: 'Written for age 7' })} />);
 
-    expect(screen.getByText(/written for age 12/i)).toBeInTheDocument();
-  });
-
-  it('stays quiet when the age matched', () => {
-    renderIn(<StoryCard article={{ ...article({ ageTarget: 8 }), ageMatched: true }} />);
-
-    expect(screen.queryByText(/written for age/i)).not.toBeInTheDocument();
-  });
-
-  it('stays quiet when nothing said either way', () => {
-    // The admin queue renders these components with an AdminArticle, which has
-    // no ageMatched. Absence must not read as "out of band".
-    renderIn(<StoryCard article={article()} />);
-
-    expect(screen.queryByText(/written for age/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Written for age 7')).toBeInTheDocument();
+    expect(screen.queryByText(/closest version/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/written for age \d+ —/i)).not.toBeInTheDocument();
   });
 });
