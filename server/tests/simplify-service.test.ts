@@ -123,6 +123,22 @@ describe('simplifyRawArticles', () => {
     expect(seen).toEqual([1, 2]);
   });
 
+  it('links the kid article to the article, not to the feed', async () => {
+    // raw.url is the story; raw.sourceUrl is the rss.xml the story came from.
+    // kid_articles.sourceUrl is the "Read the original (for grown-ups)" link,
+    // so a grown-up following it must land on the article, not on raw XML.
+    seedWaiting('r1', {
+      url: 'https://www.bbc.co.uk/news/articles/the-actual-story',
+      sourceUrl: 'https://feeds.bbci.co.uk/news/rss.xml',
+    });
+
+    await simplifyRawArticles(ctx.db, ['r1']);
+
+    const link = ctx.db.prepare(`SELECT sourceUrl FROM kid_articles`).pluck().get();
+    expect(link).toBe('https://www.bbc.co.uk/news/articles/the-actual-story');
+    expect(link).not.toMatch(/rss\.xml$/);
+  });
+
   it('carries the source id, so a run can attribute the spend', async () => {
     seedWaiting('r1', { sourceId: 'npr', sourceName: 'NPR' });
 

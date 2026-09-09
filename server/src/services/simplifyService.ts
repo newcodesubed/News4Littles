@@ -97,7 +97,10 @@ export async function simplifyRawArticles(
           body: raw.body,
           topic: raw.topic,
           sourceName: raw.sourceName,
-          sourceUrl: raw.sourceUrl,
+          // raw.url is the story; raw.sourceUrl is the rss.xml it came from.
+          // kid_articles.sourceUrl is the "Read the original (for grown-ups)"
+          // link, so it has to be the article a grown-up can actually read.
+          sourceUrl: raw.url,
         },
         { ageTarget: defaultAge, now, client: options.client },
       );

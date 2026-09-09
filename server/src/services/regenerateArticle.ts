@@ -40,7 +40,8 @@ export async function regenerateArticle(db: Database, id: string): Promise<Regen
       body: raw.body,
       topic: raw.topic,
       sourceName: raw.sourceName,
-      sourceUrl: raw.sourceUrl,
+      // The article, not the feed it came from — see simplifyService.
+      sourceUrl: raw.url,
     },
     { ageTarget: current.ageTarget, id: current.id, now: current.createdAt },
   );
