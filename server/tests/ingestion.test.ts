@@ -7,6 +7,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getSource, scrapeSource, type SourceRow } from '../src/ingestion/rssScraper.js';
+import { canonicalUrl } from '../src/ingestion/feedParser.js';
 import { readScrapeTimes, timeToCron } from '../src/ingestion/scheduler.js';
 import {
   resetRunState, startScrapeRun, summarise, type RunState,
@@ -21,11 +22,18 @@ let feedBody: string | null = null;
 let feedServer: Server;
 let feedUrl: string;
 
+/**
+ * Escape a value for XML text. Titles and descriptions below sit in CDATA, but
+ * <link> does not — and a raw '&' in a query string makes the parse throw
+ * "Invalid character in entity name". Real feeds escape it, so the fixture must.
+ */
+const xml = (value: string) => value.replace(/&/g, '&amp;');
+
 function rss(items: FeedItem[]): string {
   const entries = items
     .map((i) => `<item>
       ${i.title ? `<title><![CDATA[${i.title}]]></title>` : ''}
-      ${i.link ? `<link>${i.link}</link>` : ''}
+      ${i.link ? `<link>${xml(i.link)}</link>` : ''}
       ${i.pubDate ? `<pubDate>${i.pubDate}</pubDate>` : ''}
       ${i.description ? `<description><![CDATA[${i.description}]]></description>` : ''}
     </item>`)
@@ -314,5 +322,89 @@ describe('the simplification budget', () => {
 
     expect(ctx.db.prepare(`SELECT DISTINCT status FROM kid_articles`).pluck().all())
       .toEqual(['pending_review']);
+  });
+});
+
+describe('canonicalUrl', () => {
+  it("strips the campaign tags BBC puts on its feed links", () => {
+    expect(
+      canonicalUrl('https://www.bbc.co.uk/news/articles/cp9340rg7k8o?at_medium=RSS&at_campaign=rss'),
+    ).toBe('https://www.bbc.co.uk/news/articles/cp9340rg7k8o');
+  });
+
+  it('strips utm_* and the common click ids', () => {
+    expect(canonicalUrl('https://e.com/a?utm_source=x&utm_medium=y&utm_campaign=z')).toBe('https://e.com/a');
+    expect(canonicalUrl('https://e.com/a?fbclid=abc')).toBe('https://e.com/a');
+    expect(canonicalUrl('https://e.com/a?gclid=abc')).toBe('https://e.com/a');
+  });
+
+  it('keeps parameters that decide which page you get', () => {
+    // Stripping the query string wholesale would break these.
+    expect(canonicalUrl('https://e.com/story?id=1234')).toBe('https://e.com/story?id=1234');
+    expect(canonicalUrl('https://e.com/list?page=2')).toBe('https://e.com/list?page=2');
+  });
+
+  it('keeps the real parameters and drops only the tracking ones', () => {
+    expect(canonicalUrl('https://e.com/story?id=99&utm_source=rss&page=3')).toBe(
+      'https://e.com/story?id=99&page=3',
+    );
+  });
+
+  it('leaves the fragment alone', () => {
+    expect(canonicalUrl('https://e.com/a?at_medium=RSS#section-2')).toBe('https://e.com/a#section-2');
+  });
+
+  it('returns the original string untouched when there is nothing to strip', () => {
+    // Not re-serialised through URL(), so no normalisation churn on the
+    // overwhelming majority of links that carry no tracking at all.
+    const plain = 'https://e.com/a/b';
+    expect(canonicalUrl(plain)).toBe(plain);
+  });
+
+  it('survives something that is not a URL at all', () => {
+    expect(canonicalUrl('not a url')).toBe('not a url');
+    expect(canonicalUrl('')).toBe('');
+  });
+});
+
+describe('tracking parameters in ingestion', () => {
+  it('stores the canonical link, so the original opens the article cleanly', async () => {
+    feedItems = [{
+      title: 'A tagged story',
+      link: 'https://www.bbc.co.uk/news/articles/abc123?at_medium=RSS&at_campaign=rss',
+      pubDate: 'Fri, 04 Sep 2026 10:00:00 GMT',
+      description: 'A calm story about the sea.',
+    }];
+
+    await scrapeSource(ctx.db, bbc());
+
+    expect(ctx.db.prepare(`SELECT url FROM raw_articles`).pluck().get())
+      .toBe('https://www.bbc.co.uk/news/articles/abc123');
+  });
+
+  it('treats the same story with new campaign tags as already stored', async () => {
+    // This is the reason to strip them: the duplicate guard is an exact string
+    // match on the URL, so a re-tagged link would otherwise look like a new
+    // article and cost another simplification.
+    feedItems = [{
+      title: 'A tagged story',
+      link: 'https://www.bbc.co.uk/news/articles/abc123?at_medium=RSS&at_campaign=rss',
+      pubDate: 'Fri, 04 Sep 2026 10:00:00 GMT',
+      description: 'A calm story about the sea.',
+    }];
+    await scrapeSource(ctx.db, bbc());
+
+    // Same article, same date, different campaign tags.
+    feedItems = [{
+      title: 'A tagged story',
+      link: 'https://www.bbc.co.uk/news/articles/abc123?at_medium=custom7&at_campaign=64',
+      pubDate: 'Sat, 05 Sep 2026 10:00:00 GMT',
+      description: 'A calm story about the sea.',
+    }];
+    const second = await scrapeSource(ctx.db, bbc());
+
+    expect(second.inserted).toBe(0);
+    expect(second.skippedAlreadyStored).toBe(1);
+    expect(countRows(ctx.db, 'raw_articles')).toBe(1);
   });
 });
