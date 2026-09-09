@@ -28,6 +28,8 @@ export interface AppSettings {
   scrapeTimes: string[];
   llmProvider: string | null;
   apiKeyLocation: string;
+  /** How many stored articles one scrape run may simplify. 0 disables it. */
+  simplifyBudget: number;
 }
 
 /** Runs one settings mutation; resolves false if it failed. */
@@ -43,6 +45,10 @@ export interface ScrapeRun {
   error: string | null;
   itemsInFeed: number;
   inserted: number;
+  /** Of what the run stored, how many were simplified. */
+  simplified: number;
+  /** This source's raws still waiting when the run finished. */
+  leftWaiting: number;
   skippedNotNew: number;
   skippedAlreadyStored: number;
   skippedUnusable: number;
@@ -59,8 +65,18 @@ export interface ScrapeStatus {
     finishedAt?: string;
     sourceIds: string[];
     currentSourceId?: string;
-    results: { sourceId: string; sourceName: string; ok: boolean; error?: string; inserted: number }[];
-    summary: { inserted: number; failed: number; costUsd: number };
+    /** Which half of the run is happening. */
+    phase: 'fetching' | 'simplifying';
+    budget: number;
+    simplifiedCount: number;
+    results: {
+      sourceId: string; sourceName: string; ok: boolean; error?: string;
+      inserted: number; leftWaiting: number;
+      simplified: { rawId: string; kidHeadline: string; safety: string; engine: string }[];
+    }[];
+    summary: {
+      inserted: number; simplified: number; leftWaiting: number; failed: number; costUsd: number;
+    };
   } | null;
   /** The most recent run per source, so the page is useful before any click. */
   lastRuns: Record<string, ScrapeRun>;
