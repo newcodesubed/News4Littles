@@ -8,6 +8,7 @@ import cors from 'cors';
 import express from 'express';
 import type { Database } from 'better-sqlite3';
 import { openDatabase } from './db/connection.js';
+import { SCHEMA_VERSION } from './db/init.js';
 import { CORS_ORIGINS, DATABASE_PATH } from './env.js';
 import { createAdminAuth } from './http/middleware/adminAuth.js';
 import { errorHandler, notFoundHandler } from './http/middleware/errorHandler.js';
@@ -35,7 +36,27 @@ const ADMIN_ROUTERS = [
   createArticleActionsRouter,
 ];
 
+/**
+ * Refuse to start against a database older than the code.
+ *
+ * Repositories prepare their statements when they are constructed, so a
+ * missing column otherwise surfaces as `table raw_articles has no column named
+ * simplifiedAt` thrown from inside a repository factory — which says nothing
+ * about the fix. `npm run db:init` migrates in place; it is idempotent.
+ */
+function requireCurrentSchema(db: Database): void {
+  const version = db.pragma('user_version', { simple: true }) as number;
+  if (version >= SCHEMA_VERSION) return;
+
+  throw new Error(
+    `The database is schema version ${version}, but this code needs ${SCHEMA_VERSION}. ` +
+      'Run `npm run db:init` to migrate it (safe to re-run, and it keeps your data).',
+  );
+}
+
 export function createApp(db: Database = openDatabase()) {
+  requireCurrentSchema(db);
+
   const app = express();
 
   app.use(cors({ origin: CORS_ORIGINS }));

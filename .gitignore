@@ -1,2 +1,5 @@
 # Internal spec, kept local
 PRD.md
+
+# Local database backups
+server/data/backups/

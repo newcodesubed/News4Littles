@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../src/db/connection.js';
 import { initialiseSchema, SCHEMA_VERSION } from '../src/db/init.js';
 import { seed } from '../src/db/seed.js';
+import { createApp } from '../src/app.js';
 import { isArticleStatus, toKidArticle, type KidArticleRow } from '../src/core/article.js';
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
 import { createManualArticle } from '../src/services/submitArticle.js';
@@ -340,5 +341,32 @@ describe('the waiting backlog (raw_articles.simplifiedAt)', () => {
       'pending_review',
     );
     expect(createRawArticleRepository(db).countWaiting()).toBe(0);
+  });
+});
+
+describe('starting against an un-migrated database', () => {
+  it('names the fix instead of failing deep inside a repository', () => {
+    // The first column migration made "code newer than database" possible for
+    // the first time. Without this guard it surfaces as
+    // "table raw_articles has no column named simplifiedAt", thrown while
+    // preparing a statement, which says nothing about how to fix it.
+    initialiseSchema(path);
+    seed(path);
+
+    const db = openDatabase(path);
+    db.pragma('user_version = 2');
+
+    expect(() => createApp(db)).toThrow(/npm run db:init/);
+    expect(() => createApp(db)).toThrow(/schema version 2/);
+    db.close();
+  });
+
+  it('starts normally once the database is up to date', () => {
+    initialiseSchema(path);
+    seed(path);
+    const db = openDatabase(path);
+
+    expect(() => createApp(db)).not.toThrow();
+    db.close();
   });
 });
