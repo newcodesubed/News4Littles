@@ -243,3 +243,30 @@ describe('HTTP routes (§4.4)', () => {
     expect((await (await ctx.api('/api/admin/scrape/runs/bbc')).json())).toHaveLength(1);
   });
 });
+
+describe('the simplification budget in a run', () => {
+  it('records what the run simplified and what it left waiting', () => {
+    // 4 items with a budget of 1: the row must carry both numbers, because the
+    // settings page reads the persisted run, not the in-memory state.
+    itemCount = 4;
+
+    startScrapeRun(ctx.db, { budget: 1 });
+    return waitForRun().then(() => {
+      const run = createScrapeRunRepository(ctx.db).latestPerSource().bbc;
+      expect(run.inserted).toBe(4);
+      expect(run.simplified).toBe(1);
+      expect(run.leftWaiting).toBe(3);
+    });
+  });
+
+  it('summarises a run by what it stored and what it spent', () => {
+    itemCount = 5;
+
+    const state = startScrapeRun(ctx.db, { budget: 2 });
+    return waitForRun().then(() => {
+      expect(summarise(state)).toMatchObject({
+        inserted: 5, simplified: 2, leftWaiting: 3, failed: 0,
+      });
+    });
+  });
+});
