@@ -5,6 +5,7 @@ import { ARTICLE_STATUSES, FLAGGED_SAFETY, SAFETY_VALUES } from '../../core/arti
 import {
   createArticleRepository, SORTABLE_FIELDS, type ArticleQuery,
 } from '../../db/repositories/articleRepository.js';
+import { createRawArticleRepository } from '../../db/repositories/rawArticleRepository.js';
 import { createSourceRepository } from '../../db/repositories/sourceRepository.js';
 import {
   parseBool, parseList, requireInt, requireOneOf, requireSafetyList, requireStatus,
@@ -20,11 +21,12 @@ const text = (value: unknown): string | undefined => {
 export function createArticleQueueRouter(db: Database): Router {
   const router = Router();
   const articles = createArticleRepository(db);
+  const rawArticles = createRawArticleRepository(db);
   const sources = createSourceRepository(db);
 
-  /** §4.2: a count badge per status tab. */
+  /** §4.2: a count badge per status tab, plus the backlog tab's own. */
   router.get('/articles/counts', (_req, res) => {
-    res.json(articles.countsByStatus());
+    res.json({ ...articles.countsByStatus(), waiting: rawArticles.countWaiting() });
   });
 
   /**

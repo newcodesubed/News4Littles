@@ -8,6 +8,8 @@ beforeAll(() => {
   ctx = createTestContext();
   const manualRaw = insertRawArticle(ctx.db, {
     sourceId: 'manual', sourceName: 'Manual submission', headline: 'A hand typed original headline',
+    // It gets a kid article below, so it is simplified and not backlog.
+    simplifiedAt: '2026-09-04T09:00:00.000Z',
   });
 
   insertKidArticle(ctx.db, { id: 'a-pending', status: 'pending_review', category: 'World', safety: 'calm', ageTarget: 6, readingMinutes: 2, createdAt: '2026-09-01T10:00:00.000Z' });
@@ -25,6 +27,15 @@ const ids = async (qs = '') => (await list(qs)).map((a) => a.id).sort();
 describe('counts (§4.2 tab badges)', () => {
   it('reports one number per status', async () => {
     const counts = await (await ctx.api('/api/admin/articles/counts')).json();
+    expect(counts).toMatchObject({ pending_review: 4, published: 1, rejected: 1, total: 6 });
+  });
+
+  it('counts what is waiting to be simplified alongside the status tabs', async () => {
+    insertRawArticle(ctx.db, { id: 'waiting-1', headline: 'Stored but never simplified' });
+
+    const counts = await (await ctx.api('/api/admin/articles/counts')).json();
+    expect(counts.waiting).toBe(1);
+    // The status counts must be untouched by the addition.
     expect(counts).toMatchObject({ pending_review: 4, published: 1, rejected: 1, total: 6 });
   });
 });
