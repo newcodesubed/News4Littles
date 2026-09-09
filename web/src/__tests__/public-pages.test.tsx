@@ -242,3 +242,25 @@ describe('the reading-age slider changes the story (§6)', () => {
     await waitFor(() => expect(requested.some((p) => p.includes('age=7'))).toBe(true));
   });
 });
+
+describe('the out-of-band note (§6)', () => {
+  it('says so when the served version was written for another age', () => {
+    renderIn(<StoryCard article={{ ...article({ ageTarget: 12 }), ageMatched: false }} />);
+
+    expect(screen.getByText(/written for age 12/i)).toBeInTheDocument();
+  });
+
+  it('stays quiet when the age matched', () => {
+    renderIn(<StoryCard article={{ ...article({ ageTarget: 8 }), ageMatched: true }} />);
+
+    expect(screen.queryByText(/written for age/i)).not.toBeInTheDocument();
+  });
+
+  it('stays quiet when nothing said either way', () => {
+    // The admin queue renders these components with an AdminArticle, which has
+    // no ageMatched. Absence must not read as "out of band".
+    renderIn(<StoryCard article={article()} />);
+
+    expect(screen.queryByText(/written for age/i)).not.toBeInTheDocument();
+  });
+});

@@ -4,7 +4,16 @@ import { CategoryBadge, SafetyBadge } from './Badges';
 import type { KidArticle } from '../lib/types';
 
 /** Story card — PRD §3.3, markup matching the prototype. */
-export function StoryCard({ article }: { article: KidArticle }) {
+export function StoryCard({
+  article,
+}: {
+  /**
+   * `ageMatched` comes from the public API (§6). It is optional because the
+   * admin queue renders this with an AdminArticle, which has no such field —
+   * and absence must not read as "out of band".
+   */
+  article: KidArticle & { ageMatched?: boolean };
+}) {
   return (
     <Link
       to={`/story/${article.id}`}
@@ -14,6 +23,12 @@ export function StoryCard({ article }: { article: KidArticle }) {
         <CategoryBadge category={article.category} />
         <SafetyBadge safety={article.safety} />
       </div>
+
+      {article.ageMatched === false && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          Written for age {article.ageTarget} — the closest version we have for this story.
+        </p>
+      )}
 
       <h3 className="font-display text-2xl leading-tight mb-3 group-hover:text-primary transition-colors">
         {article.kidHeadline}

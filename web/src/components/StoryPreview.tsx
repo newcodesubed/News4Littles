@@ -28,7 +28,12 @@ export function StoryPreview({
   showSource = true,
   headingLevel = 'h1',
 }: {
-  article: KidArticle;
+  /**
+   * `ageMatched` comes from the public API (§6). Optional because the admin
+   * queue and the sandbox render this with an article that has no such field,
+   * and absence must not read as "out of band".
+   */
+  article: KidArticle & { ageMatched?: boolean };
   showSource?: boolean;
   /** The sandbox renders inside a panel, so its story title is not the page h1. */
   headingLevel?: 'h1' | 'h2';
@@ -44,6 +49,12 @@ export function StoryPreview({
           For age {article.ageTarget}+
         </span>
       </div>
+
+      {article.ageMatched === false && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Written for age {article.ageTarget} — the closest version we have for this story.
+        </p>
+      )}
 
       <Heading className="font-display text-4xl md:text-5xl leading-tight mb-5">
         {article.kidHeadline}
