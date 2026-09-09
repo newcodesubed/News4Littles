@@ -7,15 +7,11 @@
  * name.
  */
 import type { Database } from 'better-sqlite3';
+import { strictestSafety } from '../../pipeline/guard.js';
 import {
   toKidArticle, toKidArticleRow,
   type ArticleStatus, type KidArticle, type KidArticleRow, type Safety,
 } from '../../core/article.js';
-
-/** §6's severity order, for collapsing a story's versions to one verdict. */
-const SAFETY_SEVERITY: Record<Safety, number> = {
-  calm: 0, 'adult-nearby': 1, 'skip-young': 2,
-};
 
 /** Columns the review queue needs that do not live on kid_articles. */
 export interface AdminArticleRow extends KidArticleRow {
@@ -101,14 +97,6 @@ const ADMIN_SELECT = `
 export interface ArticleRepository {
   insert(article: KidArticle): void;
   /**
-   * The public reads. Both hardcode status = 'published' rather than taking it
-   * as an argument: this is the only path a child's browser can reach, and
-   * §2.2 promises a human read every word first. A `status` parameter here is
-   * one forgetful caller away from serving the review queue to the public.
-   */
-  listPublished(): KidArticle[];
-  findPublishedById(id: string): KidArticle | undefined;
-  /**
    * §6: the published version written FOR this reading age. Exact match only —
    * a story exists in one version per age (5-14), so a missing age means the
    * story was never simplified for this reader, and showing them an age-12
@@ -127,7 +115,6 @@ export interface ArticleRepository {
   countsByStatus(): Record<ArticleStatus, number> & { total: number };
   distinctCategories(): string[];
   distinctAgeTargets(): number[];
-  publish(id: string, at: string): void;
   /**
    * §5: publish, reject, unpublish and delete are STORY-scoped — an editor
    * approves a story, and every age version has to move with it. Each takes any
@@ -137,9 +124,6 @@ export interface ArticleRepository {
   rejectStory(id: string, reason: string | null): void;
   returnStoryToQueue(id: string): void;
   removeStory(id: string): void;
-  reject(id: string, reason: string | null): void;
-  returnToQueue(id: string): void;
-  remove(id: string): void;
   /** Applies a partial content update and marks the row human-edited. */
   applyEdit(id: string, changes: Partial<ArticleContent>): void;
   /** Replaces content from a regeneration; clears the human-edited flag. */
@@ -151,12 +135,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
     insert: db.prepare(INSERT_SQL),
     adminById: db.prepare(`${ADMIN_SELECT} WHERE k.id = ?`),
     state: db.prepare(`SELECT id, status, safety FROM kid_articles WHERE id = ?`),
-    published: db.prepare(
-      `SELECT * FROM kid_articles WHERE status = 'published' ORDER BY createdAt DESC`,
-    ),
-    publishedById: db.prepare(
-      `SELECT * FROM kid_articles WHERE id = ? AND status = 'published'`,
-    ),
     // §6: the version written for this age. One version per age per story, so
     // this is one row per story with no grouping needed.
     publishedForAge: db.prepare(
@@ -171,7 +149,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
        WHERE status = 'published' AND ageTarget = @age
          AND originalId = (SELECT originalId FROM kid_articles WHERE id = @id)`,
     ),
-    counts: db.prepare(`SELECT status, COUNT(*) AS n FROM kid_articles GROUP BY status`),
     versionsForStories: (count: number) =>
       db.prepare(
         `${ADMIN_SELECT} WHERE k.originalId IN (${Array(count).fill('?').join(', ')})
@@ -186,12 +163,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
     ),
     categories: db.prepare(`SELECT DISTINCT category FROM kid_articles ORDER BY category`),
     ages: db.prepare(`SELECT DISTINCT ageTarget FROM kid_articles ORDER BY ageTarget`),
-    publish: db.prepare(`UPDATE kid_articles SET status='published', publishedAt=@at WHERE id=@id`),
-    reject: db.prepare(`UPDATE kid_articles SET status='rejected', rejectReason=@reason WHERE id=@id`),
-    requeue: db.prepare(
-      `UPDATE kid_articles SET status='pending_review', publishedAt=NULL, rejectReason=NULL WHERE id=@id`,
-    ),
-    remove: db.prepare(`DELETE FROM kid_articles WHERE id = ?`),
     // The subselect resolves the story from any one of its versions.
     publishStory: db.prepare(
       `UPDATE kid_articles SET status='published', publishedAt=@at
@@ -256,15 +227,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
       return statements.state.get(id) as
         | { id: string; status: ArticleStatus; safety: Safety }
         | undefined;
-    },
-
-    listPublished() {
-      return (statements.published.all() as KidArticleRow[]).map(toKidArticle);
-    },
-
-    findPublishedById(id) {
-      const row = statements.publishedById.get(id) as KidArticleRow | undefined;
-      return row ? toKidArticle(row) : undefined;
     },
 
     listPublishedForAge(age) {
@@ -375,10 +337,7 @@ export function createArticleRepository(db: Database): ArticleRepository {
         return [{
           originalId,
           versions,
-          safety: versions.reduce<Safety>(
-            (worst, v) => (SAFETY_SEVERITY[v.safety] > SAFETY_SEVERITY[worst] ? v.safety : worst),
-            'calm',
-          ),
+          safety: strictestSafety(versions.map((v) => v.safety)),
           status: youngest.status,
           kidHeadline: youngest.kidHeadline,
           category: youngest.category,
@@ -399,20 +358,12 @@ export function createArticleRepository(db: Database): ArticleRepository {
         status: rows[0].status,
         // The strictest, so a bulk approve cannot slip a skip-young version
         // through because the selected version happened to be calm.
-        safety: rows.reduce<Safety>(
-          (worst, row) => (SAFETY_SEVERITY[row.safety] > SAFETY_SEVERITY[worst] ? row.safety : worst),
-          'calm',
-        ),
+        safety: strictestSafety(rows.map((row) => row.safety)),
       };
     },
 
     distinctCategories: () => statements.categories.pluck().all() as string[],
     distinctAgeTargets: () => statements.ages.pluck().all() as number[],
-
-    publish: (id, at) => void statements.publish.run({ id, at }),
-    reject: (id, reason) => void statements.reject.run({ id, reason }),
-    returnToQueue: (id) => void statements.requeue.run({ id }),
-    remove: (id) => void statements.remove.run(id),
 
     publishStory: (id, at) => void statements.publishStory.run({ id, at }),
     rejectStory: (id, reason) => void statements.rejectStory.run({ id, reason }),

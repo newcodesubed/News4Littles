@@ -16,10 +16,8 @@ import { createArticleRepository } from '../db/repositories/articleRepository.js
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
 import { simplifyArticleForAllAges } from '../pipeline/simplifyArticle.js';
+import { strictestSafety } from '../pipeline/guard.js';
 import { acquireJob, releaseJob } from './jobLock.js';
-
-/** §6's severity order, for reporting the strictest verdict across ages. */
-const SAFETY_RANK: Record<string, number> = { calm: 0, 'adult-nearby': 1, 'skip-young': 2 };
 
 export interface SimplifiedRow {
   rawId: string;
@@ -140,11 +138,7 @@ export async function simplifyRawArticles(
         kidHeadline: outcome.versions[0].article.kidHeadline,
         // The strictest across ages, so the queue cannot show 'calm' for a
         // story that is 'skip-young' at age 5.
-        safety: outcome.versions.reduce<string>(
-          (worst, version) =>
-            SAFETY_RANK[version.article.safety] > SAFETY_RANK[worst] ? version.article.safety : worst,
-          'calm',
-        ),
+        safety: strictestSafety(outcome.versions.map((version) => version.article.safety)),
         engine: engines.size === 1 ? [...engines][0] : 'mixed',
         versions: outcome.versions.length,
         costUsd: outcome.costUsd,
