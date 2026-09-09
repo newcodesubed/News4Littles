@@ -42,7 +42,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
         bbc: {
           id: 'run1', sourceId: 'bbc', startedAt: '2026-09-08T06:00:00.000Z',
           finishedAt: '2026-09-08T06:01:00.000Z', ok: true, error: null,
-          itemsInFeed: 45, inserted: 41, simplified: 10, leftWaiting: 31,
+          itemsInFeed: 45, inserted: 41, simplified: 10, versions: 100, leftWaiting: 31,
           skippedNotNew: 4, skippedAlreadyStored: 0,
           skippedUnusable: 0, costUsd: 0.0007, fallbacks: [], trigger: 'manual',
         },
@@ -369,6 +369,19 @@ describe('settings — §8.7 app settings', () => {
   it('states the API key is never stored in the database', async () => {
     renderIn(<AdminSettings />);
     expect(await screen.findByText(/never stored in the database/)).toBeInTheDocument();
+  });
+
+  it('warns that the budget counts stories, not model calls', async () => {
+    renderIn(<AdminSettings />);
+    const help = await screen.findByText(/each story is rewritten once for every reading age/i);
+    expect(help).toHaveTextContent(/10 stories/);
+    expect(help).toHaveTextContent(/100 model calls/);
+  });
+
+  it('shows the version count for the last run', async () => {
+    renderIn(<AdminSettings />);
+    const lastRun = await screen.findByText(/already seen/);
+    expect(lastRun).toHaveTextContent(/100 versions/);
   });
 
   it('warns that a scrape-time change needs a restart', async () => {
