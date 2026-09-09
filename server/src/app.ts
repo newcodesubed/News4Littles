@@ -20,6 +20,7 @@ import { createRawArticlesRouter } from './routes/admin/rawArticles.js';
 import { createScrapeRouter } from './routes/admin/scrape.js';
 import { createSettingsRouter } from './routes/admin/settings.js';
 import { createSourcesRouter } from './routes/admin/sources.js';
+import { createStoriesRouter } from './routes/admin/stories.js';
 import { createSubmitRouter } from './routes/admin/submit.js';
 import { createArticlesRouter } from './routes/public/articles.js';
 
@@ -27,6 +28,7 @@ import { createArticlesRouter } from './routes/public/articles.js';
 const ADMIN_ROUTERS = [
   createArticleBulkRouter,
   createArticleQueueRouter,
+  createStoriesRouter,
   createSubmitRouter,
   createSourcesRouter,
   createSettingsRouter,

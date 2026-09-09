@@ -12,6 +12,11 @@ import {
   type ArticleStatus, type KidArticle, type KidArticleRow, type Safety,
 } from '../../core/article.js';
 
+/** §6's severity order, for collapsing a story's versions to one verdict. */
+const SAFETY_SEVERITY: Record<Safety, number> = {
+  calm: 0, 'adult-nearby': 1, 'skip-young': 2,
+};
+
 /** Columns the review queue needs that do not live on kid_articles. */
 export interface AdminArticleRow extends KidArticleRow {
   sourceId: string;
@@ -21,6 +26,29 @@ export interface AdminArticleRow extends KidArticleRow {
 export interface AdminArticle extends KidArticle {
   sourceId: string;
   originalHeadline: string;
+}
+
+/**
+ * One story as the review queue shows it: every age version, plus the
+ * story-level facts an editor decides on.
+ *
+ * `safety` is the STRICTEST across versions (§6). A story that is skip-young at
+ * age 5 must never present as calm because age 14 is — the editor is about to
+ * approve all ten at once.
+ */
+export interface AdminStory {
+  originalId: string;
+  /** Every version, ascending by ageTarget. Never empty. */
+  versions: AdminArticle[];
+  safety: Safety;
+  /** Shared by every version: publish, reject and delete are story-scoped. */
+  status: ArticleStatus;
+  /** The youngest version's headline, as the row's label. */
+  kidHeadline: string;
+  category: string;
+  sourceId: string;
+  originalHeadline: string;
+  createdAt: string;
 }
 
 export function toAdminArticle(row: AdminArticleRow): AdminArticle {
@@ -84,6 +112,10 @@ export interface ArticleRepository {
   /** Status + safety only — enough to decide whether an action is allowed. */
   findState(id: string): { id: string; status: ArticleStatus; safety: Safety } | undefined;
   query(query: ArticleQuery): AdminArticle[];
+  /** §5: one row per story, for the grouped review queue. */
+  queryStories(query: ArticleQuery): AdminStory[];
+  /** Status plus the story's STRICTEST safety, for deciding an action. */
+  findStoryState(id: string): { originalId: string; status: ArticleStatus; safety: Safety } | undefined;
   countsByStatus(): Record<ArticleStatus, number> & { total: number };
   distinctCategories(): string[];
   distinctAgeTargets(): number[];
@@ -109,6 +141,18 @@ export function createArticleRepository(db: Database): ArticleRepository {
       `SELECT * FROM kid_articles WHERE id = ? AND status = 'published'`,
     ),
     counts: db.prepare(`SELECT status, COUNT(*) AS n FROM kid_articles GROUP BY status`),
+    versionsForStories: (count: number) =>
+      db.prepare(
+        `${ADMIN_SELECT} WHERE k.originalId IN (${Array(count).fill('?').join(', ')})
+         ORDER BY k.ageTarget`,
+      ),
+    storyCounts: db.prepare(
+      `SELECT status, COUNT(DISTINCT originalId) AS n FROM kid_articles GROUP BY status`,
+    ),
+    storyStateFor: db.prepare(
+      `SELECT originalId, status, safety FROM kid_articles
+       WHERE originalId = (SELECT originalId FROM kid_articles WHERE id = ?)`,
+    ),
     categories: db.prepare(`SELECT DISTINCT category FROM kid_articles ORDER BY category`),
     ages: db.prepare(`SELECT DISTINCT ageTarget FROM kid_articles ORDER BY ageTarget`),
     publish: db.prepare(`UPDATE kid_articles SET status='published', publishedAt=@at WHERE id=@id`),
@@ -150,7 +194,7 @@ export function createArticleRepository(db: Database): ArticleRepository {
     return { sets, params };
   }
 
-  return {
+  const repository: ArticleRepository = {
     insert(article) {
       statements.insert.run(toKidArticleRow(article));
     },
@@ -228,12 +272,81 @@ export function createArticleRepository(db: Database): ArticleRepository {
     },
 
     countsByStatus() {
+      // DISTINCT originalId: ten age versions are ONE story to review, and a
+      // Pending badge reading 100 for ten stories is useless.
       const counts = { pending_review: 0, published: 0, rejected: 0, total: 0 };
-      for (const row of statements.counts.all() as { status: ArticleStatus; n: number }[]) {
+      for (const row of statements.storyCounts.all() as { status: ArticleStatus; n: number }[]) {
         counts[row.status] = row.n;
         counts.total += row.n;
       }
       return counts;
+    },
+
+    queryStories(query) {
+      // The filter runs over VERSIONS, reusing the one filter builder, so the
+      // flat and grouped queues can never disagree about what matches.
+      const matched = repository.query(query);
+      if (matched.length === 0) return [];
+
+      // Distinct originalIds in the order query() returned them, so the
+      // caller's sort still decides the order stories appear in.
+      const order: string[] = [];
+      const seen = new Set<string>();
+      for (const version of matched) {
+        if (seen.has(version.originalId)) continue;
+        seen.add(version.originalId);
+        order.push(version.originalId);
+      }
+
+      // Every version of those stories, not just the ones that matched: an
+      // editor approving a story is approving all of it.
+      const rows = statements.versionsForStories(order.length).all(...order) as AdminArticleRow[];
+
+      const byStory = new Map<string, AdminArticle[]>();
+      for (const row of rows) {
+        const version = toAdminArticle(row);
+        const list = byStory.get(version.originalId);
+        if (list) list.push(version);
+        else byStory.set(version.originalId, [version]);
+      }
+
+      return order.flatMap((originalId) => {
+        const versions = byStory.get(originalId);
+        if (!versions || versions.length === 0) return [];
+
+        const youngest = versions[0];
+        return [{
+          originalId,
+          versions,
+          safety: versions.reduce<Safety>(
+            (worst, v) => (SAFETY_SEVERITY[v.safety] > SAFETY_SEVERITY[worst] ? v.safety : worst),
+            'calm',
+          ),
+          status: youngest.status,
+          kidHeadline: youngest.kidHeadline,
+          category: youngest.category,
+          sourceId: youngest.sourceId,
+          originalHeadline: youngest.originalHeadline,
+          createdAt: youngest.createdAt,
+        }];
+      });
+    },
+
+    findStoryState(id) {
+      const rows = statements.storyStateFor.all(id) as
+        { originalId: string; status: ArticleStatus; safety: Safety }[];
+      if (rows.length === 0) return undefined;
+
+      return {
+        originalId: rows[0].originalId,
+        status: rows[0].status,
+        // The strictest, so a bulk approve cannot slip a skip-young version
+        // through because the selected version happened to be calm.
+        safety: rows.reduce<Safety>(
+          (worst, row) => (SAFETY_SEVERITY[row.safety] > SAFETY_SEVERITY[worst] ? row.safety : worst),
+          'calm',
+        ),
+      };
     },
 
     distinctCategories: () => statements.categories.pluck().all() as string[],
@@ -258,4 +371,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
       db.prepare(`UPDATE kid_articles SET ${sets.join(', ')} WHERE id = @id`).run({ ...params, id });
     },
   };
+
+  return repository;
 }
