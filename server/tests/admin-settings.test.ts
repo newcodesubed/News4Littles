@@ -169,6 +169,41 @@ describe('app settings (§8.7)', () => {
     expect((await put('/api/admin/app-settings', body)).status).toBe(400);
   });
 
+  it('defaults the simplification budget to 10 and round-trips a new value', async () => {
+    expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(10);
+
+    const res = await put('/api/admin/app-settings', {
+      defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 4,
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).simplifyBudget).toBe(4);
+    expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(4);
+  });
+
+  it('accepts a budget of 0 — simplify nothing automatically', async () => {
+    const res = await put('/api/admin/app-settings', {
+      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: 0,
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).simplifyBudget).toBe(0);
+  });
+
+  it.each([[-1], [101], ['ten'], [2.5]])('rejects a simplifyBudget of %p', async (value) => {
+    const res = await put('/api/admin/app-settings', {
+      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: value,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('leaves the budget alone when the field is absent', async () => {
+    // An older client PUTting the pre-budget body must not silently reset it.
+    await put('/api/admin/app-settings', {
+      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: 3,
+    });
+    await put('/api/admin/app-settings', { defaultAge: 7, scrapeTimes: [], llmProvider: null });
+    expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(3);
+  });
+
   it('a saved defaultAge is used by the pipeline', async () => {
     await put('/api/admin/app-settings', { defaultAge: 12, scrapeTimes: ['06:00'] });
     const { article } = await (await post('/api/admin/simplify', {
