@@ -120,6 +120,15 @@ export interface ArticleRepository {
   distinctCategories(): string[];
   distinctAgeTargets(): number[];
   publish(id: string, at: string): void;
+  /**
+   * §5: publish, reject, unpublish and delete are STORY-scoped — an editor
+   * approves a story, and every age version has to move with it. Each takes any
+   * one version's id and resolves it to the story.
+   */
+  publishStory(id: string, at: string): void;
+  rejectStory(id: string, reason: string | null): void;
+  returnStoryToQueue(id: string): void;
+  removeStory(id: string): void;
   reject(id: string, reason: string | null): void;
   returnToQueue(id: string): void;
   remove(id: string): void;
@@ -161,6 +170,23 @@ export function createArticleRepository(db: Database): ArticleRepository {
       `UPDATE kid_articles SET status='pending_review', publishedAt=NULL, rejectReason=NULL WHERE id=@id`,
     ),
     remove: db.prepare(`DELETE FROM kid_articles WHERE id = ?`),
+    // The subselect resolves the story from any one of its versions.
+    publishStory: db.prepare(
+      `UPDATE kid_articles SET status='published', publishedAt=@at
+       WHERE originalId = (SELECT originalId FROM kid_articles WHERE id = @id)`,
+    ),
+    rejectStory: db.prepare(
+      `UPDATE kid_articles SET status='rejected', rejectReason=@reason
+       WHERE originalId = (SELECT originalId FROM kid_articles WHERE id = @id)`,
+    ),
+    requeueStory: db.prepare(
+      `UPDATE kid_articles SET status='pending_review', publishedAt=NULL, rejectReason=NULL
+       WHERE originalId = (SELECT originalId FROM kid_articles WHERE id = @id)`,
+    ),
+    removeStory: db.prepare(
+      `DELETE FROM kid_articles
+       WHERE originalId = (SELECT originalId FROM kid_articles WHERE id = ?)`,
+    ),
   };
 
   /** Marshal only the content fields that were supplied. */
@@ -356,6 +382,11 @@ export function createArticleRepository(db: Database): ArticleRepository {
     reject: (id, reason) => void statements.reject.run({ id, reason }),
     returnToQueue: (id) => void statements.requeue.run({ id }),
     remove: (id) => void statements.remove.run(id),
+
+    publishStory: (id, at) => void statements.publishStory.run({ id, at }),
+    rejectStory: (id, reason) => void statements.rejectStory.run({ id, reason }),
+    returnStoryToQueue: (id) => void statements.requeueStory.run({ id }),
+    removeStory: (id) => void statements.removeStory.run(id),
 
     applyEdit(id, changes) {
       const { sets, params } = contentParams(changes);
