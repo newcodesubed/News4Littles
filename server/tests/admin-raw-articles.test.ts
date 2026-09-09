@@ -81,8 +81,9 @@ describe('POST /api/admin/raw-articles/simplify', () => {
     expect((await res.json()).running).toBe(true);
 
     const finished = await waitForJob();
+    // One story simplified, ten reading-age versions written for it.
     expect(finished.job.report.simplified).toHaveLength(1);
-    expect(countRows(ctx.db, 'kid_articles')).toBe(1);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
     // r2 was not selected, so it is still waiting.
     expect(createRawArticleRepository(ctx.db).countWaiting()).toBe(1);
   });

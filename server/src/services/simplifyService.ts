@@ -14,18 +14,25 @@ import type { Database } from 'better-sqlite3';
 import { BadRequestError } from '../core/errors.js';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
-import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
-import { simplifyArticle } from '../pipeline/simplifyArticle.js';
+import { simplifyArticleForAllAges } from '../pipeline/simplifyArticle.js';
 import { acquireJob, releaseJob } from './jobLock.js';
+
+/** §6's severity order, for reporting the strictest verdict across ages. */
+const SAFETY_RANK: Record<string, number> = { calm: 0, 'adult-nearby': 1, 'skip-young': 2 };
 
 export interface SimplifiedRow {
   rawId: string;
   /** Carried so a scrape run can attribute the cost back to the right source. */
   sourceId: string;
+  /** The youngest version's headline, as a label for the story. */
   kidHeadline: string;
+  /** The strictest safety across every version — what an editor must see first. */
   safety: string;
+  /** 'llm', 'local-fallback', or 'mixed' when the ages disagree. */
   engine: string;
+  /** How many versions were written. Ten unless something failed. */
+  versions: number;
   costUsd: number;
   fallbackReason?: string;
 }
@@ -68,7 +75,6 @@ export async function simplifyRawArticles(
 ): Promise<SimplifyReport> {
   const raws = createRawArticleRepository(db);
   const articles = createArticleRepository(db);
-  const { defaultAge } = createSettingsRepository(db).getAppSettings();
   const clock = options.now ?? (() => new Date().toISOString());
 
   const report: SimplifyReport = { simplified: [], failures: [], skipped: [] };
@@ -87,9 +93,9 @@ export async function simplifyRawArticles(
       }
 
       const now = clock();
-      // simplifyArticle never throws: it falls back to the rule-based pipeline
-      // (§9.2) and flags why, so there is no "unsimplifiable" article here.
-      const outcome = await simplifyArticle(
+      // One version per reading age (§3.6). simplifyArticle never throws: it
+      // falls back to the rule-based pipeline (§9.2) per age and flags why.
+      const outcome = await simplifyArticleForAllAges(
         db,
         {
           id: raw.id,
@@ -102,20 +108,22 @@ export async function simplifyRawArticles(
           // link, so it has to be the article a grown-up can actually read.
           sourceUrl: raw.url,
         },
-        { ageTarget: defaultAge, now, client: options.client },
+        { now, client: options.client },
       );
 
       const claimed = db.transaction(() => {
-        // The claim and the insert commit together: if another writer got here
-        // first, markSimplified reports false and no second kid article exists.
+        // The claim and every version commit together: a story holding four of
+        // ten versions cannot be reviewed or published coherently.
         if (!raws.markSimplified(raw.id, now)) return false;
-        articles.insert({
-          ...outcome.article,
-          originalId: raw.id,
-          // §5.2 step 7: never auto-publish, whatever the guard decided.
-          status: 'pending_review',
-          publishedAt: null,
-        });
+        for (const version of outcome.versions) {
+          articles.insert({
+            ...version.article,
+            originalId: raw.id,
+            // §5.2 step 7: never auto-publish, whatever the guard decided.
+            status: 'pending_review',
+            publishedAt: null,
+          });
+        }
         return true;
       })();
 
@@ -124,14 +132,23 @@ export async function simplifyRawArticles(
         continue;
       }
 
+      const engines = new Set(outcome.versions.map((version) => version.engine));
+
       report.simplified.push({
         rawId: raw.id,
         sourceId: raw.sourceId,
-        kidHeadline: outcome.article.kidHeadline,
-        safety: outcome.article.safety,
-        engine: outcome.engine,
-        costUsd: outcome.costUsd ?? 0,
-        fallbackReason: outcome.fallbackReason,
+        kidHeadline: outcome.versions[0].article.kidHeadline,
+        // The strictest across ages, so the queue cannot show 'calm' for a
+        // story that is 'skip-young' at age 5.
+        safety: outcome.versions.reduce<string>(
+          (worst, version) =>
+            SAFETY_RANK[version.article.safety] > SAFETY_RANK[worst] ? version.article.safety : worst,
+          'calm',
+        ),
+        engine: engines.size === 1 ? [...engines][0] : 'mixed',
+        versions: outcome.versions.length,
+        costUsd: outcome.costUsd,
+        fallbackReason: outcome.fallbacks.length > 0 ? outcome.fallbacks.join('; ') : undefined,
       });
     } catch (error: unknown) {
       // A database failure on one article leaves simplifiedAt NULL, so the row

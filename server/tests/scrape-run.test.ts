@@ -77,7 +77,8 @@ describe('starting a run', () => {
     startScrapeRun(ctx.db);
     await waitForRun();
     expect(getRunState()!.results.map((r) => r.sourceId)).toEqual(['bbc']);
-    expect(countRows(ctx.db, 'kid_articles')).toBe(2);
+    // Two stories, ten reading ages each (§3.6).
+    expect(countRows(ctx.db, 'kid_articles')).toBe(20);
   });
 
   it('scrapes one named source', async () => {
