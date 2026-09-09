@@ -14,12 +14,18 @@ import {
 import { ArticleRow, type PendingAction } from './review/ArticleRow';
 import { BulkBar, SkippedReport } from './review/BulkBar';
 import { FilterBar } from './review/FilterBar';
+import { WaitingPanel } from './review/WaitingPanel';
 
 const TABS = [
   { key: 'pending_review', label: 'Pending review' },
   { key: 'published', label: 'Published' },
   { key: 'rejected', label: 'Rejected' },
+  // Not a kid_articles status — raw articles a scrape stored but did not
+  // simplify. It must never reach the article query as a status filter.
+  { key: 'waiting', label: 'Not yet simplified' },
 ] as const;
+
+type TabKey = (typeof TABS)[number]['key'];
 
 type BulkAction = 'approve' | 'reject' | 'delete';
 
@@ -27,6 +33,7 @@ type BulkAction = 'approve' | 'reject' | 'delete';
 export function AdminReview() {
   const { adminFetch } = useAdminAuth();
 
+  const [tab, setTab] = useState<TabKey>('pending_review');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [articles, setArticles] = useState<AdminArticle[]>([]);
   const [counts, setCounts] = useState<StatusCounts | null>(null);
@@ -47,26 +54,40 @@ export function AdminReview() {
 
   const query = useMemo(() => toQueryString(filters), [filters]);
 
+  /** Split out of `load` so the badges still refresh on the backlog tab. */
+  const loadCounts = useCallback(async () => {
+    try {
+      const res = await adminFetch('/api/admin/articles/counts');
+      if (res.ok) setCounts((await res.json()) as StatusCounts);
+    } catch {
+      // The badges are cosmetic; the queue works without them.
+    }
+  }, [adminFetch]);
+
   const load = useCallback(async () => {
+    // The backlog tab loads its own rows; this query is kid articles only.
+    if (tab === 'waiting') {
+      await loadCounts();
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const [listRes, countRes] = await Promise.all([
-        adminFetch(`/api/admin/articles${query}`),
-        adminFetch('/api/admin/articles/counts'),
-      ]);
+      const listRes = await adminFetch(`/api/admin/articles${query}`);
       if (!listRes.ok) {
         throw new Error(((await listRes.json()) as { error?: string }).error ?? 'Could not load articles.');
       }
       setArticles(((await listRes.json()) as { articles: AdminArticle[] }).articles);
-      if (countRes.ok) setCounts((await countRes.json()) as StatusCounts);
+      await loadCounts();
       setSelected(new Set());
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : 'Could not load articles.');
     } finally {
       setLoading(false);
     }
-  }, [adminFetch, query]);
+  }, [adminFetch, query, tab, loadCounts]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -158,26 +179,34 @@ export function AdminReview() {
 
       {/* §4.2 status tabs with count badges */}
       <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-        {TABS.map((tab) => {
-          const active = filters.status === tab.key;
+        {TABS.map((t) => {
+          const active = tab === t.key;
           return (
             <button
-              key={tab.key}
-              onClick={() => setFilters({ ...filters, status: tab.key })}
+              key={t.key}
+              onClick={() => {
+                setTab(t.key);
+                // Only real statuses go into the article query.
+                if (t.key !== 'waiting') setFilters({ ...filters, status: t.key });
+              }}
               aria-current={active ? 'page' : undefined}
               className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition ${
                 active ? 'bg-primary text-primary-foreground' : 'text-foreground/70 hover:bg-muted'
               }`}
             >
-              {tab.label}
+              {t.label}
               <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-primary-foreground/20' : 'bg-muted'}`}>
-                {counts ? counts[tab.key] : '–'}
+                {counts ? counts[t.key] : '–'}
               </span>
             </button>
           );
         })}
       </div>
 
+      {tab === 'waiting' ? (
+        <WaitingPanel sources={options?.sources ?? []} onSimplified={loadCounts} />
+      ) : (
+      <>
       <FilterBar filters={filters} options={options} onChange={setFilters} />
 
       {notice && <div className="mt-4"><Notice>{notice}</Notice></div>}
@@ -266,6 +295,8 @@ export function AdminReview() {
           </>
         )}
       </div>
+      </>
+      )}
 
       {viewing && (
         <ViewArticleDialog
