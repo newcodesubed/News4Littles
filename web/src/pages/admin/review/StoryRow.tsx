@@ -3,7 +3,23 @@ import { Link } from 'react-router-dom';
 import { CategoryBadge, SafetyBadge } from '../../../components/Badges';
 import { Button } from '../../../ui/Button';
 import type { AdminStory } from '../../../admin/types';
-import type { PendingAction, RowActions } from './ArticleRow';
+
+export interface RowActions {
+  onView: () => void;
+  onPublish: () => void;
+  onReject: () => void;
+  onUnpublish: () => void;
+  onEdit: () => void;
+  onRegenerate: () => void;
+  onDelete: () => void;
+}
+
+/**
+ * Which action on this row is in flight, if any. Every button is disabled while
+ * one is running: without it, a slow Regenerate looks like nothing happened and
+ * invites a second click.
+ */
+export type PendingAction = 'publish' | 'reject' | 'unpublish' | 'regenerate' | 'delete' | null;
 
 const STATUS_STYLE: Record<string, string> = {
   pending_review: 'bg-surface-sun text-amber-800',
@@ -14,9 +30,9 @@ const STATUS_STYLE: Record<string, string> = {
 /**
  * One queue row per story (§5) — a story being one raw article's age versions.
  *
- * Deliberately the same layout, labels and action set as the single-version row
- * it replaced: the wording ("Re-review", "View") and the disabled-not-hidden
- * Delete were chosen for this product, and grouping is no reason to relearn them.
+ * The wording ("Re-review", "View") and the disabled-not-hidden Delete were
+ * chosen for this product before stories had versions, and are kept verbatim:
+ * grouping is no reason for an editor to relearn the queue.
  *
  * Two things are story-level rather than version-level:
  *  - the safety badge shows the STRICTEST verdict across versions, because

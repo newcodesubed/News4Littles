@@ -12,10 +12,9 @@ import {
   ConfirmDialog, EditDialog, RegenerateDialog, RejectDialog, ViewArticleDialog,
   type Confirmation,
 } from './dialogs';
-import type { PendingAction } from './review/ArticleRow';
+import { StoryRow, type PendingAction } from './review/StoryRow';
 import { BulkBar, SkippedReport } from './review/BulkBar';
 import { FilterBar } from './review/FilterBar';
-import { StoryRow } from './review/StoryRow';
 import { WaitingPanel } from './review/WaitingPanel';
 
 const TABS = [
