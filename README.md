@@ -59,7 +59,7 @@ Everything under `/admin` needs the admin password.
 
 | Route             | What it is                                                               |
 | ----------------- | ------------------------------------------------------------------------ |
-| `/admin/review`   | The review queue. Read, approve, reject, edit, regenerate, delete        |
+| `/admin/review`   | The review queue — one row per story, every reading age approved together |
 | `/admin/submit`   | Paste an article by hand and simplify it                                 |
 | `/admin/settings` | Sources, guardrails, prompts, app defaults, and **Run now** scraping     |
 | `/admin/sandbox`  | Edit a prompt and see what it does to a real article before promoting it |
@@ -172,8 +172,28 @@ a month was not worth losing per-age prompt control or the sandbox's fidelity
 to production (§7.4).
 
 Failures are per age: if the age-7 call fails, age 7 falls back to the
-rule-based pipeline (§9.2) and the other nine keep their model versions. The
-review queue therefore shows the engine per version.
+rule-based pipeline (§9.2) and the other nine keep their model versions.
+
+**The queue is grouped by story.** One row covers all ten versions, and its
+safety badge shows the strictest verdict across them — a story that is
+`skip-young` at age 5 never presents as `calm` because age 14 is. **View**
+opens every version behind an age selector, because §2.2 promises a human read
+every word a child sees and one Publish covers all ten.
+
+Publish, reject, re-review and delete are **story-scoped**: they take any one
+version's id and apply to every version of that story, so a story's versions
+always share one status. The endpoint URLs are unchanged from when a story had
+one version — `PATCH /api/admin/articles/:id/publish` now publishes the story
+that id belongs to. **Edit is the exception** and stays per-version, so one
+age's wording can be fixed without touching the other nine, and
+`editedByHuman` stays a per-version flag.
+
+Bulk approve still excludes `skip-young` unless you opt in, and that check uses
+the story's strictest version — selecting a calm age-14 row cannot publish a
+skip-young age-5 one.
+
+Tab counts show stories, not versions, so Pending reads 10 where you have ten
+stories to read rather than 100.
 
 The §6 guards run **once per story** — they judge the source article, which does
 not vary by age — so the prompt guard costs one call, not ten.
