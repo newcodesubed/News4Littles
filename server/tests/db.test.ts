@@ -56,6 +56,85 @@ describe('schema (§8)', () => {
     db.close();
   });
 
+  it('migrates a v2 database: adds the new columns and backfills simplifiedAt', () => {
+    // A v2-shaped database: the two tables this migration touches, minus the
+    // v3 columns, with a row already in them.
+    const old = openDatabase(path);
+    old.exec(`
+      CREATE TABLE sources (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1, trustLevel TEXT NOT NULL, parser TEXT,
+        lastFetchedAt TEXT, lastFetchedItemPublishedAt TEXT,
+        createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      CREATE TABLE raw_articles (
+        id TEXT PRIMARY KEY, sourceId TEXT NOT NULL REFERENCES sources (id),
+        sourceName TEXT NOT NULL, sourceUrl TEXT NOT NULL, url TEXT NOT NULL,
+        headline TEXT NOT NULL, body TEXT NOT NULL, topic TEXT NOT NULL,
+        publishedAt TEXT, fetchedAt TEXT NOT NULL);
+      INSERT INTO sources VALUES
+        ('bbc', 'BBC News', 'https://feed', 1, 'high', NULL, NULL, NULL,
+         '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO raw_articles VALUES
+        ('r1', 'bbc', 'BBC News', 'https://feed', 'https://example.com/1',
+         'Adult headline', 'Body text', 'World', NULL, '2026-09-01T00:00:00.000Z');
+    `);
+    old.pragma('user_version = 2');
+    old.close();
+
+    initialiseSchema(path);
+
+    const db = openDatabase(path);
+    const columns = (table: string) =>
+      (db.pragma(`table_info(${table})`) as { name: string }[]).map((c) => c.name);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    expect(columns('raw_articles')).toContain('simplifiedAt');
+    expect(columns('app_settings')).toContain('simplifyBudget');
+    expect(columns('scrape_runs')).toEqual(expect.arrayContaining(['simplified', 'leftWaiting']));
+
+    // Under v2 every stored raw was simplified the moment it was stored, so it
+    // must NOT come out of the migration looking like a waiting article.
+    expect(
+      db.prepare(`SELECT simplifiedAt FROM raw_articles WHERE id = 'r1'`).pluck().get(),
+    ).toBe('2026-09-01T00:00:00.000Z');
+    db.close();
+  });
+
+  it('re-running db:init never stamps a waiting raw article as simplified', () => {
+    // The backfill is correct exactly once, on the v2 -> v3 upgrade. If it ran
+    // on every init it would erase the backlog this whole feature creates.
+    initialiseSchema(path);
+    seed(path);
+
+    const db = openDatabase(path);
+    db.prepare(
+      `INSERT INTO raw_articles
+         (id, sourceId, sourceName, sourceUrl, url, headline, body, topic,
+          publishedAt, fetchedAt, simplifiedAt)
+       VALUES ('waiting-1', 'bbc', 'BBC News', 'https://feed', 'https://example.com/w',
+               'Waiting headline', 'Body', 'World', NULL, '2026-09-08T00:00:00.000Z', NULL)`,
+    ).run();
+    db.close();
+
+    initialiseSchema(path);
+
+    const after = openDatabase(path);
+    expect(
+      after.prepare(`SELECT simplifiedAt FROM raw_articles WHERE id = 'waiting-1'`).pluck().get(),
+    ).toBeNull();
+    after.close();
+  });
+
+  it('defaults the simplification budget to 10', () => {
+    initialiseSchema(path);
+    seed(path);
+    const db = openDatabase(path);
+    expect(
+      db.prepare(`SELECT simplifyBudget FROM app_settings WHERE id = 'default'`).pluck().get(),
+    ).toBe(10);
+    db.close();
+  });
+
   it('enforces the safety and status unions', () => {
     initialiseSchema(path); seed(path);
     const db = openDatabase(path);
