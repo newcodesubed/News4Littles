@@ -71,7 +71,8 @@ Everything under `/admin` needs the admin password.
 ```
 BBC RSS feed ─┐                  first 10 per run
               ├─→ raw_articles ─┬─→ guard + simplify ─→ kid_articles
-paste by hand ┘                 │                        (pending_review)
+paste by hand ┘                 │   (once per age, 5-14)  (10 versions,
+                                │                          pending_review)
                                 │                             │
                                 │                 an editor approves it
                                 │                             ↓
@@ -151,6 +152,37 @@ This diverges from PRD §5.2, which runs steps 4–7 as a single pass over every
 item. Steps 1–5 live in `ingestion/rssScraper.ts`; steps 6–7 moved to
 `services/simplifyService.ts`.
 
+### One version per reading age
+
+A story is rewritten once for **every reading age from 5 to 14**, so the
+reading-age slider on `/settings` selects real content rather than relabelling
+a single version. Ten `kid_articles` rows share one `originalId`, one per
+`ageTarget`.
+
+Each age gets its own model call, using that age's prompt override if one
+exists and the generic prompt with `{{age}}` substituted otherwise
+(`selectPrompt`, §9.1). So a budget of 10 stories is **100 model calls**, about
+$0.87 a month on the default model, and a run takes a few minutes rather than
+seconds.
+
+A combined single call would have cost about $0.47 a month, but every stored
+prompt template embeds the article and its own JSON envelope — combining them
+would mean sending the article ten times or mangling the templates. Forty cents
+a month was not worth losing per-age prompt control or the sandbox's fidelity
+to production (§7.4).
+
+Failures are per age: if the age-7 call fails, age 7 falls back to the
+rule-based pipeline (§9.2) and the other nine keep their model versions. The
+review queue therefore shows the engine per version.
+
+The §6 guards run **once per story** — they judge the source article, which does
+not vary by age — so the prompt guard costs one call, not ten.
+
+Without an API key the rule-based pipeline handles every age, using
+`age * 2` words per sentence. That reproduces §9.2's three stated anchors
+exactly (7 → 14, 10 → 20, 14 → 28) while giving every age its own limit, so the
+slider still changes the text offline.
+
 ---
 
 ## Turning on the LLM
@@ -181,10 +213,10 @@ cd server
 npm run llm:check    # runs 3 real articles through both paths and reports the cost
 ```
 
-Roughly **$0.0002 per article** on the default model. A run costs the
-simplification budget, not the size of the feed, so the default of 10 is about
-$0.002 a day however much the feeds publish. Several guards keep it that way —
-the budget in `/admin/settings`, and these in `.env`:
+Roughly **$0.0002 per article version** on the default model. A run costs the
+budget times ten, because each story is rewritten for every reading age — so
+the default of 10 stories is 100 calls, about $0.03 a day. Several guards keep
+it that way — the budget in `/admin/settings`, and these in `.env`:
 
 | Setting              | Default                        | Why                                                                     |
 | -------------------- | ------------------------------ | ----------------------------------------------------------------------- |
@@ -278,13 +310,13 @@ already has rows in it.
 | ----------------------------------- | --------------------------------------------------------- |
 | `sources`                           | Feeds to scrape, plus a `manual` row for hand submissions |
 | `raw_articles`                      | Original articles as fetched; `simplifiedAt` NULL means still waiting |
-| `kid_articles`                      | Rewritten stories and their review status                 |
+| `kid_articles`                      | Rewritten stories, one row per reading age, and their review status |
 | `guard_config`                      | Deny-list and the safety-guard prompt                     |
 | `translation_prompt_config`         | Live simplification prompts                               |
 | `prompt_drafts` / `prompt_versions` | Sandbox drafts and promotion history                      |
 | `app_settings`                      | Default reading age, scrape times, simplification budget, LLM provider |
 | `admin_users`                       | The single admin account (bcrypt)                         |
-| `scrape_runs`                       | What each scrape stored, simplified and left raw          |
+| `scrape_runs`                       | What each scrape stored, simplified, versioned and left raw |
 
 Some constraints are load-bearing rather than decorative: a `published` row must
 have a `publishedAt`; deleting a source with stored articles is refused (disable
