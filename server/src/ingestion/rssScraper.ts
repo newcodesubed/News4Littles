@@ -47,6 +47,8 @@ export interface ScrapeResult {
   stored: { rawId: string; headline: string; url: string; publishedAt: string | null }[];
   /** Filled by the run's simplification phase, not by this module. */
   simplified: { rawId: string; kidHeadline: string; safety: string; engine: string }[];
+  /** Age versions written for this source's stories, filled by phase 2. */
+  versionsCreated: number;
   /** This source's raws still waiting after the run, filled by phase 2. */
   leftWaiting: number;
   /** Total USD spent on this run, so cost is visible rather than a surprise. */
@@ -80,6 +82,7 @@ function emptyResult(source: SourceRow): ScrapeResult {
     newestItemPublishedAt: source.lastFetchedItemPublishedAt,
     stored: [],
     simplified: [],
+    versionsCreated: 0,
     leftWaiting: 0,
     costUsd: 0,
     fallbacks: [],

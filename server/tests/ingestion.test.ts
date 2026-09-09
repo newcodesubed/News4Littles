@@ -271,6 +271,7 @@ describe('the simplification budget', () => {
     expect(countRows(ctx.db, 'kid_articles')).toBe(100);
     expect(waitingCount()).toBe(15);
     expect(summarise(state).simplified).toBe(10);
+    expect(summarise(state).versions).toBe(100);
   });
 
   it('advances the cursor past every stored item, not just the simplified ones', async () => {

@@ -260,6 +260,17 @@ describe('the simplification budget in a run', () => {
     });
   });
 
+  it('records the version count, so a budget of 10 does not look like 10 articles', () => {
+    itemCount = 3;
+
+    startScrapeRun(ctx.db, { budget: 2 });
+    return waitForRun().then(() => {
+      const run = createScrapeRunRepository(ctx.db).latestPerSource().bbc;
+      expect(run.simplified).toBe(2);
+      expect(run.versions).toBe(20);
+    });
+  });
+
   it('summarises a run by what it stored and what it spent', () => {
     itemCount = 5;
 

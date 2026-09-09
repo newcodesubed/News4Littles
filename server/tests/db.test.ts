@@ -90,7 +90,9 @@ describe('schema (§8)', () => {
     const columns = (table: string) =>
       (db.pragma(`table_info(${table})`) as { name: string }[]).map((c) => c.name);
 
-    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    // SCHEMA_VERSION rather than a literal: this asserts "migrated to current",
+    // which stays true as later versions are added.
+    expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
     expect(columns('raw_articles')).toContain('simplifiedAt');
     expect(columns('app_settings')).toContain('simplifyBudget');
     expect(columns('scrape_runs')).toEqual(expect.arrayContaining(['simplified', 'leftWaiting']));
@@ -126,6 +128,17 @@ describe('schema (§8)', () => {
       after.prepare(`SELECT simplifiedAt FROM raw_articles WHERE id = 'waiting-1'`).pluck().get(),
     ).toBeNull();
     after.close();
+  });
+
+  it('adds the run version count when migrating from v3', () => {
+    initialiseSchema(path);
+    seed(path);
+
+    const db = openDatabase(path);
+    expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+    expect((db.pragma('table_info(scrape_runs)') as { name: string }[]).map((c) => c.name))
+      .toContain('versions');
+    db.close();
   });
 
   it('defaults the simplification budget to 10', () => {

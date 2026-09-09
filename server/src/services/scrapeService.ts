@@ -91,6 +91,7 @@ function failedResult(source: SourceRow, error: unknown): ScrapeResult {
     newestItemPublishedAt: source.lastFetchedItemPublishedAt,
     stored: [],
     simplified: [],
+    versionsCreated: 0,
     leftWaiting: 0,
     costUsd: 0,
     fallbacks: [],
@@ -187,6 +188,7 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
           engine: row.engine,
         });
         result.costUsd += row.costUsd;
+        result.versionsCreated += row.versions;
         if (row.fallbackReason) result.fallbacks.push(row.fallbackReason);
       }
 
@@ -228,6 +230,7 @@ export function summarise(state: RunState) {
   return {
     inserted: state.results.reduce((total, r) => total + r.inserted, 0),
     simplified: state.results.reduce((total, r) => total + r.simplified.length, 0),
+    versions: state.results.reduce((total, r) => total + r.versionsCreated, 0),
     leftWaiting: state.results.reduce((total, r) => total + r.leftWaiting, 0),
     failed: state.results.filter((r) => !r.ok).length,
     costUsd: state.results.reduce((total, r) => total + r.costUsd, 0),

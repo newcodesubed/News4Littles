@@ -19,8 +19,9 @@ import { DATABASE_PATH, openDatabase } from './connection.js';
  * 2 — added scrape_runs (§4.4 last-run results).
  * 3 — added raw_articles.simplifiedAt, app_settings.simplifyBudget and the
  *     scrape_runs simplification counts (the per-run simplification budget).
+ * 4 — added scrape_runs.versions (one story now yields one version per age).
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 
@@ -42,6 +43,9 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   },
   { table: 'scrape_runs', column: 'simplified', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'scrape_runs', column: 'leftWaiting', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  // No backfill: a run recorded before this change genuinely had one version
+  // per story, and 0 is a truthful "not measured" rather than a wrong number.
+  { table: 'scrape_runs', column: 'versions', definition: 'INTEGER NOT NULL DEFAULT 0' },
 ];
 
 /**
