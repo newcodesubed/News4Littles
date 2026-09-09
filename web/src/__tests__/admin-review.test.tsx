@@ -36,7 +36,7 @@ function mockApi() {
     const json = (body: unknown, status = 200) =>
       ({ ok: status < 400, status, json: async () => body, headers: new Headers() }) as unknown as Response;
 
-    if (path.includes('/articles/counts')) return json({ pending_review: 3, published: 1, rejected: 1, total: 5 });
+    if (path.includes('/articles/counts')) return json({ pending_review: 3, published: 1, rejected: 1, total: 5, waiting: 0 });
     if (path.includes('/articles/filters')) return json({ categories: ['World', 'Science'], sources: [{ id: 'bbc', name: 'BBC News' }, { id: 'manual', name: 'Manual submission' }], ageTargets: [6, 8], safety: [], statuses: [], sortFields: [] });
     if (path.includes('/articles/bulk')) {
       bulkBody = JSON.parse(String(init.body));

@@ -77,13 +77,25 @@ CREATE TABLE IF NOT EXISTS raw_articles (
   body        TEXT NOT NULL,                                    -- original article text
   topic       TEXT NOT NULL,                                    -- maps to KidArticle.category
   publishedAt TEXT,                                             -- ISO; optional (feeds may omit pubDate)
-  fetchedAt   TEXT NOT NULL                                     -- ISO
+  fetchedAt   TEXT NOT NULL,                                    -- ISO
+  -- ISO when a kid article was created from this raw; NULL while it waits.
+  -- A scrape run stores every item but simplifies only
+  -- app_settings.simplifyBudget of them (a deliberate divergence from §5.2,
+  -- which runs steps 4-7 as one pass). NULL therefore means "stored, never
+  -- sent to the model".
+  -- Deliberately NOT derived from "has no kid_articles row": §4.2 Delete
+  -- removes the kid row and leaves this one, and a deleted article must not
+  -- reappear in the backlog asking to be paid for again.
+  simplifiedAt TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_raw_articles_sourceId  ON raw_articles (sourceId);
 -- Newest-first listing for the sandbox test-article dropdown (§7.6 /api/admin/raw-articles).
 CREATE INDEX IF NOT EXISTS idx_raw_articles_fetchedAt ON raw_articles (fetchedAt DESC);
 CREATE INDEX IF NOT EXISTS idx_raw_articles_url       ON raw_articles (url);
+-- The backlog query only ever wants the NULLs, so the index only holds them.
+CREATE INDEX IF NOT EXISTS idx_raw_articles_waiting
+  ON raw_articles (sourceId, publishedAt DESC) WHERE simplifiedAt IS NULL;
 
 
 -- -----------------------------------------------------------------------------
@@ -244,6 +256,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
               CHECK (defaultAge BETWEEN 5 AND 14),              -- §3.6: slider 5-14, default 6
   scrapeTimes TEXT    NOT NULL DEFAULT '["06:00"]',             -- JSON: string[] e.g. ["06:00"] (§5.3)
   llmProvider TEXT,                                             -- optional; 'openai' | 'anthropic' | NULL
+  -- How many stored articles one scrape run may simplify (§5.2 divergence).
+  -- 0 is legitimate: simplify nothing automatically. The ceiling is there so a
+  -- typo in the settings form cannot cost a fortune.
+  simplifyBudget INTEGER NOT NULL DEFAULT 10
+                 CHECK (simplifyBudget BETWEEN 0 AND 100),
 
   CHECK (json_valid(scrapeTimes))
 );
@@ -268,7 +285,9 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
   ok                   INTEGER NOT NULL CHECK (ok IN (0, 1)),     -- boolean
   error                TEXT,                                      -- set when ok = 0
   itemsInFeed          INTEGER NOT NULL DEFAULT 0,
-  inserted             INTEGER NOT NULL DEFAULT 0,
+  inserted             INTEGER NOT NULL DEFAULT 0,             -- raw articles stored
+  simplified           INTEGER NOT NULL DEFAULT 0,             -- of those, how many were simplified
+  leftWaiting          INTEGER NOT NULL DEFAULT 0,             -- this source's raws still waiting after the run
   skippedNotNew        INTEGER NOT NULL DEFAULT 0,
   skippedAlreadyStored INTEGER NOT NULL DEFAULT 0,
   skippedUnusable      INTEGER NOT NULL DEFAULT 0,

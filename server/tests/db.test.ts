@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../src/db/connection.js';
 import { initialiseSchema, SCHEMA_VERSION } from '../src/db/init.js';
 import { seed } from '../src/db/seed.js';
+import { createApp } from '../src/app.js';
 import { isArticleStatus, toKidArticle, type KidArticleRow } from '../src/core/article.js';
+import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
+import { createManualArticle } from '../src/services/submitArticle.js';
 import { countRows } from './helpers.js';
 
 let dir: string;
@@ -53,6 +56,85 @@ describe('schema (§8)', () => {
     const db = openDatabase(path);
     expect(countRows(db, 'sources')).toBe(before);
     expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+    db.close();
+  });
+
+  it('migrates a v2 database: adds the new columns and backfills simplifiedAt', () => {
+    // A v2-shaped database: the two tables this migration touches, minus the
+    // v3 columns, with a row already in them.
+    const old = openDatabase(path);
+    old.exec(`
+      CREATE TABLE sources (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1, trustLevel TEXT NOT NULL, parser TEXT,
+        lastFetchedAt TEXT, lastFetchedItemPublishedAt TEXT,
+        createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      CREATE TABLE raw_articles (
+        id TEXT PRIMARY KEY, sourceId TEXT NOT NULL REFERENCES sources (id),
+        sourceName TEXT NOT NULL, sourceUrl TEXT NOT NULL, url TEXT NOT NULL,
+        headline TEXT NOT NULL, body TEXT NOT NULL, topic TEXT NOT NULL,
+        publishedAt TEXT, fetchedAt TEXT NOT NULL);
+      INSERT INTO sources VALUES
+        ('bbc', 'BBC News', 'https://feed', 1, 'high', NULL, NULL, NULL,
+         '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO raw_articles VALUES
+        ('r1', 'bbc', 'BBC News', 'https://feed', 'https://example.com/1',
+         'Adult headline', 'Body text', 'World', NULL, '2026-09-01T00:00:00.000Z');
+    `);
+    old.pragma('user_version = 2');
+    old.close();
+
+    initialiseSchema(path);
+
+    const db = openDatabase(path);
+    const columns = (table: string) =>
+      (db.pragma(`table_info(${table})`) as { name: string }[]).map((c) => c.name);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(3);
+    expect(columns('raw_articles')).toContain('simplifiedAt');
+    expect(columns('app_settings')).toContain('simplifyBudget');
+    expect(columns('scrape_runs')).toEqual(expect.arrayContaining(['simplified', 'leftWaiting']));
+
+    // Under v2 every stored raw was simplified the moment it was stored, so it
+    // must NOT come out of the migration looking like a waiting article.
+    expect(
+      db.prepare(`SELECT simplifiedAt FROM raw_articles WHERE id = 'r1'`).pluck().get(),
+    ).toBe('2026-09-01T00:00:00.000Z');
+    db.close();
+  });
+
+  it('re-running db:init never stamps a waiting raw article as simplified', () => {
+    // The backfill is correct exactly once, on the v2 -> v3 upgrade. If it ran
+    // on every init it would erase the backlog this whole feature creates.
+    initialiseSchema(path);
+    seed(path);
+
+    const db = openDatabase(path);
+    db.prepare(
+      `INSERT INTO raw_articles
+         (id, sourceId, sourceName, sourceUrl, url, headline, body, topic,
+          publishedAt, fetchedAt, simplifiedAt)
+       VALUES ('waiting-1', 'bbc', 'BBC News', 'https://feed', 'https://example.com/w',
+               'Waiting headline', 'Body', 'World', NULL, '2026-09-08T00:00:00.000Z', NULL)`,
+    ).run();
+    db.close();
+
+    initialiseSchema(path);
+
+    const after = openDatabase(path);
+    expect(
+      after.prepare(`SELECT simplifiedAt FROM raw_articles WHERE id = 'waiting-1'`).pluck().get(),
+    ).toBeNull();
+    after.close();
+  });
+
+  it('defaults the simplification budget to 10', () => {
+    initialiseSchema(path);
+    seed(path);
+    const db = openDatabase(path);
+    expect(
+      db.prepare(`SELECT simplifyBudget FROM app_settings WHERE id = 'default'`).pluck().get(),
+    ).toBe(10);
     db.close();
   });
 
@@ -170,5 +252,121 @@ describe('row -> API mapping (§8.3)', () => {
   it('recognises the three valid statuses and nothing else', () => {
     for (const s of ['pending_review', 'published', 'rejected']) expect(isArticleStatus(s)).toBe(true);
     for (const s of ['draft', '', 'PUBLISHED']) expect(isArticleStatus(s)).toBe(false);
+  });
+});
+
+describe('the waiting backlog (raw_articles.simplifiedAt)', () => {
+  let db: ReturnType<typeof openDatabase>;
+
+  const raw = (id: string, over: Record<string, unknown> = {}) => ({
+    id, sourceId: 'bbc', sourceName: 'BBC News', sourceUrl: 'https://feed',
+    url: `https://example.com/${id}`, headline: `Headline ${id}`, body: 'Body text here',
+    topic: 'World', publishedAt: null, fetchedAt: '2026-09-08T00:00:00.000Z',
+    simplifiedAt: null, ...over,
+  });
+
+  beforeEach(() => {
+    initialiseSchema(path);
+    seed(path);
+    db = openDatabase(path);
+  });
+  afterEach(() => db.close());
+
+  it('lists only unsimplified rows, newest published first, undated last', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('older', { publishedAt: '2026-09-01T00:00:00.000Z' }));
+    repo.insert(raw('newer', { publishedAt: '2026-09-07T00:00:00.000Z' }));
+    repo.insert(raw('undated'));
+    repo.insert(raw('done', {
+      publishedAt: '2026-09-09T00:00:00.000Z', simplifiedAt: '2026-09-09T01:00:00.000Z',
+    }));
+
+    expect(repo.listWaiting().map((a) => a.id)).toEqual(['newer', 'older', 'undated']);
+    expect(repo.countWaiting()).toBe(3);
+  });
+
+  it('reports the body length so the editor can judge a stub before spending a call', () => {
+    createRawArticleRepository(db).insert(raw('r1', { body: 'twelve chars' }));
+    expect(createRawArticleRepository(db).listWaiting()[0].bodyLength).toBe(12);
+  });
+
+  it('filters by source and honours a limit', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('b1'));
+    repo.insert(raw('b2'));
+    repo.insert(raw('m1', { sourceId: 'manual', sourceName: 'Manual submission' }));
+
+    expect(repo.listWaiting({ sourceId: 'manual' }).map((a) => a.id)).toEqual(['m1']);
+    expect(repo.listWaiting({ limit: 1 })).toHaveLength(1);
+    expect(repo.countWaitingForSource('bbc')).toBe(2);
+  });
+
+  it('groups waiting ids by source, newest first — the round-robin input', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('b-old', { publishedAt: '2026-09-01T00:00:00.000Z' }));
+    repo.insert(raw('b-new', { publishedAt: '2026-09-05T00:00:00.000Z' }));
+    repo.insert(raw('m-one', {
+      sourceId: 'manual', sourceName: 'Manual submission', publishedAt: '2026-09-03T00:00:00.000Z',
+    }));
+
+    expect(repo.waitingIdsBySource()).toEqual([
+      { sourceId: 'bbc', rawIds: ['b-new', 'b-old'] },
+      { sourceId: 'manual', rawIds: ['m-one'] },
+    ]);
+  });
+
+  it('markSimplified claims a row exactly once', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('r1'));
+
+    expect(repo.markSimplified('r1', '2026-09-09T10:00:00.000Z')).toBe(true);
+    // A second claim — two browser tabs submitting the same id — must lose,
+    // which is what stops a second kid article being written for one raw.
+    expect(repo.markSimplified('r1', '2026-09-09T10:00:05.000Z')).toBe(false);
+    expect(repo.findById('r1')?.simplifiedAt).toBe('2026-09-09T10:00:00.000Z');
+    expect(repo.countWaiting()).toBe(0);
+  });
+
+  it('a manual submission is never in the backlog', async () => {
+    // §4.3 submissions arrive already simplified, so they must not show up as
+    // waiting for a simplification they have already had.
+    await createManualArticle(
+      db,
+      {
+        headline: 'Editor wrote this', body: 'A long enough body for the pipeline to chew on.',
+        category: 'World', sourceName: 'Editor', sourceUrl: 'https://example.com/manual',
+        ageTarget: 8,
+      },
+      {},
+      'pending_review',
+    );
+    expect(createRawArticleRepository(db).countWaiting()).toBe(0);
+  });
+});
+
+describe('starting against an un-migrated database', () => {
+  it('names the fix instead of failing deep inside a repository', () => {
+    // The first column migration made "code newer than database" possible for
+    // the first time. Without this guard it surfaces as
+    // "table raw_articles has no column named simplifiedAt", thrown while
+    // preparing a statement, which says nothing about how to fix it.
+    initialiseSchema(path);
+    seed(path);
+
+    const db = openDatabase(path);
+    db.pragma('user_version = 2');
+
+    expect(() => createApp(db)).toThrow(/npm run db:init/);
+    expect(() => createApp(db)).toThrow(/schema version 2/);
+    db.close();
+  });
+
+  it('starts normally once the database is up to date', () => {
+    initialiseSchema(path);
+    seed(path);
+    const db = openDatabase(path);
+
+    expect(() => createApp(db)).not.toThrow();
+    db.close();
   });
 });

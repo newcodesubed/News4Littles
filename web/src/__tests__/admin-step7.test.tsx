@@ -42,7 +42,8 @@ function mockApi(overrides: Record<string, unknown> = {}) {
         bbc: {
           id: 'run1', sourceId: 'bbc', startedAt: '2026-09-08T06:00:00.000Z',
           finishedAt: '2026-09-08T06:01:00.000Z', ok: true, error: null,
-          itemsInFeed: 35, inserted: 4, skippedNotNew: 31, skippedAlreadyStored: 0,
+          itemsInFeed: 45, inserted: 41, simplified: 10, leftWaiting: 31,
+          skippedNotNew: 4, skippedAlreadyStored: 0,
           skippedUnusable: 0, costUsd: 0.0007, fallbacks: [], trigger: 'manual',
         },
       },
@@ -53,7 +54,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
     ]);
     if (path.includes('/guard-config')) return json({ denyList: ['war', 'killed'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '', ...overrides });
     if (path.includes('/prompt-config')) return json({ genericPrompt: 'The generic prompt', ageOverrides: { '6': 'Age six' }, versions: {}, inertUntilLlm: true });
-    if (path.includes('/app-settings')) return json({ defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, apiKeyLocation: 'environment variable only (never stored in the database)' });
+    if (path.includes('/app-settings')) return json({ defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 10, apiKeyLocation: 'environment variable only (never stored in the database)' });
     return json({});
   }));
 }
@@ -244,9 +245,15 @@ describe('settings — §5.1 sources', () => {
     renderIn(<AdminSettings />);
     await screen.findByDisplayValue('BBC News');
     expect(screen.getAllByText(/Last run:/).length).toBe(2);
-    // BBC has a recorded run; manual has never been scraped.
-    expect(await screen.findByText(/4.*new.*31 already seen/)).toBeInTheDocument();
-    expect(screen.getByText(/\$0\.00070/)).toBeInTheDocument();
+    // BBC has a recorded run; manual has never been scraped. The run stored 41
+    // and simplified 10 of them, which is the budget doing its job.
+    // The <strong> counts split the text nodes, so match on the whole line.
+    const lastRun = await screen.findByText(/already seen/);
+    expect(lastRun).toHaveTextContent(/41 new/);
+    expect(lastRun).toHaveTextContent(/10 simplified/);
+    expect(lastRun).toHaveTextContent(/31 still raw/);
+    expect(lastRun).toHaveTextContent(/4 already seen/);
+    expect(lastRun).toHaveTextContent(/\$0\.00070/);
     expect(screen.getAllByText('never run').length).toBe(1);
   });
 
@@ -367,5 +374,32 @@ describe('settings — §8.7 app settings', () => {
   it('warns that a scrape-time change needs a restart', async () => {
     renderIn(<AdminSettings />);
     expect(await screen.findByText(/take effect when the server restarts/)).toBeInTheDocument();
+  });
+
+  it('saves the simplification budget', async () => {
+    const user = userEvent.setup();
+    renderIn(<AdminSettings />);
+
+    const input = await screen.findByLabelText(/simplifications per scrape run/i);
+    expect(input).toHaveValue(10);
+
+    await user.clear(input);
+    await user.type(input, '4');
+    await user.click(screen.getByRole('button', { name: /save app settings/i }));
+
+    await waitFor(() => {
+      const put = calls.find((call) => call.path.includes('/app-settings') && call.method === 'PUT');
+      expect(put?.body.simplifyBudget).toBe(4);
+    });
+  });
+
+  it('shows how much of a run was simplified and how much was left raw', async () => {
+    renderIn(<AdminSettings />);
+
+    // The point of the whole feature, on one line: 41 stored, 10 paid for.
+    const summary = await screen.findByText(/still raw/);
+    expect(summary).toHaveTextContent(/41/);
+    expect(summary).toHaveTextContent(/10.*simplified/);
+    expect(summary).toHaveTextContent(/31 still raw/);
   });
 });

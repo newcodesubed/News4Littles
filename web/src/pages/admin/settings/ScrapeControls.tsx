@@ -20,6 +20,8 @@ export function LastRunSummary({ run }: { run: ScrapeRun | undefined }) {
   return (
     <span>
       {when} · <strong>{run.inserted}</strong> new
+      {run.simplified > 0 && <>, <strong>{run.simplified}</strong> simplified</>}
+      {run.leftWaiting > 0 && `, ${run.leftWaiting} still raw`}
       {run.skippedNotNew > 0 && `, ${run.skippedNotNew} already seen`}
       {run.skippedAlreadyStored > 0 && `, ${run.skippedAlreadyStored} duplicate`}
       {run.skippedUnusable > 0 && `, ${run.skippedUnusable} unusable`}
@@ -64,6 +66,7 @@ export function ScrapeAllControls({
           <p className="font-bold">Scraping</p>
           <p className="text-sm text-muted-foreground">
             Fetch every enabled source now, instead of waiting for the scheduled time.
+            Everything found is stored; only the first few are simplified.
           </p>
         </div>
         <Button disabled={running} onClick={onRunAll}>
@@ -73,18 +76,30 @@ export function ScrapeAllControls({
 
       {running && run && (
         <p className="mt-3 text-sm" role="status">
-          Fetching {run.currentSourceId ?? '…'} ({run.results.length} of {run.sourceIds.length} done).
-          A full run can take a couple of minutes when the LLM is on.
+          {run.phase === 'simplifying' ? (
+            <>
+              Simplifying {run.simplifiedCount} of up to {run.budget}. Everything found is
+              already stored — this is just the model pass.
+            </>
+          ) : (
+            <>
+              Fetching {run.currentSourceId ?? '…'} ({run.results.length} of{' '}
+              {run.sourceIds.length} done).
+            </>
+          )}
         </p>
       )}
 
       {!running && run?.finishedAt && (
         <div className="mt-3">
           <Notice tone={run.summary.failed > 0 ? 'warn' : 'neutral'}>
-            Finished: {run.summary.inserted} new article(s) across {run.sourceIds.length} source(s)
+            Finished: {run.summary.inserted} new article(s) across {run.sourceIds.length} source(s),
+            {' '}{run.summary.simplified} simplified
+            {run.summary.leftWaiting > 0 && `, ${run.summary.leftWaiting} left raw`}
             {run.summary.failed > 0 && `, ${run.summary.failed} source(s) failed`}
             {run.summary.costUsd > 0 && ` · $${run.summary.costUsd.toFixed(5)}`}
-            . New articles are waiting in the review queue.
+            . Simplified articles are waiting in the review queue
+            {run.summary.leftWaiting > 0 && '; the rest are under “Not yet simplified”'}.
           </Notice>
         </div>
       )}

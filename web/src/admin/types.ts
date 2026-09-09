@@ -11,6 +11,36 @@ export interface StatusCounts {
   published: number;
   rejected: number;
   total: number;
+  /** Raw articles stored but not yet simplified — the fourth tab's badge. */
+  waiting: number;
+}
+
+/** A raw article waiting for its simplification (no kid fields exist yet). */
+export interface WaitingRawArticle {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  headline: string;
+  url: string;
+  topic: string;
+  publishedAt: string | null;
+  fetchedAt: string;
+  bodyLength: number;
+}
+
+/** A background simplification batch, as the status endpoint reports it. */
+export interface SimplifyJob {
+  id: string;
+  startedAt: string;
+  finishedAt?: string;
+  rawIds: string[];
+  done: number;
+  running: boolean;
+  report: {
+    simplified: { rawId: string; kidHeadline: string }[];
+    failures: { rawId: string; error: string }[];
+    skipped: string[];
+  };
 }
 
 export interface FilterOptions {

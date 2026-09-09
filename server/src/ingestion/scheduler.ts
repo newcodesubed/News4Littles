@@ -56,7 +56,8 @@ export async function runScheduledScrape(db: Database): Promise<void> {
     for (const result of results) {
       if (result.ok) {
         console.log(
-          `[scrape] ${result.sourceId}: ${result.inserted} new, ` +
+          `[scrape] ${result.sourceId}: ${result.inserted} stored, ` +
+            `${result.simplified.length} simplified, ${result.leftWaiting} waiting, ` +
             `${result.skippedNotNew} already seen, ${result.skippedAlreadyStored} duplicate, ` +
             `${result.skippedUnusable} unusable (of ${result.itemsInFeed} in feed)`,
         );

@@ -9,6 +9,50 @@ import Parser from 'rss-parser';
 /** Give up on a feed rather than hanging the scheduler forever. */
 const FEED_TIMEOUT_MS = 15_000;
 
+/**
+ * Query parameters publishers add for their own analytics — BBC's feed links
+ * all carry `at_medium=RSS&at_campaign=rss`. They never change which page you
+ * get, and the duplicate guard in rawArticleRepository.existsForSourceUrl is an
+ * exact string match on the URL, so the same story arriving with new campaign
+ * tags would look like a new article and cost another simplification.
+ *
+ * Deliberately an allowlist of known tracking keys rather than "drop the query
+ * string": plenty of publishers put the article id or page number in there
+ * (`?id=1234`, `?page=2`), and dropping those breaks the link outright.
+ * `ref` is left in place for the same reason — it is load-bearing on some sites.
+ */
+const TRACKING_PREFIXES = ['at_', 'utm_'];
+const TRACKING_KEYS = new Set([
+  'fbclid', 'gclid', 'dclid', 'gbraid', 'wbraid', 'msclkid', 'twclid',
+  'igshid', 'mc_cid', 'mc_eid',
+]);
+
+const isTracking = (key: string): boolean => {
+  const name = key.toLowerCase();
+  return TRACKING_KEYS.has(name) || TRACKING_PREFIXES.some((prefix) => name.startsWith(prefix));
+};
+
+/**
+ * The article's URL with tracking parameters removed. Anything that is not a
+ * parseable absolute URL, or that carries no tracking, comes back byte for byte
+ * unchanged — most links have none, and re-serialising them through URL() would
+ * churn them for no reason.
+ */
+export function canonicalUrl(link: string): string {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return link;
+  }
+
+  const tracking = [...url.searchParams.keys()].filter(isTracking);
+  if (tracking.length === 0) return link;
+
+  for (const key of tracking) url.searchParams.delete(key);
+  return url.toString();
+}
+
 export interface FeedItem {
   title: string;
   link: string;
@@ -29,7 +73,14 @@ export function toFeedItem(item: Record<string, unknown>): FeedItem | null {
   const link = typeof item.link === 'string' ? item.link.trim() : '';
   if (!title || !link) return null;
 
-  return { title, link, body: readBody(item, title), publishedAt: readPublishedAt(item) };
+  // Canonicalised here rather than at storage time, so the duplicate guard and
+  // the stored URL both see the same string.
+  return {
+    title,
+    link: canonicalUrl(link),
+    body: readBody(item, title),
+    publishedAt: readPublishedAt(item),
+  };
 }
 
 /**

@@ -14,6 +14,10 @@ export interface ScrapeRun {
   error: string | null;
   itemsInFeed: number;
   inserted: number;
+  /** Of what this run stored, how many were simplified. */
+  simplified: number;
+  /** This source's raws still waiting when the run finished. */
+  leftWaiting: number;
   skippedNotNew: number;
   skippedAlreadyStored: number;
   skippedUnusable: number;
@@ -46,9 +50,11 @@ export function createScrapeRunRepository(db: Database): ScrapeRunRepository {
   const insert = db.prepare(
     `INSERT INTO scrape_runs
        (id, sourceId, startedAt, finishedAt, ok, error, itemsInFeed, inserted,
+        simplified, leftWaiting,
         skippedNotNew, skippedAlreadyStored, skippedUnusable, costUsd, fallbacks, trigger)
      VALUES
        (@id, @sourceId, @startedAt, @finishedAt, @ok, @error, @itemsInFeed, @inserted,
+        @simplified, @leftWaiting,
         @skippedNotNew, @skippedAlreadyStored, @skippedUnusable, @costUsd, @fallbacks, @trigger)`,
   );
 
@@ -75,6 +81,8 @@ export function createScrapeRunRepository(db: Database): ScrapeRunRepository {
         error: result.error ?? null,
         itemsInFeed: result.itemsInFeed,
         inserted: result.inserted,
+        simplified: result.simplified.length,
+        leftWaiting: result.leftWaiting,
         skippedNotNew: result.skippedNotNew,
         skippedAlreadyStored: result.skippedAlreadyStored,
         skippedUnusable: result.skippedUnusable,

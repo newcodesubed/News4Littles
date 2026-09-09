@@ -20,6 +20,19 @@ export function AppSettingsSection({ settings, save }: { settings: AppSettings; 
         />
       </label>
 
+      <label className="mt-5 block max-w-xs">
+        <span className="text-sm font-bold">Simplifications per scrape run</span>
+        <TextInput
+          type="number" min={0} max={100} value={draft.simplifyBudget}
+          onChange={(e) => setDraft({ ...draft, simplifyBudget: Number(e.target.value) })}
+        />
+      </label>
+      <p className="mt-1 max-w-prose text-xs text-muted-foreground">
+        How many stored stories a run may send to the model. The rest are kept as they came
+        in, costing nothing, and wait in the review queue’s “Not yet simplified” tab until
+        you ask for them. 0 means simplify nothing automatically.
+      </p>
+
       <p className="mt-5 text-sm font-bold">Scrape times</p>
       <p className="text-xs text-muted-foreground mb-2">
         When the scraper runs each day. Changes take effect when the server restarts.

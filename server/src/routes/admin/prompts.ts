@@ -23,20 +23,6 @@ export function createPromptsRouter(db: Database): Router {
   const target = (value: unknown): PromptTarget =>
     requireOneOf(value, PROMPT_TARGETS, 'target');
 
-  /** §7.6: recent raw articles for the test-article dropdown. */
-  router.get('/raw-articles', (req, res) => {
-    const limit = Math.min(Number(req.query.limit ?? 25) || 25, 100);
-    res.json(
-      db
-        .prepare(
-          `SELECT r.id, r.headline, r.sourceName, r.topic, r.publishedAt, r.fetchedAt,
-                  LENGTH(r.body) AS bodyLength
-           FROM raw_articles r ORDER BY r.fetchedAt DESC LIMIT ?`,
-        )
-        .all(limit),
-    );
-  });
-
   /** §7.6: current prompt config plus a versions summary. */
   router.get('/prompts', (_req, res) => {
     const config = settings.getPromptConfig();

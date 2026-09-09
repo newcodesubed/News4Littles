@@ -1,6 +1,8 @@
 /** Review-queue writes: publish / reject / edit / regenerate / delete / bulk — §4.2. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestContext, getKidArticle, insertKidArticle, type TestContext } from './helpers.js';
+import {
+  createTestContext, getKidArticle, insertKidArticle, insertRawArticle, type TestContext,
+} from './helpers.js';
 
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
@@ -110,6 +112,24 @@ describe('regenerate (§4.2)', () => {
     const before = getKidArticle(ctx.db, id)!;
     await ctx.api(`/api/admin/articles/${id}/regenerate/apply`, { method: 'POST' });
     expect(getKidArticle(ctx.db, id)).toMatchObject({ status: 'published', publishedAt: before.publishedAt });
+  });
+
+  it('keeps the original article link, rather than swapping in the feed URL', async () => {
+    // raw.sourceUrl is the rss.xml; raw.url is the story. Regenerating must not
+    // replace a working "Read the original" link with a link to raw XML.
+    const rawId = insertRawArticle(ctx.db, {
+      url: 'https://www.bbc.co.uk/news/articles/the-actual-story',
+      sourceUrl: 'https://feeds.bbci.co.uk/news/rss.xml',
+      simplifiedAt: '2026-09-04T09:00:00.000Z',
+    });
+    const id = insertKidArticle(ctx.db, {
+      originalId: rawId, sourceUrl: 'https://www.bbc.co.uk/news/articles/the-actual-story',
+    });
+
+    await ctx.api(`/api/admin/articles/${id}/regenerate/apply`, { method: 'POST' });
+
+    expect(getKidArticle(ctx.db, id)!.sourceUrl)
+      .toBe('https://www.bbc.co.uk/news/articles/the-actual-story');
   });
 
   it('404s for an unknown id', async () => {

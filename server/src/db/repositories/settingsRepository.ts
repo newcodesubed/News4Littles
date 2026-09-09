@@ -27,6 +27,8 @@ export interface AppSettings {
   defaultAge: number;
   scrapeTimes: string[];
   llmProvider: string | null;
+  /** How many stored articles one scrape run may simplify. 0 disables it. */
+  simplifyBudget: number;
 }
 
 /** A JSON column that survives a corrupt value rather than throwing. */
@@ -124,18 +126,20 @@ export function createSettingsRepository(db: Database): SettingsRepository {
         defaultAge: Number(row.defaultAge),
         scrapeTimes: parseJson<string[]>(row.scrapeTimes, []),
         llmProvider: row.llmProvider === null ? null : String(row.llmProvider),
+        simplifyBudget: Number(row.simplifyBudget),
       };
     },
 
     saveAppSettings(settings) {
       db.prepare(
         `UPDATE app_settings SET defaultAge = @defaultAge, scrapeTimes = @scrapeTimes,
-           llmProvider = @llmProvider
+           llmProvider = @llmProvider, simplifyBudget = @simplifyBudget
          WHERE id = 'default'`,
       ).run({
         defaultAge: settings.defaultAge,
         scrapeTimes: JSON.stringify(settings.scrapeTimes),
         llmProvider: settings.llmProvider,
+        simplifyBudget: settings.simplifyBudget,
       });
     },
   };

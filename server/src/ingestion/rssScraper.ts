@@ -2,18 +2,23 @@
  * RSS ingestion — PRD §5.2, in the order the spec lists:
  *   1-2. fetch and parse           -> feedParser.fetchFeed
  *   3.   skip items already seen   -> feedParser.selectNewItems
- *   4,6,7. store raw + kid rows    -> storeItems, below
+ *   4.   store raw rows            -> storeItems, below
  *   5.   advance the cursor        -> storeItems, below
+ *
+ * DIVERGENCE FROM §5.2: the spec's steps 6-7 (guard + simplify + store as
+ * pending_review) used to run here, once per item. That made one run 40-50 LLM
+ * calls for a queue an editor triages ten of, so they now live in
+ * services/simplifyService.ts and run for a budgeted subset only
+ * (app_settings.simplifyBudget). Everything is still STORED here; only the
+ * spending moved.
  *
  * Written against the generic `sources` table rather than BBC specifically, so
  * enabling another feed in admin settings is all it takes to ingest it.
  */
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
-import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository, type SourceRow } from '../db/repositories/sourceRepository.js';
-import { simplifyArticle } from '../pipeline/simplifyArticle.js';
 import { fetchFeed, selectNewItems, type FeedItem } from './feedParser.js';
 
 export type { SourceRow };
@@ -38,8 +43,12 @@ export interface ScrapeResult {
   skippedUnusable: number;
   inserted: number;
   newestItemPublishedAt: string | null;
-  /** Headline, safety and engine for each stored article, for the CLI to print. */
-  stored: { kidHeadline: string; safety: string; url: string; engine: string }[];
+  /** What was stored, for the CLI to print. Raw rows: no kid headline yet. */
+  stored: { rawId: string; headline: string; url: string; publishedAt: string | null }[];
+  /** Filled by the run's simplification phase, not by this module. */
+  simplified: { rawId: string; kidHeadline: string; safety: string; engine: string }[];
+  /** This source's raws still waiting after the run, filled by phase 2. */
+  leftWaiting: number;
   /** Total USD spent on this run, so cost is visible rather than a surprise. */
   costUsd: number;
   /** One entry per article that had to fall back, with the reason (§9.1 step 4). */
@@ -47,7 +56,12 @@ export interface ScrapeResult {
 }
 
 export interface ScrapeOptions {
-  /** Cap items processed in one run; useful when testing. */
+  /**
+   * Cap items FETCHED AND STORED in one run, discarding the rest; useful when
+   * testing. Not to be confused with app_settings.simplifyBudget, which caps
+   * how many STORED items get simplified. This one loses articles; that one
+   * only defers them.
+   */
   limit?: number;
   /** Injectable clock, for deterministic tests. */
   now?: () => string;
@@ -65,57 +79,39 @@ function emptyResult(source: SourceRow): ScrapeResult {
     inserted: 0,
     newestItemPublishedAt: source.lastFetchedItemPublishedAt,
     stored: [],
+    simplified: [],
+    leftWaiting: 0,
     costUsd: 0,
     fallbacks: [],
   };
 }
 
 /**
- * Steps 4-7, in one transaction. A database failure rolls the whole run back,
+ * Steps 4-5, in one transaction. A database failure rolls the whole run back,
  * so the cursor never advances past articles that were not stored.
+ *
+ * Synchronous now: with simplification moved out there is nothing async left,
+ * so the two-pass "prepare then write" dance this used to need is gone.
  */
-async function storeItems(
+function storeItems(
   db: Database,
   source: SourceRow,
   items: FeedItem[],
   fetchedAt: string,
   result: ScrapeResult,
-): Promise<void> {
+): void {
   const rawArticles = createRawArticleRepository(db);
-  const articles = createArticleRepository(db);
   const sources = createSourceRepository(db);
-
-  // Simplification is async (it may call a model), and better-sqlite3
-  // transactions are synchronous — so every article is prepared first, then
-  // the whole batch is written in one transaction.
-  const prepared: { item: FeedItem; article: Awaited<ReturnType<typeof simplifyArticle>> }[] = [];
-
-  for (const item of items) {
-    if (rawArticles.existsForSourceUrl(source.id, item.link)) {
-      result.skippedAlreadyStored += 1;
-      continue;
-    }
-    prepared.push({
-      item,
-      article: await simplifyArticle(
-        db,
-        {
-          id: 'pending',
-          headline: item.title,
-          body: item.body,
-          topic: DEFAULT_TOPIC,
-          sourceName: source.name,
-          sourceUrl: item.link,
-        },
-        { now: fetchedAt },
-      ),
-    });
-  }
 
   db.transaction(() => {
     let newest = source.lastFetchedItemPublishedAt;
 
-    for (const { item, article: outcome } of prepared) {
+    for (const item of items) {
+      if (rawArticles.existsForSourceUrl(source.id, item.link)) {
+        result.skippedAlreadyStored += 1;
+        continue;
+      }
+
       const rawId = randomUUID();
       rawArticles.insert({
         id: rawId,
@@ -128,31 +124,25 @@ async function storeItems(
         topic: DEFAULT_TOPIC,
         publishedAt: item.publishedAt,
         fetchedAt,
-      });
-
-      // Step 7: never auto-publish, whatever the guard decided.
-      articles.insert({
-        ...outcome.article,
-        originalId: rawId,
-        status: 'pending_review',
-        publishedAt: null,
+        // The run's simplification phase decides which of these get a model
+        // call; the rest wait in the review queue's "not yet simplified" tab.
+        simplifiedAt: null,
       });
 
       result.inserted += 1;
       result.stored.push({
-        kidHeadline: outcome.article.kidHeadline,
-        safety: outcome.article.safety,
+        rawId,
+        headline: item.title,
         url: item.link,
-        engine: outcome.engine,
+        publishedAt: item.publishedAt,
       });
-      if (outcome.costUsd !== undefined) result.costUsd += outcome.costUsd;
-      if (outcome.fallbackReason) result.fallbacks.push(outcome.fallbackReason);
 
       if (item.publishedAt && (!newest || item.publishedAt > newest)) newest = item.publishedAt;
     }
 
     // Step 5: advance the cursor to the newest item actually STORED, not the
     // newest merely seen, so a crash mid-run cannot skip items next time.
+    // Storing is now unconditional, so nothing is dropped for being unsimplified.
     sources.recordFetch(source.id, fetchedAt, newest);
     result.newestItemPublishedAt = newest;
   })();
@@ -191,7 +181,7 @@ export async function scrapeSource(
   const fetchedAt = (options.now ?? (() => new Date().toISOString()))();
 
   try {
-    await storeItems(db, source, selection.candidates, fetchedAt, result);
+    storeItems(db, source, selection.candidates, fetchedAt, result);
     result.ok = true;
   } catch (error: unknown) {
     result.error = error instanceof Error ? error.message : String(error);

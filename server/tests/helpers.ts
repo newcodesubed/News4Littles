@@ -73,14 +73,18 @@ export function insertRawArticle(
   overrides: Partial<{
     id: string; sourceId: string; sourceName: string; sourceUrl: string; url: string;
     headline: string; body: string; topic: string; publishedAt: string | null; fetchedAt: string;
+    simplifiedAt: string | null;
   }> = {},
 ): string {
   const id = overrides.id ?? `raw-${++fixtureCount}`;
   const now = '2026-09-04T09:00:00.000Z';
 
   db.prepare(
-    `INSERT INTO raw_articles (id, sourceId, sourceName, sourceUrl, url, headline, body, topic, publishedAt, fetchedAt)
-     VALUES (@id, @sourceId, @sourceName, @sourceUrl, @url, @headline, @body, @topic, @publishedAt, @fetchedAt)`,
+    `INSERT INTO raw_articles
+       (id, sourceId, sourceName, sourceUrl, url, headline, body, topic, publishedAt,
+        fetchedAt, simplifiedAt)
+     VALUES (@id, @sourceId, @sourceName, @sourceUrl, @url, @headline, @body, @topic,
+             @publishedAt, @fetchedAt, @simplifiedAt)`,
   ).run({
     id,
     sourceId: 'bbc',
@@ -92,6 +96,9 @@ export function insertRawArticle(
     topic: 'World',
     publishedAt: now,
     fetchedAt: now,
+    // A bare raw article with no kid article really is waiting to be
+    // simplified, which is what the backlog means.
+    simplifiedAt: null,
     ...overrides,
   });
 
@@ -116,7 +123,9 @@ export function insertKidArticle(
 
   const row = {
     id,
-    originalId: overrides.originalId ?? insertRawArticle(db),
+    // A raw article that HAS a kid article has been simplified by definition,
+    // so its parent is stamped rather than left looking like backlog.
+    originalId: overrides.originalId ?? insertRawArticle(db, { simplifiedAt: now }),
     ageTarget: 8,
     kidHeadline: `Headline ${id}`,
     summary: 'A short summary.',

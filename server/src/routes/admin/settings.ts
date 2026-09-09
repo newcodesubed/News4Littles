@@ -9,7 +9,9 @@ import type { Database } from 'better-sqlite3';
 import { BadRequestError } from '../../core/errors.js';
 import { MAX_AGE, MIN_AGE } from '../../core/article.js';
 import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
-import { optionalString, requireAgeTarget, requireTimeOfDay } from '../../http/validation.js';
+import {
+  optionalString, requireAgeTarget, requireInt, requireTimeOfDay,
+} from '../../http/validation.js';
 
 /**
  * The guard matches case-insensitively, so two casings of one word would
@@ -118,10 +120,18 @@ export function createSettingsRouter(db: Database): Router {
       ),
     ];
 
+    const current = settings.getAppSettings();
+
     const saved = {
       defaultAge: requireAgeTarget(body.defaultAge, 'defaultAge'),
       scrapeTimes: times,
       llmProvider: optionalString(body.llmProvider),
+      // Absent means "leave it alone", so a client that predates this field
+      // cannot silently reset the budget to a default.
+      simplifyBudget:
+        body.simplifyBudget === undefined
+          ? current.simplifyBudget
+          : requireInt(body.simplifyBudget, 'simplifyBudget', { min: 0, max: 100 }),
     };
 
     settings.saveAppSettings(saved);

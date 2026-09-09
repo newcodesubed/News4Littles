@@ -7,7 +7,11 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getSource, scrapeSource, type SourceRow } from '../src/ingestion/rssScraper.js';
+import { canonicalUrl } from '../src/ingestion/feedParser.js';
 import { readScrapeTimes, timeToCron } from '../src/ingestion/scheduler.js';
+import {
+  resetRunState, startScrapeRun, summarise, type RunState,
+} from '../src/services/scrapeService.js';
 import { countRows, createTestContext, type TestContext } from './helpers.js';
 
 interface FeedItem { title?: string; link?: string; pubDate?: string; description?: string }
@@ -18,11 +22,18 @@ let feedBody: string | null = null;
 let feedServer: Server;
 let feedUrl: string;
 
+/**
+ * Escape a value for XML text. Titles and descriptions below sit in CDATA, but
+ * <link> does not — and a raw '&' in a query string makes the parse throw
+ * "Invalid character in entity name". Real feeds escape it, so the fixture must.
+ */
+const xml = (value: string) => value.replace(/&/g, '&amp;');
+
 function rss(items: FeedItem[]): string {
   const entries = items
     .map((i) => `<item>
       ${i.title ? `<title><![CDATA[${i.title}]]></title>` : ''}
-      ${i.link ? `<link>${i.link}</link>` : ''}
+      ${i.link ? `<link>${xml(i.link)}</link>` : ''}
       ${i.pubDate ? `<pubDate>${i.pubDate}</pubDate>` : ''}
       ${i.description ? `<description><![CDATA[${i.description}]]></description>` : ''}
     </item>`)
@@ -60,21 +71,34 @@ afterEach(() => ctx.close());
 const bbc = () => getSource(ctx.db, 'bbc') as SourceRow;
 
 describe('happy path (§5.2)', () => {
-  it('stores a raw article and a kid article per item', async () => {
+  it('stores a raw article per item and simplifies none of them', async () => {
+    // §5.2 steps 1-5 only. Steps 6-7 moved to simplifyService, under a budget:
+    // a full feed is 40-50 model calls for a queue an editor triages ten of.
     const result = await scrapeSource(ctx.db, bbc());
+
     expect(result.ok).toBe(true);
     expect(result.inserted).toBe(2);
     expect(countRows(ctx.db, 'raw_articles')).toBe(2);
-    expect(countRows(ctx.db, 'kid_articles')).toBe(2);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(0);
+    expect(result.simplified).toEqual([]);
   });
 
-  it('NEVER auto-publishes, whatever the guard says (§5.2 step 7)', async () => {
+  it('leaves every stored article waiting', async () => {
     await scrapeSource(ctx.db, bbc());
-    const rows = ctx.db.prepare('SELECT status, publishedAt, safety FROM kid_articles').all() as any[];
-    expect(rows.every((r) => r.status === 'pending_review')).toBe(true);
-    expect(rows.every((r) => r.publishedAt === null)).toBe(true);
-    // ...and the guard still ran.
-    expect(rows.map((r) => r.safety)).toContain('adult-nearby');
+
+    const waiting = ctx.db
+      .prepare(`SELECT COUNT(*) FROM raw_articles WHERE simplifiedAt IS NULL`)
+      .pluck().get();
+    expect(waiting).toBe(2);
+  });
+
+  it('reports what it stored, by raw id rather than kid headline', async () => {
+    const result = await scrapeSource(ctx.db, bbc());
+
+    expect(result.stored).toHaveLength(2);
+    expect(result.stored[0]).toMatchObject({ url: 'https://example.com/1' });
+    expect(result.stored[0].rawId).toEqual(expect.any(String));
+    expect(result.stored[0].headline).toBe('A rover surveyed the reef');
   });
 
   it('advances the cursor to the newest stored item (§5.2 step 5)', async () => {
@@ -98,7 +122,7 @@ describe('incremental fetching (§5.2 step 3)', () => {
 
     const result = await scrapeSource(ctx.db, bbc());
     expect(result.inserted).toBe(1);
-    expect(result.stored[0].kidHeadline).toContain('brand new story');
+    expect(result.stored[0].headline).toContain('brand new story');
   });
 
   it('skips an item whose URL is already stored, even if re-dated', async () => {
@@ -181,6 +205,8 @@ describe('failure handling', () => {
 
 describe('limit option', () => {
   it('caps how many items one run stores', async () => {
+    // Distinct from the simplification budget: limit DISCARDS the rest,
+    // the budget only defers them.
     const result = await scrapeSource(ctx.db, bbc(), { limit: 1 });
     expect(result.inserted).toBe(1);
   });
@@ -212,5 +238,173 @@ describe('schedule parsing (§5.3)', () => {
   it('returns an empty list when the settings row is missing', () => {
     ctx.db.prepare(`DELETE FROM app_settings`).run();
     expect(readScrapeTimes(ctx.db)).toEqual([]);
+  });
+});
+
+describe('the simplification budget', () => {
+  /** Runs a full scrape and resolves when the background run has finished. */
+  const runToCompletion = (budget?: number) =>
+    new Promise<RunState>((resolve) => {
+      startScrapeRun(ctx.db, { budget, onFinished: resolve });
+    });
+
+  const waitingCount = () =>
+    ctx.db.prepare(`SELECT COUNT(*) FROM raw_articles WHERE simplifiedAt IS NULL`).pluck().get();
+
+  beforeEach(() => {
+    resetRunState();
+    // 25 items, oldest first, so the newest-first rule is actually exercised.
+    feedItems = Array.from({ length: 25 }, (_, i) => ({
+      title: `Story number ${i + 1}`,
+      link: `https://example.com/story-${i + 1}`,
+      pubDate: new Date(Date.UTC(2026, 8, 1, i)).toUTCString(),
+      description: 'A calm story about the sea and the coral that lives in it.',
+    }));
+  });
+  afterEach(() => resetRunState());
+
+  it('stores everything but simplifies only the budget', async () => {
+    const state = await runToCompletion(10);
+
+    expect(countRows(ctx.db, 'raw_articles')).toBe(25);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
+    expect(waitingCount()).toBe(15);
+    expect(summarise(state).simplified).toBe(10);
+  });
+
+  it('advances the cursor past every stored item, not just the simplified ones', async () => {
+    // Otherwise the 15 left raw would be re-fetched and re-stored next run.
+    await runToCompletion(10);
+
+    expect(bbc().lastFetchedItemPublishedAt).toBe(new Date(Date.UTC(2026, 8, 1, 24)).toISOString());
+  });
+
+  it('simplifies the newest stories first', async () => {
+    await runToCompletion(3);
+
+    const headlines = ctx.db
+      .prepare(`SELECT r.headline FROM raw_articles r WHERE r.simplifiedAt IS NOT NULL`)
+      .pluck().all();
+    expect(headlines).toHaveLength(3);
+    expect(headlines).toEqual(
+      expect.arrayContaining(['Story number 25', 'Story number 24', 'Story number 23']),
+    );
+  });
+
+  it('a second run works through the backlog rather than re-fetching', async () => {
+    await runToCompletion(10);
+    const state = await runToCompletion(10);
+
+    // Nothing new in the feed, so phase 1 inserts nothing and phase 2 spends
+    // the budget on what was left waiting.
+    expect(summarise(state).inserted).toBe(0);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(20);
+    expect(waitingCount()).toBe(5);
+  });
+
+  it('a budget of 0 simplifies nothing and still stores everything', async () => {
+    await runToCompletion(0);
+
+    expect(countRows(ctx.db, 'raw_articles')).toBe(25);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(0);
+  });
+
+  it('reads the budget from app_settings when none is passed', async () => {
+    ctx.db.prepare(`UPDATE app_settings SET simplifyBudget = 2 WHERE id = 'default'`).run();
+
+    await runToCompletion();
+
+    expect(countRows(ctx.db, 'kid_articles')).toBe(2);
+  });
+
+  it('still never auto-publishes what it simplifies (§5.2 step 7)', async () => {
+    await runToCompletion(5);
+
+    expect(ctx.db.prepare(`SELECT DISTINCT status FROM kid_articles`).pluck().all())
+      .toEqual(['pending_review']);
+  });
+});
+
+describe('canonicalUrl', () => {
+  it("strips the campaign tags BBC puts on its feed links", () => {
+    expect(
+      canonicalUrl('https://www.bbc.co.uk/news/articles/cp9340rg7k8o?at_medium=RSS&at_campaign=rss'),
+    ).toBe('https://www.bbc.co.uk/news/articles/cp9340rg7k8o');
+  });
+
+  it('strips utm_* and the common click ids', () => {
+    expect(canonicalUrl('https://e.com/a?utm_source=x&utm_medium=y&utm_campaign=z')).toBe('https://e.com/a');
+    expect(canonicalUrl('https://e.com/a?fbclid=abc')).toBe('https://e.com/a');
+    expect(canonicalUrl('https://e.com/a?gclid=abc')).toBe('https://e.com/a');
+  });
+
+  it('keeps parameters that decide which page you get', () => {
+    // Stripping the query string wholesale would break these.
+    expect(canonicalUrl('https://e.com/story?id=1234')).toBe('https://e.com/story?id=1234');
+    expect(canonicalUrl('https://e.com/list?page=2')).toBe('https://e.com/list?page=2');
+  });
+
+  it('keeps the real parameters and drops only the tracking ones', () => {
+    expect(canonicalUrl('https://e.com/story?id=99&utm_source=rss&page=3')).toBe(
+      'https://e.com/story?id=99&page=3',
+    );
+  });
+
+  it('leaves the fragment alone', () => {
+    expect(canonicalUrl('https://e.com/a?at_medium=RSS#section-2')).toBe('https://e.com/a#section-2');
+  });
+
+  it('returns the original string untouched when there is nothing to strip', () => {
+    // Not re-serialised through URL(), so no normalisation churn on the
+    // overwhelming majority of links that carry no tracking at all.
+    const plain = 'https://e.com/a/b';
+    expect(canonicalUrl(plain)).toBe(plain);
+  });
+
+  it('survives something that is not a URL at all', () => {
+    expect(canonicalUrl('not a url')).toBe('not a url');
+    expect(canonicalUrl('')).toBe('');
+  });
+});
+
+describe('tracking parameters in ingestion', () => {
+  it('stores the canonical link, so the original opens the article cleanly', async () => {
+    feedItems = [{
+      title: 'A tagged story',
+      link: 'https://www.bbc.co.uk/news/articles/abc123?at_medium=RSS&at_campaign=rss',
+      pubDate: 'Fri, 04 Sep 2026 10:00:00 GMT',
+      description: 'A calm story about the sea.',
+    }];
+
+    await scrapeSource(ctx.db, bbc());
+
+    expect(ctx.db.prepare(`SELECT url FROM raw_articles`).pluck().get())
+      .toBe('https://www.bbc.co.uk/news/articles/abc123');
+  });
+
+  it('treats the same story with new campaign tags as already stored', async () => {
+    // This is the reason to strip them: the duplicate guard is an exact string
+    // match on the URL, so a re-tagged link would otherwise look like a new
+    // article and cost another simplification.
+    feedItems = [{
+      title: 'A tagged story',
+      link: 'https://www.bbc.co.uk/news/articles/abc123?at_medium=RSS&at_campaign=rss',
+      pubDate: 'Fri, 04 Sep 2026 10:00:00 GMT',
+      description: 'A calm story about the sea.',
+    }];
+    await scrapeSource(ctx.db, bbc());
+
+    // Same article, same date, different campaign tags.
+    feedItems = [{
+      title: 'A tagged story',
+      link: 'https://www.bbc.co.uk/news/articles/abc123?at_medium=custom7&at_campaign=64',
+      pubDate: 'Sat, 05 Sep 2026 10:00:00 GMT',
+      description: 'A calm story about the sea.',
+    }];
+    const second = await scrapeSource(ctx.db, bbc());
+
+    expect(second.inserted).toBe(0);
+    expect(second.skippedAlreadyStored).toBe(1);
+    expect(countRows(ctx.db, 'raw_articles')).toBe(1);
   });
 });
