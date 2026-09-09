@@ -27,11 +27,11 @@ real content. Requested as a product requirement, not a preference.
 | Question | Decision |
 |---|---|
 | Granularity | One version per age, 5–14 (ten per story) |
-| Generation | One LLM call returning all ten versions |
+| Generation | One LLM call **per age** — ten per story |
 | Review | One screen per story, all versions, approved together |
 | Missing version | Nearest published version, labelled |
 | Row actions | Existing endpoints become story-scoped; Edit stays per-version |
-| Prompt | `genericPrompt` + all ten `ageOverrides` stay editable and are assembled into one call; the JSON-shape scaffolding lives in code |
+| Prompt | Unchanged. `selectPrompt` already picks an age's override, or the generic prompt with `{{age}}` substituted |
 
 ### Feasibility, measured not assumed
 
@@ -43,16 +43,26 @@ From OpenRouter's model API for the configured `google/gemini-2.5-flash-lite`:
 | Max output | 65,535 tokens |
 | Pricing | $0.10/M input, $0.40/M output |
 
-Ten versions need roughly 4,400 output tokens, so `LLM_MAX_TOKENS` rises from
-1500 to 8000 — comfortable headroom, nowhere near the ceiling. The same setting
-caps the single-version calls the sandbox and Regenerate make; raising it is
-harmless there because `max_tokens` is a ceiling, not a target, and those
-responses stay the size they are today.
+Cost is about **$0.0029 per story** — ten calls, each re-sending the article —
+or **~$0.87/month** at the budget of ten stories a day. `LLM_MAX_TOKENS` stays
+at 1500: each call returns one version, exactly as today.
 
-Cost is about **$0.00155 per story**, or **~$0.47/month** at the budget of ten
-stories a day. Ten separate calls would cost about 1.9× that, because the
-article body is the bulk of the input and would be re-sent ten times. That is
-the entire reason for the single-call design.
+**A combined single call was designed first and rejected.** It would have cost
+~$0.47/month, but every stored prompt template is a complete standalone prompt
+that embeds `{{body}}` *and* its own "Return ONLY a JSON object" envelope
+(`seed-prompts.ts:30, 39, 88, 98`). Assembling ten of them into one call means
+either embedding the article ten times — which destroys the saving that
+justified the design — or mangling each template with a back-reference and an
+overriding format instruction, producing a prompt no editor could reason about.
+
+The saving at stake was **40 cents a month**, against losing per-age prompt
+control and the sandbox's fidelity to production (§7.4 requires the sandbox to
+run the same code path production runs). Ten calls it is.
+
+The real cost is time, not money: ten stories × ten ages is 100 sequential
+calls, so a run goes from roughly 30 seconds to roughly 5 minutes. It is a
+background job that already warns runs take minutes. Limited concurrency is a
+later option, deliberately not in this design.
 
 ## 3. Phase 0 — the public API (done, shipped separately)
 
@@ -81,38 +91,47 @@ Ten rows share an `originalId`, one per `ageTarget` 5–14.
 
 Ten stories per run × ten versions = 100 rows per run. Trivial for SQLite.
 
-### 4.2 The combined call
+### 4.2 Ten calls
 
-A new `parseLlmVersions` expects:
+`simplifyArticle` keeps its signature and behaviour exactly as they are — one
+article, one age, one version. A new `simplifyArticleForAllAges` loops the ages
+and calls it, collecting `KidArticle[]`.
 
-```json
-{ "versions": [ { "ageTarget": 5, "kidHeadline": "...", "summary": "...", ... }, ... ] }
-```
+No new parsing: `parseLlmContent` is unchanged. No new prompt code:
+`selectPrompt` and `renderPrompt` are unchanged. Beyond the loop and the
+transaction, the only change inside `simplifyArticle` is an injection point for
+the shared prompt guard (§4.4).
 
-and requires all ten ages present. The existing single-version
-`parseLlmContent` stays, because the sandbox (§7.4) and Regenerate both work on
-one age at a time.
+### 4.3 Prompts — nothing to change
 
-`simplifyArticle` keeps its current single-version signature for those callers.
-A new `simplifyArticleForAllAges` shares the guard and fallback logic and
-returns `KidArticle[]`.
+`selectPrompt(generic, ageOverrides, age)` (§9.1 step 1) already returns that
+age's override when one exists, and otherwise the generic prompt with
+`{{age}}` substituted. Verified against the real function: with overrides for
+6 and 12 present, ages 5, 10 and 14 fall through to generic and render as
+"rewrite for a 10-year-old".
 
-### 4.3 Prompt assembly
+The live config currently holds **no** age overrides, so all ten ages use the
+generic prompt with a different age substituted. That already differentiates
+the output — the prompt says "use everyday words a {{age}}-year-old knows" —
+so the feature works with no prompt authoring, and an override can be added
+for any single age later.
 
-The editor keeps editing `genericPrompt` and the ten `ageOverrides` entries.
-Those overrides become ten labelled sections inside one prompt — the same
-instructions that would have driven ten separate calls, delivered in one.
-
-The scaffolding around them (the "return one object per age, in this JSON
-shape" instruction) is assembled in code and is deliberately **not** editable.
-An editor who broke the generic prompt produces a bad rewrite; an editor who
-broke the JSON instruction would fail every simplification at once.
+This is also what keeps the sandbox honest: it tests one article at one age
+against one prompt draft, which is exactly the unit production now uses.
 
 ### 4.4 Guards
 
 The deny-list (§6.1) and prompt guard (§6.2) judge the **source** article,
-which does not vary by age, so both run **once per story** — one prompt-guard
-call, not ten.
+which does not vary by age, so both should run **once per story** — one
+prompt-guard call, not ten.
+
+That needs a change, because `runPromptGuard` is currently called *inside*
+`simplifyArticle`, so a naive loop over ten ages would make ten guard calls and
+double the cost of the whole feature. `SimplifyOptions` gains an optional
+`promptGuard?: PromptGuardOutcome`: when supplied, `simplifyArticle` uses it
+instead of making its own call. `simplifyArticleForAllAges` runs the guard once
+and passes the same outcome into all ten. Every existing caller omits the
+option and is unaffected.
 
 The model returns a safety verdict per version, and `strictest()` combines it
 with the story-level verdicts. So a deny-list hit forces every version to the
@@ -138,22 +157,22 @@ whenever the LLM was unavailable.
 Ages below the old first anchor do change: age 5 goes from 14 words to 10. That
 is the point.
 
-If the combined response is malformed, or is missing any of the ten ages, the
-**whole story** falls back to the rule-based pipeline. One engine per story is
-easy to reason about and gives the editor a single clear flag; a story that is
-seven parts LLM and three parts fallback is not.
+With ten independent calls, a failure is per-age: that age falls back to the
+rule-based pipeline and the other nine keep their LLM versions. So a story may
+legitimately be nine parts LLM and one part fallback, and the review screen has
+to show the engine **per version** rather than per story, so an editor can see
+which age got the weaker treatment.
 
 ### 4.7 Budget interaction
 
-Unchanged: `app_settings.simplifyBudget` still counts **stories**, and a run
-still makes **one simplification call per story** — plus one prompt-guard call
-per story when §6.2's guard is enabled, exactly as today. So a budget of ten is
-ten calls, or twenty with the guard on; it is not multiplied by the ten
-versions. That is the whole point of the single-call design: with ten calls per
-story the budget's meaning would have had to change from stories to calls.
+`app_settings.simplifyBudget` still counts **stories**, and that meaning is
+now load-bearing: a budget of ten means ten stories and therefore **100
+simplification calls**, plus one prompt-guard call per story when §6.2's guard
+is enabled. The budget no longer bounds LLM calls directly, and the settings
+page must say so, or an editor will set 10 expecting 10 calls.
 
-Run reporting gains a version count alongside the story count, so the settings
-page can say "10 stories, 100 versions".
+Run reporting gains a version count alongside the story count, so the page can
+read "10 stories, 100 versions".
 
 ## 5. Phase 2 — review grouped by story
 
@@ -229,8 +248,9 @@ are re-simplified.
 
 ## 7. Failure handling
 
-- A malformed or incomplete combined response falls the story back to the
-  rule-based pipeline, with the reason recorded as today (§9.1 step 4).
+- A single age's call failing falls **that age** back to the rule-based
+  pipeline, with the reason recorded as today (§9.1 step 4). The other nine are
+  unaffected — a benefit the combined call could not offer.
 - The prompt guard failing contributes no verdict rather than a made-up one,
   exactly as now.
 - A database failure while writing a story's ten versions rolls back all ten and
@@ -240,13 +260,12 @@ are re-simplified.
 
 ## 8. Testing
 
-- **Prompt assembly** — all ten ages appear; each age's override is attached to
-  its own age; the generic prompt is used where an override is absent.
-- **Multi-version parsing** — a well-formed ten-version response; a response
-  missing an age; malformed JSON; an unexpected extra age.
+- **Per-age prompt selection** — an age with an override uses it; an age
+  without one uses the generic prompt with its own age substituted.
 - **Generation** — one story yields ten rows with distinct `ageTarget`s, all
-  `pending_review`; one prompt-guard call, not ten; a deny-list hit raises every
-  version; the whole story rolls back on a write failure.
+  `pending_review`; ten simplification calls but only one prompt-guard call; a
+  deny-list hit raises every version; one age failing leaves the other nine on
+  the LLM engine; the whole story rolls back on a write failure.
 - **Fallback per age** — `age * 2` at every age, and the three §9.2 anchors
   asserted explicitly; ten fallback versions differ from one another.
 - **Story-scoped actions** — publishing one version publishes all ten;
