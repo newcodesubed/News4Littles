@@ -26,6 +26,9 @@ const GENERATED = {
   createdAt: '2026-09-04T10:00:00.000Z', publishedAt: null,
 };
 
+/** Resolves the in-flight save, so the button can be observed mid-request. */
+let releaseSave: (() => void) | null = null;
+
 function mockApi(overrides: Record<string, unknown> = {}) {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, '');
@@ -34,7 +37,12 @@ function mockApi(overrides: Record<string, unknown> = {}) {
       ({ ok: status < 400, status, json: async () => body, headers: new Headers() }) as unknown as Response;
 
     if (path.includes('/simplify')) return json({ article: GENERATED, guard: { matches: ['conflict', 'attack'], safety: 'adult-nearby', denyListEnabled: true, engine: 'local-fallback' } });
-    if (path === '/api/admin/articles' && init.method === 'POST') return json({ ...GENERATED, id: 'new' }, 201);
+    if (path === '/api/admin/articles' && init.method === 'POST') {
+      // Saving is ten model calls server-side, so tests can hold it open.
+      if (releaseSave === null) return json({ ...GENERATED, id: 'new' }, 201);
+      await new Promise<void>((resolve) => { releaseSave = resolve; });
+      return json({ ...GENERATED, id: 'new' }, 201);
+    }
     if (path.includes('/scrape/status')) return json({
       running: false,
       run: null,
@@ -63,6 +71,7 @@ const renderIn = (ui: React.ReactNode) =>
   render(<MemoryRouter><AdminAuthProvider>{ui}</AdminAuthProvider></MemoryRouter>);
 
 beforeEach(() => {
+  releaseSave = null;
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
   calls = [];
   mockApi();
@@ -194,6 +203,27 @@ describe('saving — requirements 2, 4, 5', () => {
       const post = calls.find((c) => c.method === 'POST' && c.path === '/api/admin/articles');
       expect(post?.body.kidHeadline).toBe('My own headline');
     });
+  });
+
+  it('shows a loader while the save writes every age version', async () => {
+    // With an LLM configured this request is ten model calls, so a static
+    // label would leave a working button looking like a dead one.
+    releaseSave = () => {};
+    renderIn(<AdminSubmit />);
+    await fillForm();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Send for review' }));
+
+    const button = await screen.findByRole('button', { name: /Writing every age version/ });
+    expect(button).toBeDisabled();
+
+    releaseSave?.();
+    // The label goes back once the save lands. The button stays disabled
+    // because a successful save clears the form, leaving nothing to submit.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Send for review' })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /Writing every age version/ })).not.toBeInTheDocument();
   });
 
   it('Publish now asks for confirmation first', async () => {
