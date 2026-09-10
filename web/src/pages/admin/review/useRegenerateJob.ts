@@ -36,6 +36,31 @@ export function useRegenerateJob({
   const [job, setJob] = useState<RegenerateJob | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
 
+  /**
+   * Adopt whatever preview the server is already holding, once, on mount.
+   *
+   * The job lives on the server; only this hook's state knew about it, and that
+   * state dies when AdminReview unmounts. So leaving the queue and coming back
+   * used to strand a running job — invisible here, while a second Regenerate
+   * got a 409 — and strand a finished preview whose ten model calls were
+   * already paid for. Asking once costs one request and hands both back.
+   */
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await adminFetch('/api/admin/articles/regenerate/status');
+        if (!res.ok) return;
+
+        const body = (await res.json()) as { running: boolean; job: RegenerateJob | null };
+        // A failed or already-applied job is finished business, not a preview
+        // waiting for a decision.
+        if (body.job && !body.job.error && !body.job.appliedAges) setJob(body.job);
+      } catch {
+        // Nothing to adopt; the editor can still start a fresh one.
+      }
+    })();
+  }, [adminFetch]);
+
   /** Polls while it runs: ten ages is minutes, so the row cannot just wait. */
   useEffect(() => {
     if (!job?.running) return;
