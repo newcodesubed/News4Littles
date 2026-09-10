@@ -92,6 +92,7 @@ export function RegenerateDialog({
 
       <p className="mt-4 text-sm font-bold">
         Age {version.ageTarget}
+        {version.current.editedByHuman && ' · edited by a person'}
         {' · '}
         {changed.length === 0
           ? 'no differences — applying this age would change nothing'

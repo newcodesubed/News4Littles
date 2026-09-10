@@ -183,7 +183,10 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
     expect(screen.getByRole('button', { name: 'Apply 1 of 2 versions' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: /Age 6/ }));
-    expect(screen.getByText(/edited by a person/i)).toBeInTheDocument();
+    // The header names the age on screen — the moment the warning matters.
+    expect(screen.getByText(/Age 6 · edited by a person/)).toBeInTheDocument();
+    // …and the warning box says what ticking it would cost.
+    expect(screen.getByText(/Tick it only if you want that wording replaced/i)).toBeInTheDocument();
   });
 
   it('applies exactly the ticked ages, ascending', async () => {
