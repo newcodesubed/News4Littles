@@ -70,10 +70,17 @@ export function getRegenerateJob(): RegenerateJobState | null {
   return current;
 }
 
-/** Test seam, and the Discard button: forget the preview, let go of the lock. */
+/**
+ * Test seam, and the Discard button: forget the preview, let go of the lock.
+ *
+ * Callable at any time, not just from this job's own `finally` — a stale
+ * Discard click must not steal the lock out from under a job of a DIFFERENT
+ * kind that has started since (e.g. a scrape). `releaseJob('regenerate')`
+ * only clears the lock when regenerate is actually the one holding it.
+ */
 export function resetRegenerateJob(): void {
   current = null;
-  releaseJob();
+  releaseJob('regenerate');
 }
 
 /**
@@ -178,7 +185,11 @@ export function startRegenerateJob(
       // Always: a leaked lock would block every later scrape and batch.
       job.running = false;
       job.finishedAt = clock();
-      releaseJob();
+      // Ownership-checked: by the time this runs, a later Discard call may
+      // already have released this same lock, or (job-shaped bug aside) a
+      // different kind may have taken it. Either way this must clear only
+      // the lock this job itself holds.
+      releaseJob('regenerate');
       options.onFinished?.(job);
     }
   })();

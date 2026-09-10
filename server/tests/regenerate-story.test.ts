@@ -230,6 +230,32 @@ describe('startRegenerateJob', () => {
   });
 });
 
+describe('resetRegenerateJob', () => {
+  // Local cleanup rather than relying on the outer afterEach: that afterEach
+  // calls resetRegenerateJob() too, which — now ownership-checked — will not
+  // clear a lock a DIFFERENT kind is holding, so a test that leaves 'scrape'
+  // held has to let it go itself.
+  afterEach(() => releaseJob());
+
+  it("leaves a different job's lock alone", () => {
+    acquireJob('scrape');
+
+    resetRegenerateJob();
+
+    // A stale Discard/reset must not steal the lock out from under a scrape
+    // that started after this preview's own job already finished.
+    expect(activeJob()).toBe('scrape');
+  });
+
+  it('still releases its own lock', () => {
+    acquireJob('regenerate');
+
+    resetRegenerateJob();
+
+    expect(activeJob()).toBeNull();
+  });
+});
+
 describe('applyRegeneratedVersions', () => {
   it('writes only the ticked ages and leaves the rest alone', async () => {
     seedStory('r1', [5, 6, 7]);
@@ -303,12 +329,17 @@ describe('applyRegeneratedVersions', () => {
       .toThrow(/no longer the current one/);
   });
 
-  it('refuses to apply a job that is still running', () => {
+  it('refuses to apply a job that is still running', async () => {
     seedStory('r1', [5, 6]);
     const { client } = countingClient();
-    const job = startRegenerateJob(ctx.db, 'r1-v5', { client });
 
-    expect(() => applyRegeneratedVersions(ctx.db, job.id, [5])).toThrow(/still running/);
+    // Waits for the job to actually finish before the test ends: leaving its
+    // promise dangling would race afterEach's ctx.close(), which closes the
+    // very db handle the background job is still using.
+    await new Promise<void>((resolve) => {
+      const job = startRegenerateJob(ctx.db, 'r1-v5', { client, onFinished: () => resolve() });
+      expect(() => applyRegeneratedVersions(ctx.db, job.id, [5])).toThrow(/still running/);
+    });
   });
 
   it('rejects an empty tick list and an age the preview does not hold', async () => {
