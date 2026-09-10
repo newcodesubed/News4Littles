@@ -93,6 +93,11 @@ export function useRegenerateJob({
         });
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
+          // Close the dialog on this path too: it sits under Modal's overlay,
+          // so leaving `job` set would hide the notice behind it and make a
+          // 409/404/400 apply look like the click did nothing. Nothing was
+          // written, so the queue is not reloaded here.
+          setJob(null);
           setNotice(`⚠ ${body.error ?? 'Could not apply the regenerated versions.'}`);
           return;
         }

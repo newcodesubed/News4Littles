@@ -111,7 +111,9 @@ export interface RegenerateJobState {
   costUsd: number;
   /** Only for a thrown failure — a missing raw article, a database error. */
   error?: string;
-  /** Set once applied, so the client stops offering apply. */
+  /** Set once applied. The server refuses a second apply of the same
+   *  preview once this is set, rather than relying on the client to stop
+   *  offering apply. */
   appliedAges?: number[];
 }
 
@@ -341,3 +343,8 @@ Polling conventions from `admin-waiting.test.tsx`. `admin-dialogs.test.tsx`'s
 - **The judge reading only age 5.** `autoApprove.ts:76` judges
   `story.versions[0]` and publishes all ten, so ages 6–14 publish unjudged.
   Same family of bug as this one, separately deferred.
+- **Row actions are not lock-guarded.** Under §2.2's one-process/one-admin
+  premise, an Edit made in another tab while a preview is running is
+  snapshotted away: the preview's `current` predates the edit, so that age is
+  neither badged nor unticked in the dialog, and applying it discards the
+  edit the other tab just made.

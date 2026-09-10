@@ -30,8 +30,10 @@ const versions: AdminArticle[] = [5, 8, 14].map((age) => ({
 
 let jobRunning = false;
 let jobLost = false;
+let jobError: string | null = null;
 let done = 1;
 let startStatus = 202;
+let applyStatus = 200;
 let applyBody: { jobId: string; ages: number[] } | null = null;
 let discarded = false;
 
@@ -52,9 +54,12 @@ function mockApi() {
       id: 'job-1', originalId: 'r1', kidHeadline: 'Stored age 5',
       startedAt: '2026-09-10T09:00:00.000Z', ages: [5, 8, 14], done,
       running: jobRunning, costUsd: 0.0043,
+      // Only for a thrown failure; a truthy value here ends the job the same
+      // way the service does — running: false, and no versions to show.
+      error: jobError ?? undefined,
       // A running job has attempted some ages but reports versions only when
       // it is done, exactly as the service fills them in at the end.
-      versions: jobRunning
+      versions: jobRunning || jobError
         ? []
         : versions.map((v) => ({
             ageTarget: v.ageTarget,
@@ -69,6 +74,9 @@ function mockApi() {
     }
     if (path.includes('/articles/regenerate/apply')) {
       applyBody = JSON.parse(String(init.body)) as { jobId: string; ages: number[] };
+      if (applyStatus !== 200) {
+        return json({ error: 'That preview is no longer the current one. Regenerate the story again.' }, applyStatus);
+      }
       return json(story);
     }
     if (path.endsWith('/articles/regenerate') && method === 'DELETE') {
@@ -117,8 +125,10 @@ async function finishJob() {
 beforeEach(() => {
   jobRunning = false;
   jobLost = false;
+  jobError = null;
   done = 1;
   startStatus = 202;
+  applyStatus = 200;
   applyBody = null;
   discarded = false;
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
@@ -175,6 +185,24 @@ describe('starting a story-scoped regeneration', () => {
       await screen.findByText(/regenerate preview was lost/i, {}, { timeout: 6000 }),
     ).toBeInTheDocument();
   });
+
+  it('surfaces a polled job.error and opens no dialog', async () => {
+    const user = userEvent.setup();
+    view();
+    await startJob(user);
+
+    // The job dies mid-run: the next poll reports it finished with an error
+    // rather than versions. If this branch broke, the poll would instead set
+    // a job with versions: [], the dialog's `versions.length > 0` guard would
+    // suppress it, and the row would quietly unlock with no notice at all.
+    jobRunning = false;
+    jobError = 'The model backend is unreachable.';
+
+    expect(
+      await screen.findByText(/model backend is unreachable/i, {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Regenerate — review before applying')).not.toBeInTheDocument();
+  });
 });
 
 describe('applying a story-scoped regeneration', () => {
@@ -203,5 +231,22 @@ describe('applying a story-scoped regeneration', () => {
 
     await waitFor(() => expect(discarded).toBe(true));
     expect(applyBody).toBeNull();
+  });
+
+  it('closes the dialog and shows the notice when apply fails', async () => {
+    applyStatus = 409;
+    const user = userEvent.setup();
+    view();
+    await startJob(user);
+    await finishJob();
+
+    await user.click(screen.getByRole('button', { name: 'Apply 3 of 3 versions' }));
+
+    // The dialog must close so the notice — which renders in page flow,
+    // underneath Modal's fixed overlay — is actually visible.
+    expect(
+      await screen.findByText(/no longer the current one/i, {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Regenerate — review before applying')).not.toBeInTheDocument();
   });
 });

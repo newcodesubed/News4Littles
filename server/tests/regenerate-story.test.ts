@@ -254,6 +254,30 @@ describe('resetRegenerateJob', () => {
 
     expect(activeJob()).toBeNull();
   });
+
+  it('leaves the lock held while discarding a still-running job, and lets the job release it itself', async () => {
+    seedStory('r1', [5, 6]);
+    const { client } = countingClient();
+
+    // Awaited inside the test (not left dangling) so this does not race
+    // afterEach's ctx.close() the way the file's own history warns about.
+    const finished = new Promise<void>((resolve) => {
+      startRegenerateJob(ctx.db, 'r1-v5', { client, onFinished: () => resolve() });
+    });
+
+    resetRegenerateJob();
+
+    // The preview is forgotten immediately...
+    expect(getRegenerateJob()).toBeNull();
+    // ...but the lock stays held: a stale Discard must not let a SECOND
+    // regenerate (or a scrape) start alongside the still-running first one.
+    expect(activeJob()).toBe('regenerate');
+
+    await finished;
+
+    // The job's own `finally` releases the lock once it actually finishes.
+    expect(activeJob()).toBeNull();
+  });
 });
 
 describe('applyRegeneratedVersions', () => {
@@ -349,6 +373,19 @@ describe('applyRegeneratedVersions', () => {
 
     expect(() => applyRegeneratedVersions(ctx.db, job.id, [])).toThrow(/nothing to apply/);
     expect(() => applyRegeneratedVersions(ctx.db, job.id, [12])).toThrow(/does not include age 12/);
+  });
+
+  it('refuses a second apply of the same preview, so a hand-edit made in between survives', async () => {
+    seedStory('r1', [5, 6]);
+    const { client } = countingClient();
+    const job = await runJob('r1-v5', { client });
+
+    applyRegeneratedVersions(ctx.db, job.id, [5]);
+
+    expect(() => applyRegeneratedVersions(ctx.db, job.id, [6]))
+      .toThrow(/already been applied/);
+    // The first apply's write stands; the second call must not have touched age 6.
+    expect(getKidArticle(ctx.db, 'r1-v6')!.kidHeadline).toBe('Stored headline for age 6');
   });
 
   it('reports a story deleted while the dialog was open', async () => {

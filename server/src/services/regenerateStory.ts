@@ -77,9 +77,21 @@ export function getRegenerateJob(): RegenerateJobState | null {
  * Discard click must not steal the lock out from under a job of a DIFFERENT
  * kind that has started since (e.g. a scrape). `releaseJob('regenerate')`
  * only clears the lock when regenerate is actually the one holding it.
+ *
+ * While the CURRENT job is still running, the lock is left alone: the lock is
+ * kind-scoped, not job-scoped, so releasing it here would let a second
+ * `startRegenerateJob` acquire it while the first is still mid-run, and that
+ * first job's own `finally` would later call `releaseJob('regenerate')` and
+ * clear the SECOND job's lock instead — allowing a scrape to start alongside a
+ * still-running regeneration, exactly the overlap the lock exists to prevent
+ * (§2.2). The preview is still forgotten immediately; only the lock outlives
+ * it, until the running job's own `finally` lets it go. `force` is a test seam
+ * for the unconditional reset some tests still want.
  */
-export function resetRegenerateJob(): void {
+export function resetRegenerateJob(force = false): void {
+  const running = current?.running === true;
   current = null;
+  if (running && !force) return;
   releaseJob('regenerate');
 }
 
@@ -215,6 +227,11 @@ export function applyRegeneratedVersions(
   if (job.running) {
     throw new ConflictError('That regeneration is still running. Wait for it to finish.');
   }
+  // §3.1's safety property: an age a person hand-edited after a first apply
+  // must not be silently overwritten by a second apply of the same preview.
+  if (job.appliedAges) {
+    throw new ConflictError('This preview has already been applied. Regenerate the story again to apply it a second time.');
+  }
   if (ages.length === 0) {
     throw new BadRequestError('No versions were ticked, so there is nothing to apply.');
   }
@@ -233,11 +250,13 @@ export function applyRegeneratedVersions(
     }
   })();
 
-  job.appliedAges = [...ages];
-
   // A story deleted while the dialog was open updates nothing, so saying so
   // afterwards costs nothing and tells the editor the truth.
   const story = articles.findStory(job.originalId);
   if (!story) throw NotFoundError.of('article', job.originalId);
+
+  // Only after the success check above: a call that throws must not flag this
+  // preview as applied, or a retry would be wrongly refused by the guard above.
+  job.appliedAges = [...ages];
   return story;
 }
