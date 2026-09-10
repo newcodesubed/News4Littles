@@ -227,13 +227,23 @@ safety badge shows the strictest verdict across them — a story that is
 opens every version behind an age selector, because §2.2 promises a human read
 every word a child sees and one Publish covers all ten.
 
-Publish, reject, re-review and delete are **story-scoped**: they take any one
-version's id and apply to every version of that story, so a story's versions
-always share one status. The endpoint URLs are unchanged from when a story had
-one version — `PATCH /api/admin/articles/:id/publish` now publishes the story
-that id belongs to. **Edit is the exception** and stays per-version, so one
-age's wording can be fixed without touching the other nine, and
-`editedByHuman` stays a per-version flag.
+Publish, reject, re-review, delete and regenerate are **story-scoped**: they
+take any one version's id and apply to every version of that story, so a
+story's versions always share one status. The endpoint URLs are unchanged from
+when a story had one version — `PATCH /api/admin/articles/:id/publish` now
+publishes the story that id belongs to. **Edit is the exception** and stays
+per-version, so one age's wording can be fixed without touching the other nine,
+and `editedByHuman` stays a per-version flag.
+
+**Regenerate previews every age and applies the ones you tick.** Ten versions
+is ten sequential model calls, so `POST /api/admin/articles/:id/regenerate`
+starts a background job and the row polls
+`GET /api/admin/articles/regenerate/status` — the same shape as a scrape or a
+manual simplify batch, and the same one-job-at-a-time lock. The dialog shows a
+tab per age with its own diff; ages a person has edited arrive unticked.
+`POST /api/admin/articles/regenerate/apply` writes the ticked ages from the
+held preview, so applying costs no further model calls and writes exactly the
+text that was on screen.
 
 Bulk approve still excludes `skip-young` unless you opt in, and that check uses
 the story's strictest version — selecting a calm age-14 row cannot publish a

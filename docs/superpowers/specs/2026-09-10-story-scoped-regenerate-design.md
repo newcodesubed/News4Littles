@@ -1,7 +1,7 @@
 # Story-scoped regenerate — design
 
 **Date:** 2026-09-10
-**Status:** approved, ready for an implementation plan
+**Status:** implemented — see `docs/superpowers/plans/2026-09-10-story-scoped-regenerate.md`
 
 ## 1. Problem
 
