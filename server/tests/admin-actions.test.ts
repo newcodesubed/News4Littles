@@ -1,7 +1,7 @@
 /** Review-queue writes: publish / reject / edit / regenerate / delete / bulk — §4.2. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  createTestContext, getKidArticle, insertKidArticle, insertRawArticle, type TestContext,
+  createTestContext, getKidArticle, insertKidArticle, type TestContext,
 } from './helpers.js';
 
 let ctx: TestContext;
@@ -83,57 +83,6 @@ describe('edit (§4.2)', () => {
   ])('rejects %s with 400', async (_label, body) => {
     const id = insertKidArticle(ctx.db);
     expect((await patch(`/api/admin/articles/${id}`, body)).status).toBe(400);
-  });
-});
-
-describe('regenerate (§4.2)', () => {
-  it('previews without writing', async () => {
-    const id = insertKidArticle(ctx.db, { kidHeadline: 'Original stored headline' });
-    const before = JSON.stringify(getKidArticle(ctx.db, id));
-
-    const body = await (await ctx.api(`/api/admin/articles/${id}/regenerate`, { method: 'POST' })).json();
-    expect(body.current).toBeTruthy();
-    expect(body.generated).toBeTruthy();
-    expect(JSON.stringify(getKidArticle(ctx.db, id))).toBe(before);
-  });
-
-  it('apply writes the regenerated content and clears editedByHuman', async () => {
-    const id = insertKidArticle(ctx.db, { kidHeadline: 'Human edited', editedByHuman: true });
-    const { generated } = await (await ctx.api(`/api/admin/articles/${id}/regenerate`, { method: 'POST' })).json();
-
-    await ctx.api(`/api/admin/articles/${id}/regenerate/apply`, { method: 'POST' });
-    const row = getKidArticle(ctx.db, id)!;
-    expect(row.kidHeadline).toBe(generated.kidHeadline);
-    expect(row.editedByHuman).toBe(0);
-  });
-
-  it('apply preserves status and publishedAt', async () => {
-    const id = insertKidArticle(ctx.db, { status: 'published' });
-    const before = getKidArticle(ctx.db, id)!;
-    await ctx.api(`/api/admin/articles/${id}/regenerate/apply`, { method: 'POST' });
-    expect(getKidArticle(ctx.db, id)).toMatchObject({ status: 'published', publishedAt: before.publishedAt });
-  });
-
-  it('keeps the original article link, rather than swapping in the feed URL', async () => {
-    // raw.sourceUrl is the rss.xml; raw.url is the story. Regenerating must not
-    // replace a working "Read the original" link with a link to raw XML.
-    const rawId = insertRawArticle(ctx.db, {
-      url: 'https://www.bbc.co.uk/news/articles/the-actual-story',
-      sourceUrl: 'https://feeds.bbci.co.uk/news/rss.xml',
-      simplifiedAt: '2026-09-04T09:00:00.000Z',
-    });
-    const id = insertKidArticle(ctx.db, {
-      originalId: rawId, sourceUrl: 'https://www.bbc.co.uk/news/articles/the-actual-story',
-    });
-
-    await ctx.api(`/api/admin/articles/${id}/regenerate/apply`, { method: 'POST' });
-
-    expect(getKidArticle(ctx.db, id)!.sourceUrl)
-      .toBe('https://www.bbc.co.uk/news/articles/the-actual-story');
-  });
-
-  it('404s for an unknown id', async () => {
-    expect((await ctx.api('/api/admin/articles/ghost/regenerate', { method: 'POST' })).status).toBe(404);
   });
 });
 

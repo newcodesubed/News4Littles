@@ -360,3 +360,103 @@ describe('applyRegeneratedVersions', () => {
     expect(() => applyRegeneratedVersions(ctx.db, job.id, [5])).toThrow(/No article with id 'r1'/);
   });
 });
+
+describe('the regenerate endpoints (§4.2)', () => {
+  /** Waits for the background job to finish, then returns the status body. */
+  const awaitJob = async () => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const body = await (await ctx.api('/api/admin/articles/regenerate/status')).json();
+      if (!body.running) return body as { running: boolean; job: RegenerateJobState | null };
+      await new Promise<void>((resolve) => { setTimeout(resolve, 10); });
+    }
+    throw new Error('The regenerate job never finished.');
+  };
+
+  it('starts a preview for the whole story and writes nothing', async () => {
+    seedStory('r1', [5, 6, 7]);
+    const before = JSON.stringify(rowsOf('r1'));
+
+    const started = await ctx.api('/api/admin/articles/r1-v6/regenerate', { method: 'POST' });
+    expect(started.status).toBe(202);
+    expect((await started.json()).job.ages).toEqual([5, 6, 7]);
+
+    const { job } = await awaitJob();
+    expect(job?.versions).toHaveLength(3);
+    expect(JSON.stringify(rowsOf('r1'))).toBe(before);
+  });
+
+  it('404s for an id that belongs to no story', async () => {
+    const res = await ctx.api('/api/admin/articles/nope/regenerate', { method: 'POST' });
+    expect(res.status).toBe(404);
+  });
+
+  it('409s while another job holds the lock', async () => {
+    seedStory('r1', [5]);
+    acquireJob('scrape');
+    const res = await ctx.api('/api/admin/articles/r1-v5/regenerate', { method: 'POST' });
+    expect(res.status).toBe(409);
+    releaseJob();
+  });
+
+  it('applies only the ticked ages and returns the refreshed story', async () => {
+    seedStory('r1', [5, 6]);
+    await ctx.api('/api/admin/articles/r1-v5/regenerate', { method: 'POST' });
+    const { job } = await awaitJob();
+
+    const res = await ctx.api('/api/admin/articles/regenerate/apply', {
+      method: 'POST', body: JSON.stringify({ jobId: job!.id, ages: [6] }),
+    });
+
+    expect(res.status).toBe(200);
+    const story = await res.json();
+    expect(story.originalId).toBe('r1');
+    expect(getKidArticle(ctx.db, 'r1-v5')!.kidHeadline).toBe('Stored headline for age 5');
+    expect(getKidArticle(ctx.db, 'r1-v6')!.kidHeadline).not.toBe('Stored headline for age 6');
+  });
+
+  it('400s on a missing jobId, an empty tick list, or an unpreviewed age', async () => {
+    seedStory('r1', [5]);
+    await ctx.api('/api/admin/articles/r1-v5/regenerate', { method: 'POST' });
+    const { job } = await awaitJob();
+
+    const apply = (body: unknown) =>
+      ctx.api('/api/admin/articles/regenerate/apply', { method: 'POST', body: JSON.stringify(body) });
+
+    expect((await apply({ ages: [5] })).status).toBe(400);
+    expect((await apply({ jobId: job!.id, ages: [] })).status).toBe(400);
+    expect((await apply({ jobId: job!.id, ages: ['five'] })).status).toBe(400);
+    expect((await apply({ jobId: job!.id, ages: [99] })).status).toBe(400);
+  });
+
+  it('409s when the jobId is stale', async () => {
+    seedStory('r1', [5]);
+    await ctx.api('/api/admin/articles/r1-v5/regenerate', { method: 'POST' });
+    const { job } = await awaitJob();
+
+    const res = await ctx.api('/api/admin/articles/regenerate/apply', {
+      method: 'POST', body: JSON.stringify({ jobId: `${job!.id}-stale`, ages: [5] }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('discards the held preview without touching the story', async () => {
+    // DELETE /articles/regenerate must not be read as deleting the story
+    // whose id happens to be "regenerate": the discard route is registered
+    // BEFORE DELETE /articles/:id for exactly that reason.
+    seedStory('r1', [5]);
+    await ctx.api('/api/admin/articles/r1-v5/regenerate', { method: 'POST' });
+    await awaitJob();
+
+    const res = await ctx.api('/api/admin/articles/regenerate', { method: 'DELETE' });
+
+    expect(res.status).toBe(200);
+    expect(getRegenerateJob()).toBeNull();
+    expect(rowsOf('r1')).toHaveLength(1);
+  });
+
+  it('no longer offers the per-version endpoints', async () => {
+    seedStory('r1', [5]);
+    const res = await ctx.api('/api/admin/articles/r1-v5/regenerate/apply', { method: 'POST' });
+    expect(res.status).toBe(404);
+  });
+});
