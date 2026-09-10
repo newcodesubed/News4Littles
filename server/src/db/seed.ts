@@ -46,6 +46,12 @@ const SOURCES = [
 const DENY_LIST = [
   'war', 'killed', 'death', 'shooting', 'attack', 'bomb',
   'disaster', 'earthquake', 'violence', 'conflict', 'wounded',
+  // Crime against a person. Without these a story about, say, sexual offences
+  // matched nothing and classified as 'calm' — and on the rule-based path
+  // (§9.2) the kid headline is the adult headline, so the subject reached the
+  // kid-facing fields unflagged.
+  'abuse', 'assault', 'rape', 'sexual', 'murder', 'stabbing',
+  'suicide', 'kidnapped', 'terrorism', 'arrested',
 ];
 
 export interface SeedResult {
