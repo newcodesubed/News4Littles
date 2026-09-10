@@ -20,8 +20,9 @@ import { DATABASE_PATH, openDatabase } from './connection.js';
  * 3 — added raw_articles.simplifiedAt, app_settings.simplifyBudget and the
  *     scrape_runs simplification counts (the per-run simplification budget).
  * 4 — added scrape_runs.versions (one story now yields one version per age).
+ * 5 — added kid_articles.approvedBy (records an auto-approved publish).
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 
@@ -46,6 +47,13 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   // No backfill: a run recorded before this change genuinely had one version
   // per story, and 0 is a truthful "not measured" rather than a wrong number.
   { table: 'scrape_runs', column: 'versions', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  // Nullable with no default: every existing row was published by a person, and
+  // NULL says exactly that.
+  {
+    table: 'kid_articles',
+    column: 'approvedBy',
+    definition: "TEXT CHECK (approvedBy IS NULL OR approvedBy = 'auto')",
+  },
 ];
 
 /**

@@ -40,6 +40,16 @@ describe('jobLock', () => {
     expect(activeJob()).toBeNull();
     expect(() => acquireJob('scrape')).not.toThrow();
   });
+
+  it('refuses a simplification batch while a regeneration is running', () => {
+    acquireJob('regenerate');
+    expect(() => acquireJob('simplify')).toThrow(/regeneration is already running/);
+  });
+
+  it('refuses a regeneration while a scrape is running', () => {
+    acquireJob('scrape');
+    expect(() => acquireJob('regenerate')).toThrow(/scrape is already running/);
+  });
 });
 
 describe('simplifyRawArticles', () => {

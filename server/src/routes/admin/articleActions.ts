@@ -3,21 +3,27 @@
  * delete (§4.2).
  *
  * SCOPE (§5): a story is one raw article's ten age versions (§3.6), and an
- * editor approves the story. So publish, reject, unpublish and delete take any
- * one version's id and apply to EVERY version of that story. The URLs are
- * unchanged from when a story had one version; the scope is not.
+ * editor approves the story. So publish, reject, unpublish, delete and
+ * regenerate take any one version's id and apply to EVERY version of that
+ * story. The URLs are unchanged from when a story had one version; the scope
+ * is not.
  *
  * Edit is the exception and stays per-version, so one age's wording can be
- * fixed without touching the other nine.
+ * fixed without touching the other nine. Regenerate previews every age but
+ * applies only the ones an editor ticks, which is the same idea from the other
+ * end: the machine offers all ten, the person chooses.
  */
 import { Router } from 'express';
 import type { Response } from 'express';
 import type { Database } from 'better-sqlite3';
+import { MAX_AGE, MIN_AGE } from '../../core/article.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../core/errors.js';
 import {
   createArticleRepository, type ArticleContent,
 } from '../../db/repositories/articleRepository.js';
-import { regenerateArticle } from '../../services/regenerateArticle.js';
+import {
+  applyRegeneratedVersions, getRegenerateJob, resetRegenerateJob, startRegenerateJob,
+} from '../../services/regenerateStory.js';
 import {
   optionalString, requireAgeTarget, requireInt, requireSafety, requireString,
   requireStringListOrNull, requireVocab,
@@ -44,6 +50,15 @@ function readContentChanges(body: Record<string, unknown>): Partial<ArticleConte
   return changes;
 }
 
+/** The ticked ages an apply request carries. */
+function readAges(body: Record<string, unknown>): number[] {
+  const { ages } = body;
+  if (!Array.isArray(ages) || ages.length === 0) {
+    throw new BadRequestError('ages must be a non-empty array of reading ages.');
+  }
+  return ages.map((age, index) => requireInt(age, `ages[${index}]`, { min: MIN_AGE, max: MAX_AGE }));
+}
+
 export function createArticleActionsRouter(db: Database): Router {
   const router = Router();
   const articles = createArticleRepository(db);
@@ -56,6 +71,12 @@ export function createArticleActionsRouter(db: Database): Router {
   };
 
   const respond = (res: Response, id: string) => res.json(articles.findAdminById(id));
+
+  /** The same envelope the simplify batch reports, for the same poller. */
+  const jobResponse = () => {
+    const job = getRegenerateJob();
+    return { running: job?.running ?? false, job };
+  };
 
   /** Throws 404 rather than letting a route update a story that isn't there. */
   const requireStory = (id: string) => {
@@ -95,15 +116,33 @@ export function createArticleActionsRouter(db: Database): Router {
     respond(res, req.params.id);
   });
 
-  /** §4.2 Regenerate: preview only. Nothing is written here. */
-  router.post('/articles/:id/regenerate', async (req, res) => {
-    res.json(await regenerateArticle(db, req.params.id));
+  /**
+   * §4.2 Regenerate — preview only, and story-scoped (§5).
+   *
+   * Ten versions is ten sequential model calls, so this returns straight away;
+   * poll /articles/regenerate/status.
+   */
+  router.post('/articles/:id/regenerate', (req, res) => {
+    requireStory(req.params.id);
+    startRegenerateJob(db, req.params.id);
+    res.status(202).json(jobResponse());
   });
 
-  router.post('/articles/:id/regenerate/apply', async (req, res) => {
-    const { generated } = await regenerateArticle(db, req.params.id);
-    articles.applyRegeneration(req.params.id, generated);
-    respond(res, req.params.id);
+  router.get('/articles/regenerate/status', (_req, res) => {
+    res.json(jobResponse());
+  });
+
+  /** Writes the ticked ages from the held preview. No further model calls. */
+  router.post('/articles/regenerate/apply', (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const jobId = requireString(body.jobId, 'jobId');
+    res.json(applyRegeneratedVersions(db, jobId, readAges(body)));
+  });
+
+  /** Discard: the editor closed the dialog, so stop holding the preview. */
+  router.delete('/articles/regenerate', (_req, res) => {
+    resetRegenerateJob();
+    res.json({ discarded: true });
   });
 
   /** §4.2: delete is only ever allowed on a non-published story. */

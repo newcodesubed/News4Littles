@@ -4,6 +4,8 @@ import type { ArticleStatus, KidArticle, Safety } from '../lib/types';
 export interface AdminArticle extends KidArticle {
   sourceId: string;
   originalHeadline: string;
+  /** 'auto' when the auto-mode judge published it; null whenever a person did. */
+  approvedBy: string | null;
 }
 
 /**
@@ -17,6 +19,8 @@ export interface AdminStory {
   versions: AdminArticle[];
   safety: Safety;
   status: ArticleStatus;
+  /** 'auto' when the judge published it, null when a person did. */
+  approvedBy: string | null;
   kidHeadline: string;
   category: string;
   sourceId: string;
@@ -59,6 +63,41 @@ export interface SimplifyJob {
     failures: { rawId: string; error: string }[];
     skipped: string[];
   };
+}
+
+/** One age's before/after, as the regenerate preview reports it. */
+export interface RegeneratedVersion {
+  ageTarget: number;
+  /** The stored row this age would replace. */
+  current: AdminArticle;
+  generated: AdminArticle;
+  engine: string;
+  model?: string;
+  /** Set when this age fell back to the rule-based pipeline (§9.2). */
+  fallbackReason?: string;
+}
+
+/**
+ * A story-scoped regeneration, as the status endpoint reports it (§4.2).
+ *
+ * `ages` is the story's EXISTING versions, so a pre-per-age story previews one
+ * tab rather than pretending to have ten.
+ */
+export interface RegenerateJob {
+  id: string;
+  originalId: string;
+  kidHeadline: string;
+  startedAt: string;
+  finishedAt?: string;
+  ages: number[];
+  /** Ages attempted so far, for the row's progress label. */
+  done: number;
+  running: boolean;
+  versions: RegeneratedVersion[];
+  /** Spent whether or not the editor applies. */
+  costUsd: number;
+  error?: string;
+  appliedAges?: number[];
 }
 
 export interface FilterOptions {

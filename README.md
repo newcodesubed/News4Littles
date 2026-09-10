@@ -3,7 +3,7 @@
 A daily kid-friendly news aggregator. It pulls stories from trusted news feeds,
 filters and rewrites them for children, and presents them in a calm, readable
 interface. Every story is read by a human editor before a child sees it — nothing
-publishes automatically.
+publishes automatically, unless auto mode is switched on (see below).
 
 - `/server` — Node.js + Express + SQLite (better-sqlite3), raw SQL, no ORM
 - `/web` — React 18 + Vite + TypeScript + Tailwind
@@ -84,7 +84,7 @@ paste by hand ┘                 │   (once per age, 5-14)  (10 versions,
 
 Two things never change:
 
-- **Nothing auto-publishes.** Scraped and pasted articles both land as
+- **Nothing auto-publishes** by default. Scraped and pasted articles both land as
   `pending_review` (§5.2).
 - **The safety guard has the final word.** Every article is classified `calm`,
   `adult-nearby` or `skip-young`. A keyword deny-list and the LLM both get a
@@ -153,6 +153,52 @@ This diverges from PRD §5.2, which runs steps 4–7 as a single pass over every
 item. Steps 1–5 live in `ingestion/rssScraper.ts`; steps 6–7 moved to
 `services/simplifyService.ts`.
 
+### Auto mode (off by default)
+
+Set `AUTO_APPROVE_ENABLED=true` and an LLM judges each story a scrape just
+simplified, publishing the ones it approves with **no editor involved**. It
+defaults to `false`, unlike every other flag here, because it trades away the
+human review this product otherwise promises. It also needs a working LLM: no
+API key means no judge, and no judge means nothing is auto-published.
+
+The judge reads the **age-5 version** — the strictest reading level and the most
+sensitive reader — and since publishing is story-scoped, one verdict covers all
+ten ages. Its prompt lives in `pipeline/approvalGuard.ts` and is deliberately
+not editable from admin settings: it is a safety gate, and one careless edit
+would silently approve everything.
+
+The story text is **fenced and treated as data**. The RSS feed is third-party and
+the kid text is generated *from* it, so an instruction can reach the judge
+without anyone typing it: feed → simplifier → judge. So the text sits inside
+`<<<STORY>>>` markers, the rules come *after* it (the last thing the model reads
+is the instruction, not the untrusted text), each field is capped at 1,000
+characters, and a story whose own text reads as an instruction is **refused
+before any call is made** — the model is never asked to resist something it does
+not need to see.
+
+That is defence in depth, not a guarantee. A judge can still be wrong about
+ordinary content, only the age-5 version is judged, and the judge is the same
+model that wrote the story. `approvedBy` is how you find its mistakes.
+
+It fails **closed**. A story is published only on an explicit `approved: true`.
+A timeout, an unreachable provider, HTML instead of JSON, a missing field, a
+non-boolean field or a plain "no" all leave the story exactly as it was, in
+`pending_review`, with the reason logged. There is no error path that can
+publish something by accident.
+
+Two things it will never touch:
+
+- **`skip-young` stories.** Not judged at all, not even a call made. §6 makes
+  those an explicit human decision, so the content most likely to upset a child
+  stays human-only.
+- **Anything already published or rejected.** A person's decision is never
+  overwritten or relabelled as the judge's.
+
+Every auto-publish sets `kid_articles.approvedBy = 'auto'`, and the review queue
+marks those rows "published by the judge, not a person". That column is the
+record of which live stories no human ever read — so if the judge turns out to
+be a bad one, you can find them all and un-publish them.
+
 ### One version per reading age
 
 A story is rewritten once for **every reading age from 5 to 14**, so the
@@ -181,13 +227,23 @@ safety badge shows the strictest verdict across them — a story that is
 opens every version behind an age selector, because §2.2 promises a human read
 every word a child sees and one Publish covers all ten.
 
-Publish, reject, re-review and delete are **story-scoped**: they take any one
-version's id and apply to every version of that story, so a story's versions
-always share one status. The endpoint URLs are unchanged from when a story had
-one version — `PATCH /api/admin/articles/:id/publish` now publishes the story
-that id belongs to. **Edit is the exception** and stays per-version, so one
-age's wording can be fixed without touching the other nine, and
-`editedByHuman` stays a per-version flag.
+Publish, reject, re-review, delete and regenerate are **story-scoped**: they
+take any one version's id and apply to every version of that story, so a
+story's versions always share one status. The endpoint URLs are unchanged from
+when a story had one version — `PATCH /api/admin/articles/:id/publish` now
+publishes the story that id belongs to. **Edit is the exception** and stays
+per-version, so one age's wording can be fixed without touching the other nine,
+and `editedByHuman` stays a per-version flag.
+
+**Regenerate previews every age and applies the ones you tick.** Ten versions
+is ten sequential model calls, so `POST /api/admin/articles/:id/regenerate`
+starts a background job and the row polls
+`GET /api/admin/articles/regenerate/status` — the same shape as a scrape or a
+manual simplify batch, and the same one-job-at-a-time lock. The dialog shows a
+tab per age with its own diff; ages a person has edited arrive unticked.
+`POST /api/admin/articles/regenerate/apply` writes the ticked ages from the
+held preview, so applying costs no further model calls and writes exactly the
+text that was on screen.
 
 Bulk approve still excludes `skip-young` unless you opt in, and that check uses
 the story's strictest version — selecting a calm age-14 row cannot publish a
@@ -390,6 +446,7 @@ covers `src` only, so files under `server/scripts/` are not typechecked.
 | `CORS_ORIGIN`     | `http://localhost:5173,http://127.0.0.1:5173`  |
 | `DATABASE_PATH`   | `data/news4littles.db` (relative to `/server`) |
 | `SCRAPE_ENABLED`  | `true` — `false` stops cron registering        |
+| `AUTO_APPROVE_ENABLED` | **`false`** — `true` lets an LLM publish without an editor |
 | `SCRAPE_TIMEZONE` | the server's own zone                          |
 
 `web/.env`:

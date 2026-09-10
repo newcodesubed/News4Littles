@@ -51,6 +51,7 @@ export function StoryRow({
   actions,
   pending = null,
   locked = false,
+  progress = null,
 }: {
   story: AdminStory;
   selected: boolean;
@@ -59,6 +60,8 @@ export function StoryRow({
   pending?: PendingAction;
   /** True while any action anywhere in the queue is running. */
   locked?: boolean;
+  /** Live counter while this story's regeneration job runs. */
+  progress?: { done: number; total: number } | null;
 }) {
   const icon = (action: PendingAction, fallback: React.ReactNode) =>
     pending === action ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : fallback;
@@ -94,6 +97,13 @@ export function StoryRow({
             </span>
             {story.versions.some((version) => version.editedByHuman) && (
               <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-bold">edited by a person</span>
+            )}
+            {/* Auto mode published this with no editor. Worth saying loudly:
+                it is the one case where §2.2's promise was not kept. */}
+            {story.approvedBy === 'auto' && (
+              <span className="rounded-full bg-surface-sun px-2.5 py-1 text-xs font-bold text-amber-800">
+                published by the judge, not a person
+              </span>
             )}
           </div>
 
@@ -149,7 +159,11 @@ export function StoryRow({
           </Button>
           <Button size="sm" variant="outline" onClick={actions.onRegenerate} disabled={locked}>
             {icon('regenerate', <RotateCcw className="w-3.5 h-3.5" />)}
-            {pending === 'regenerate' ? 'Regenerating…' : 'Regenerate'}
+            {progress
+              ? `Regenerating… ${progress.done}/${progress.total}`
+              : pending === 'regenerate'
+                ? 'Regenerating…'
+                : 'Regenerate'}
           </Button>
           {/* §7.2: open the sandbox pre-loaded with this story's raw text. */}
           <Link

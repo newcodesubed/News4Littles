@@ -132,6 +132,11 @@ CREATE TABLE IF NOT EXISTS kid_articles (
   rejectReason    TEXT,                                                  -- optional free text (§4.2 Reject)
   editedByHuman   INTEGER NOT NULL DEFAULT 0
                   CHECK (editedByHuman IN (0, 1)),                       -- boolean; set by the §4.2 Edit action
+  -- NULL whenever a person was in the loop, which is every row unless
+  -- AUTO_APPROVE_ENABLED published it. 'auto' means no human read this before
+  -- a child could — the one thing §2.2 otherwise guarantees, so it is recorded
+  -- rather than inferred.
+  approvedBy      TEXT    CHECK (approvedBy IS NULL OR approvedBy = 'auto'),
   createdAt       TEXT    NOT NULL,                                      -- ISO
   publishedAt     TEXT,                                                  -- ISO; set when status becomes 'published'
 

@@ -21,7 +21,7 @@ const BASE: AdminArticle = {
   sourceName: 'BBC News', sourceUrl: 'https://example.com/a', status: 'pending_review',
   rejectReason: null, editedByHuman: false,
   createdAt: '2026-09-04T10:00:00.000Z', publishedAt: null,
-  sourceId: 'bbc', originalHeadline: 'Original adult headline',
+  sourceId: 'bbc', originalHeadline: 'Original adult headline', approvedBy: null,
 };
 /**
  * A fixture article. `originalId` defaults to one derived from the id, so each
@@ -59,9 +59,6 @@ function mockApi() {
         skippedCount: excluded.length,
       });
     }
-    if (path.includes('/regenerate')) {
-      return json({ current: articles[0], generated: { ...articles[0], kidHeadline: 'Regenerated headline', summary: 'New summary.' } });
-    }
     if (path.includes('/api/admin/stories')) {
       // Group the flat fixture the way the server does.
       const byStory = new Map<string, AdminArticle[]>();
@@ -76,6 +73,7 @@ function mockApi() {
         versions,
         safety: versions.reduce((w, v) => (rank[v.safety] > rank[w] ? v.safety : w), 'calm' as string),
         status: versions[0].status,
+        approvedBy: versions[0].approvedBy ?? null,
         kidHeadline: versions[0].kidHeadline,
         category: versions[0].category,
         sourceId: versions[0].sourceId,
@@ -253,44 +251,6 @@ describe('row actions (§4.2)', () => {
   });
 });
 
-describe('regenerate requires confirmation (requirement 12)', () => {
-  it('shows a before/after diff and does not save on open', async () => {
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-
-    expect(await screen.findByText('Regenerate — review before applying')).toBeInTheDocument();
-    expect(screen.getByText('Regenerated headline')).toBeInTheDocument();
-    expect(calls.some((c) => c.includes('/regenerate/apply'))).toBe(false);
-  });
-
-  it('Discard closes without applying', async () => {
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Discard' }));
-
-    await waitFor(() => expect(screen.queryByText('Regenerate — review before applying')).not.toBeInTheDocument());
-    expect(calls.some((c) => c.includes('/regenerate/apply'))).toBe(false);
-  });
-
-  it('Apply calls the apply endpoint', async () => {
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-    await userEvent.click(await screen.findByRole('button', { name: /Apply regenerated/ }));
-    await waitFor(() => expect(calls.some((c) => c.includes('POST /api/admin/articles/a1/regenerate/apply'))).toBe(true));
-  });
-
-  it('warns when applying would wipe a human edit', async () => {
-    articles = [article({ editedByHuman: true })];
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-    expect(await screen.findByText(/edited by a person. Applying will replace those edits/)).toBeInTheDocument();
-  });
-});
-
 describe('edit form (requirement 11)', () => {
   it('opens with the current values and PATCHes on save', async () => {
     renderPage();
@@ -357,5 +317,24 @@ describe('one row per story (§5)', () => {
     await waitFor(() => {
       expect(calls.some((c) => c === 'PATCH /api/admin/articles/v5/publish')).toBe(true);
     });
+  });
+});
+
+describe('auto mode is visible in the queue', () => {
+  it('marks a story the judge published, not a person', async () => {
+    articles = [article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, status: 'published', approvedBy: 'auto' })];
+    renderPage();
+
+    // §2.2 says a human reads every story first. When auto mode did not, the
+    // queue has to say so — it is the only way to find and undo it.
+    expect(await screen.findByText(/published by the judge, not a person/i)).toBeInTheDocument();
+  });
+
+  it('says nothing for a story a person published', async () => {
+    articles = [article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, status: 'published', approvedBy: null })];
+    renderPage();
+
+    await screen.findByText('A calm story');
+    expect(screen.queryByText(/published by the judge/i)).not.toBeInTheDocument();
   });
 });

@@ -1,86 +1,115 @@
-import type { AdminArticle } from '../../../admin/types';
+import { useState } from 'react';
+import type { RegenerateJob } from '../../../admin/types';
 import { Button } from '../../../ui/Button';
 import { Modal } from './Modal';
+import { changedFields, VersionDiff } from './VersionDiff';
 
-const DIFF_FIELDS = [
-  'kidHeadline', 'summary', 'whatHappened', 'whyItMatters',
-  'thinkAbout', 'feelingNote', 'safety', 'category', 'readingMinutes',
-] as const;
-
-function display(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '(none)';
-  return String(value);
-}
-
-/** §4.2 Regenerate — before/after diff, explicit confirm, never silent. */
+/**
+ * §4.2 Regenerate — every age version of one story, a tab each.
+ *
+ * Regeneration is story-scoped like publish and reject (§5), but APPLYING is
+ * per-age: an editor who likes nine rewrites and not the tenth should be able
+ * to take the nine. Ages a person has edited arrive unticked, so no human
+ * wording is replaced unless someone chooses to replace it.
+ */
 export function RegenerateDialog({
-  current,
-  generated,
+  job,
   onDiscard,
   onApply,
 }: {
-  current: AdminArticle;
-  generated: AdminArticle;
+  job: RegenerateJob;
   onDiscard: () => void;
-  onApply: () => void;
+  onApply: (ages: number[]) => void;
 }) {
-  const changed = DIFF_FIELDS.filter(
-    (field) => String(current[field] ?? '') !== String(generated[field] ?? ''),
+  const [active, setActive] = useState(job.versions[0].ageTarget);
+  const [ticked, setTicked] = useState<Set<number>>(
+    () => new Set(
+      job.versions.filter((v) => !v.current.editedByHuman).map((v) => v.ageTarget),
+    ),
   );
-  const vocabChanged =
-    JSON.stringify(current.vocab) !== JSON.stringify(generated.vocab);
+
+  const version = job.versions.find((v) => v.ageTarget === active) ?? job.versions[0];
+  const changed = changedFields(version.current, version.generated);
+  const plural = job.versions.length === 1 ? '' : 's';
+
+  const toggle = (age: number) =>
+    setTicked((current) => {
+      const next = new Set(current);
+      if (next.has(age)) next.delete(age);
+      else next.add(age);
+      return next;
+    });
 
   return (
     <Modal title="Regenerate — review before applying" onClose={onDiscard} wide>
       <p className="text-sm text-muted-foreground">
-        Re-run through the current guard config and prompts. Nothing has been saved yet.
-      </p>
-      <p className="mt-2 text-sm font-bold">
-        {changed.length + (vocabChanged ? 1 : 0) === 0
-          ? 'No differences — regenerating would change nothing.'
-          : `${changed.length + (vocabChanged ? 1 : 0)} field(s) would change.`}
+        {job.versions.length} version{plural} re-run through the current guard config and
+        prompts. Nothing has been saved yet. Preview cost ${job.costUsd.toFixed(4)}.
       </p>
 
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="pb-2 pr-4">Field</th>
-              <th className="pb-2 pr-4 w-1/2">Current</th>
-              <th className="pb-2 w-1/2">Regenerated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {DIFF_FIELDS.map((f) => {
-              const isChanged = changed.includes(f);
-              return (
-                <tr key={f} className={`align-top border-t border-border ${isChanged ? '' : 'opacity-50'}`}>
-                  <td className="py-2 pr-4 font-bold whitespace-nowrap">{f}</td>
-                  <td className={`py-2 pr-4 ${isChanged ? 'bg-destructive/10 rounded-lg px-2' : ''}`}>
-                    {display(current[f])}
-                  </td>
-                  <td className={`py-2 ${isChanged ? 'bg-safety-calm/15 rounded-lg px-2' : ''}`}>
-                    {display(generated[f])}
-                  </td>
-                </tr>
-              );
-            })}
-            <tr className={`align-top border-t border-border ${vocabChanged ? '' : 'opacity-50'}`}>
-              <td className="py-2 pr-4 font-bold">vocab</td>
-              <td className={`py-2 pr-4 ${vocabChanged ? 'bg-destructive/10 rounded-lg px-2' : ''}`}>
-                {current.vocab.map((v) => v.word).join(', ') || '(none)'}
-              </td>
-              <td className={`py-2 ${vocabChanged ? 'bg-safety-calm/15 rounded-lg px-2' : ''}`}>
-                {generated.vocab.map((v) => v.word).join(', ') || '(none)'}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <div className="flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Age versions">
+          {job.versions.map((v) => {
+            const count = changedFields(v.current, v.generated).length;
+            const isActive = v.ageTarget === active;
+            return (
+              <span
+                key={v.ageTarget}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-sm whitespace-nowrap ${
+                  isActive ? 'border-primary bg-primary/10 font-bold' : 'border-border'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  aria-label={`Apply age ${v.ageTarget}`}
+                  checked={ticked.has(v.ageTarget)}
+                  onChange={() => toggle(v.ageTarget)}
+                />
+                <button role="tab" aria-selected={isActive} onClick={() => setActive(v.ageTarget)}>
+                  Age {v.ageTarget}
+                  {v.current.editedByHuman && <span aria-hidden="true"> ✎</span>}
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {count === 0 ? '—' : `•${count}`}
+                  </span>
+                </button>
+              </span>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            setTicked(
+              ticked.size === 0 ? new Set(job.versions.map((v) => v.ageTarget)) : new Set(),
+            )
+          }
+        >
+          {ticked.size === 0 ? 'Tick all' : 'Untick all'}
+        </Button>
       </div>
 
-      {current.editedByHuman && (
+      <p className="mt-4 text-sm font-bold">
+        Age {version.ageTarget}
+        {version.current.editedByHuman && ' · edited by a person'}
+        {' · '}
+        {changed.length === 0
+          ? 'no differences — applying this age would change nothing'
+          : `${changed.length} field(s) would change`}
+      </p>
+
+      {version.fallbackReason && (
+        <p className="mt-2 rounded-2xl bg-surface-sun px-4 py-3 text-sm font-semibold">
+          This age fell back to the rule-based pipeline: {version.fallbackReason}
+        </p>
+      )}
+
+      <VersionDiff current={version.current} generated={version.generated} />
+
+      {version.current.editedByHuman && (
         <p className="mt-4 rounded-2xl bg-surface-sun px-4 py-3 text-sm font-semibold">
-          Careful: this story has been edited by a person. Applying will replace those edits.
+          ✎ This age was edited by a person. Tick it only if you want that wording replaced.
         </p>
       )}
 
@@ -88,8 +117,12 @@ export function RegenerateDialog({
         <Button variant="ghost" size="lg" onClick={onDiscard}>
           Discard
         </Button>
-        <Button size="lg" onClick={onApply}>
-          Apply regenerated version
+        <Button
+          size="lg"
+          disabled={ticked.size === 0}
+          onClick={() => onApply([...ticked].sort((a, b) => a - b))}
+        >
+          Apply {ticked.size} of {job.versions.length} version{plural}
         </Button>
       </div>
     </Modal>

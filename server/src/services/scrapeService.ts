@@ -25,7 +25,9 @@ import {
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { createSourceRepository } from '../db/repositories/sourceRepository.js';
 import { scrapeSource, type ScrapeResult, type SourceRow } from '../ingestion/rssScraper.js';
-import type { OpenRouterClient } from '../llm/openRouterClient.js';
+import { OpenRouterClient } from '../llm/openRouterClient.js';
+import { AUTO_APPROVE_ENABLED } from '../env.js';
+import { autoApproveStories } from './autoApprove.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 import { selectBudgetedBatch, type SourceQueue } from './simplifyBudget.js';
 import { simplifyRawArticles } from './simplifyService.js';
@@ -47,6 +49,11 @@ export interface RunState {
   budget: number;
   /** How many of the batch have been simplified so far. */
   simplifiedCount: number;
+  /**
+   * Stories the auto-mode judge published without an editor. 0 unless
+   * AUTO_APPROVE_ENABLED is on.
+   */
+  autoPublished: number;
 }
 
 let current: RunState | null = null;
@@ -73,6 +80,8 @@ export interface StartOptions {
   budget?: number;
   /** Passed through to simplification; tests and the sandbox use it. */
   client?: OpenRouterClient;
+  /** Overrides AUTO_APPROVE_ENABLED. A test seam. */
+  autoApprove?: boolean;
   /** Awaited by tests and the CLI; the HTTP route does not wait. */
   onFinished?: (state: RunState) => void;
 }
@@ -129,6 +138,7 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
     phase: 'fetching',
     budget: 0,
     simplifiedCount: 0,
+    autoPublished: 0,
   };
   current = state;
 
@@ -192,6 +202,32 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
         if (row.fallbackReason) result.fallbacks.push(row.fallbackReason);
       }
 
+      // ─── Auto mode, only when explicitly enabled ───────────────────────
+      // §2.2 promises a human reads every story first. AUTO_APPROVE_ENABLED
+      // trades that away, so it is off unless asked for, and anything the
+      // judge does not explicitly approve stays in pending_review.
+      if (options.autoApprove ?? AUTO_APPROVE_ENABLED) {
+        // The composition root supplies the client: options.client is the
+        // test seam and is undefined in production, so a default is built here
+        // rather than inside the service. AUTO_APPROVE_ENABLED already implies
+        // LLM_ENABLED, so a key exists whenever this runs.
+        const judged = await autoApproveStories(
+          db,
+          report.simplified.map((row) => row.rawId),
+          { client: options.client ?? new OpenRouterClient({}) },
+        );
+        state.autoPublished = judged.published.length;
+
+        for (const held of judged.held) {
+          console.log(`[auto] held ${held.originalId.slice(0, 8)}: ${held.reason}`);
+        }
+        for (const done of judged.published) {
+          console.log(
+            `[auto] PUBLISHED ${done.originalId.slice(0, 8)} with no editor: ${done.reason}`,
+          );
+        }
+      }
+
       // Counted, not subtracted: phase 2 may have cleared backlog from an
       // earlier run, so this run's `inserted` is not the right basis.
       for (const result of state.results) {
@@ -232,6 +268,7 @@ export function summarise(state: RunState) {
     simplified: state.results.reduce((total, r) => total + r.simplified.length, 0),
     versions: state.results.reduce((total, r) => total + r.versionsCreated, 0),
     leftWaiting: state.results.reduce((total, r) => total + r.leftWaiting, 0),
+    autoPublished: state.autoPublished,
     failed: state.results.filter((r) => !r.ok).length,
     costUsd: state.results.reduce((total, r) => total + r.costUsd, 0),
   };

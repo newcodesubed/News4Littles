@@ -567,4 +567,41 @@ describe('simplifyArticleForAllAges', () => {
     expect(prompts.some((p) => p.includes('GENERIC for 5'))).toBe(true);
     expect(prompts.some((p) => p.includes('GENERIC for 14'))).toBe(true);
   });
+
+  it('builds only the ages it is given', async () => {
+    const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+
+    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client, ages: [8] });
+
+    expect(outcome.versions).toHaveLength(1);
+    expect(outcome.versions[0].article.ageTarget).toBe(8);
+  });
+
+  it('pins each age to the id and createdAt its caller supplies', async () => {
+    // A regeneration rewrites STORED rows, so the generated version has to
+    // carry the row's identity rather than a fresh uuid.
+    const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+
+    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, {
+      client,
+      ages: [5, 6],
+      perAge: (age) => ({ id: `v${age}`, now: `2026-09-0${age}T09:00:00.000Z` }),
+    });
+
+    expect(outcome.versions.map((v) => v.article.id)).toEqual(['v5', 'v6']);
+    expect(outcome.versions.map((v) => v.article.createdAt)).toEqual([
+      '2026-09-05T09:00:00.000Z', '2026-09-06T09:00:00.000Z',
+    ]);
+  });
+
+  it('reports progress once per age, counting up', async () => {
+    const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+    const seen: number[] = [];
+
+    await simplifyArticleForAllAges(ctx.db, RAW_INPUT, {
+      client, ages: [5, 6, 7], onProgress: (done) => seen.push(done),
+    });
+
+    expect(seen).toEqual([1, 2, 3]);
+  });
 });

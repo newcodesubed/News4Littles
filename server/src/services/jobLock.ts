@@ -12,16 +12,18 @@
  */
 import { ConflictError } from '../core/errors.js';
 
-export type JobKind = 'scrape' | 'simplify';
+export type JobKind = 'scrape' | 'simplify' | 'regenerate';
 
 const HOLDER: Record<JobKind, string> = {
   scrape: 'A scrape is already running',
   simplify: 'A simplification batch is already running',
+  regenerate: 'A regeneration is already running',
 };
 
 const WANTED: Record<JobKind, string> = {
   scrape: 'starting another scrape',
   simplify: 'simplifying more articles',
+  regenerate: 'regenerating a story',
 };
 
 let held: JobKind | null = null;
@@ -38,7 +40,19 @@ export function acquireJob(kind: JobKind): void {
   held = kind;
 }
 
-/** Always call this from a `finally`, so a thrown job cannot leak the lock. */
-export function releaseJob(): void {
+/**
+ * Always call this from a `finally`, so a thrown job cannot leak the lock.
+ *
+ * `kind`, when given, makes the release ownership-aware: it clears the lock
+ * only when THIS kind is the one holding it. Without that check, a release
+ * fired from outside a job's own lifecycle — regenerateStory's Discard/reset
+ * seam, called at any time rather than only from its own `finally` — could
+ * clear a DIFFERENT job's lock, e.g. a scrape that started after this job's
+ * own `finally` had already let go. scrapeService and simplifyService call
+ * this with no argument from their own `finally`, which cannot race a
+ * different kind taking the lock in between, so they keep today's behaviour.
+ */
+export function releaseJob(kind?: JobKind): void {
+  if (kind !== undefined && held !== kind) return;
   held = null;
 }

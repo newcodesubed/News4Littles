@@ -17,11 +17,20 @@ import {
 export interface AdminArticleRow extends KidArticleRow {
   sourceId: string;
   originalHeadline: string;
+  approvedBy: string | null;
 }
 
+/**
+ * `approvedBy` lives here rather than on KidArticle on purpose: only the review
+ * queue needs to know a story was published by the auto-mode judge, and a
+ * reader has no business seeing it. Keeping it off KidArticle also keeps the
+ * INSERT column list — and every caller that builds one — untouched.
+ */
 export interface AdminArticle extends KidArticle {
   sourceId: string;
   originalHeadline: string;
+  /** 'auto' when the auto-mode judge published it; NULL whenever a person did. */
+  approvedBy: string | null;
 }
 
 /**
@@ -37,6 +46,8 @@ export interface AdminStory {
   /** Every version, ascending by ageTarget. Never empty. */
   versions: AdminArticle[];
   safety: Safety;
+  /** 'auto' when the judge published it, NULL when a person did. */
+  approvedBy: string | null;
   /** Shared by every version: publish, reject and delete are story-scoped. */
   status: ArticleStatus;
   /** The youngest version's headline, as the row's label. */
@@ -48,8 +59,8 @@ export interface AdminStory {
 }
 
 export function toAdminArticle(row: AdminArticleRow): AdminArticle {
-  const { sourceId, originalHeadline, ...rest } = row;
-  return { ...toKidArticle(rest), sourceId, originalHeadline };
+  const { sourceId, originalHeadline, approvedBy, ...rest } = row;
+  return { ...toKidArticle(rest), sourceId, originalHeadline, approvedBy: approvedBy ?? null };
 }
 
 export const SORTABLE_FIELDS = ['createdAt', 'publishedAt', 'readingMinutes', 'ageTarget'] as const;
@@ -61,6 +72,8 @@ export interface ArticleQuery {
   categories?: string[];
   safeties?: Safety[];
   sourceIds?: string[];
+  /** Restrict to specific stories, by their raw article's id. */
+  originalIds?: string[];
   ageTargets?: number[];
   search?: string;
   createdFrom?: string;
@@ -120,7 +133,9 @@ export interface ArticleRepository {
    * approves a story, and every age version has to move with it. Each takes any
    * one version's id and resolves it to the story.
    */
-  publishStory(id: string, at: string): void;
+  publishStory(id: string, at: string, approvedBy?: 'auto' | null): void;
+  /** §5: one story by its raw article's id, or undefined. */
+  findStory(originalId: string): AdminStory | undefined;
   rejectStory(id: string, reason: string | null): void;
   returnStoryToQueue(id: string): void;
   removeStory(id: string): void;
@@ -165,7 +180,7 @@ export function createArticleRepository(db: Database): ArticleRepository {
     ages: db.prepare(`SELECT DISTINCT ageTarget FROM kid_articles ORDER BY ageTarget`),
     // The subselect resolves the story from any one of its versions.
     publishStory: db.prepare(
-      `UPDATE kid_articles SET status='published', publishedAt=@at
+      `UPDATE kid_articles SET status='published', publishedAt=@at, approvedBy=@approvedBy
        WHERE originalId = (SELECT originalId FROM kid_articles WHERE id = @id)`,
     ),
     rejectStory: db.prepare(
@@ -255,6 +270,7 @@ export function createArticleRepository(db: Database): ArticleRepository {
       inClause('k.category', 'cat', query.categories ?? []);
       inClause('k.safety', 'saf', query.safeties ?? []);
       inClause('r.sourceId', 'src', query.sourceIds ?? []);
+      inClause('k.originalId', 'orig', query.originalIds ?? []);
       inClause('k.ageTarget', 'age', query.ageTargets ?? []);
 
       if (query.search) {
@@ -339,6 +355,7 @@ export function createArticleRepository(db: Database): ArticleRepository {
           versions,
           safety: strictestSafety(versions.map((v) => v.safety)),
           status: youngest.status,
+          approvedBy: youngest.approvedBy,
           kidHeadline: youngest.kidHeadline,
           category: youngest.category,
           sourceId: youngest.sourceId,
@@ -346,6 +363,13 @@ export function createArticleRepository(db: Database): ArticleRepository {
           createdAt: youngest.createdAt,
         }];
       });
+    },
+
+    findStory(originalId) {
+      // queryStories already collapses versions and computes the strictest
+      // safety; this is that, for one story, by its raw article's id.
+      const [story] = repository.queryStories({ originalIds: [originalId] });
+      return story;
     },
 
     findStoryState(id) {
@@ -365,7 +389,10 @@ export function createArticleRepository(db: Database): ArticleRepository {
     distinctCategories: () => statements.categories.pluck().all() as string[],
     distinctAgeTargets: () => statements.ages.pluck().all() as number[],
 
-    publishStory: (id, at) => void statements.publishStory.run({ id, at }),
+    // approvedBy defaults to NULL, so every existing caller keeps recording
+    // "a person did this" without having to say so.
+    publishStory: (id, at, approvedBy = null) =>
+      void statements.publishStory.run({ id, at, approvedBy }),
     rejectStory: (id, reason) => void statements.rejectStory.run({ id, reason }),
     returnStoryToQueue: (id) => void statements.requeueStory.run({ id }),
     removeStory: (id) => void statements.removeStory.run(id),
