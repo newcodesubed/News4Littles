@@ -218,6 +218,22 @@ export interface AllAgesOutcome {
 }
 
 /**
+ * The all-ages options, on top of everything one age already takes.
+ *
+ * `perAge` exists because a REGENERATION rewrites stored rows: each age has to
+ * be built with the id and createdAt of the row it will replace, or ten
+ * versions would either collide on one id or arrive as ten strangers.
+ */
+export interface AllAgesOptions extends Omit<SimplifyOptions, 'ageTarget' | 'promptGuard'> {
+  /** Which ages to build, ascending. Defaults to every age (§3.6). */
+  ages?: number[];
+  /** Per-age identity, so a regeneration writes back to the stored rows. */
+  perAge?: (ageTarget: number) => { id?: string; now?: string } | undefined;
+  /** Called with the number of ages attempted so far, for progress polling. */
+  onProgress?: (done: number) => void;
+}
+
+/**
  * One version of a story per reading age (§3.6), so the public slider selects
  * real content rather than relabelling one version.
  *
@@ -237,13 +253,15 @@ export interface AllAgesOutcome {
 export async function simplifyArticleForAllAges(
   db: Database,
   raw: RawArticleInput,
-  options: Omit<SimplifyOptions, 'ageTarget' | 'promptGuard'> = {},
+  options: AllAgesOptions = {},
 ): Promise<AllAgesOutcome> {
   const settings = createSettingsRepository(db);
   const guardConfig = settings.getGuardConfig();
+  const { ages = ALL_AGES, perAge, onProgress, ...perCall } = options;
 
-  // Shared across all ten ages. Uses the youngest age purely to render the
-  // guard prompt's {{age}} variable; the verdict is about the source text.
+  // Shared across every age. Uses the youngest age being built purely to
+  // render the guard prompt's {{age}} variable; the verdict is about the
+  // source text, which does not vary by age.
   let promptGuard: PromptGuardOutcome | undefined;
   if (guardConfig.promptGuardEnabled && !options.forceLocal) {
     const client = options.client ?? new OpenRouterClient({ model: options.model });
@@ -254,7 +272,7 @@ export async function simplifyArticleForAllAges(
         body: raw.body,
         category: raw.topic,
         sourceName: raw.sourceName,
-        age: MIN_AGE,
+        age: ages[0],
       },
       client,
     );
@@ -264,14 +282,20 @@ export async function simplifyArticleForAllAges(
   const fallbacks: string[] = [];
   let costUsd = promptGuard?.costUsd ?? 0;
 
-  for (const ageTarget of ALL_AGES) {
-    const outcome = await simplifyArticle(db, raw, { ...options, ageTarget, promptGuard });
+  let done = 0;
+  for (const ageTarget of ages) {
+    const outcome = await simplifyArticle(db, raw, {
+      ...perCall, ...perAge?.(ageTarget), ageTarget, promptGuard,
+    });
 
     versions.push(outcome);
     costUsd += outcome.costUsd ?? 0;
     // Prefixed with the age: a reviewer needs to know WHICH version is weaker,
     // and with per-age calls a story can be nine parts LLM and one part local.
     if (outcome.fallbackReason) fallbacks.push(`age ${ageTarget}: ${outcome.fallbackReason}`);
+
+    done += 1;
+    onProgress?.(done);
   }
 
   return { versions, promptGuard, costUsd, fallbacks };
