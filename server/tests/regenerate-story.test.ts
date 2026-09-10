@@ -278,6 +278,30 @@ describe('resetRegenerateJob', () => {
     // The job's own `finally` releases the lock once it actually finishes.
     expect(activeJob()).toBeNull();
   });
+
+  it('leaves the lock held through a SECOND discard while the job is still running', async () => {
+    seedStory('r1', [5, 6]);
+    const { client } = countingClient();
+
+    // Awaited inside the test (not left dangling) so this does not race
+    // afterEach's ctx.close() the way the file's own history warns about.
+    const finished = new Promise<void>((resolve) => {
+      startRegenerateJob(ctx.db, 'r1-v5', { client, onFinished: () => resolve() });
+    });
+
+    // A retried or double-fired DELETE: two Discards while the same job runs.
+    resetRegenerateJob();
+    resetRegenerateJob();
+
+    // The second call must not release the lock out from under the still-
+    // running job just because `current` was already null from the first.
+    expect(activeJob()).toBe('regenerate');
+
+    await finished;
+
+    // The job's own `finally` releases the lock once it actually finishes.
+    expect(activeJob()).toBeNull();
+  });
 });
 
 describe('applyRegeneratedVersions', () => {

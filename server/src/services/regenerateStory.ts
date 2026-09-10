@@ -53,7 +53,9 @@ export interface RegenerateJobState {
   costUsd: number;
   /** A thrown failure. A single weak age is a fallbackReason, not this. */
   error?: string;
-  /** Set once applied, so the client stops offering apply. */
+  /** Set once applied. The server refuses a second apply of the same preview
+   *  once this is set, rather than relying on the client to stop offering
+   *  apply. */
   appliedAges?: number[];
 }
 
@@ -65,6 +67,18 @@ export interface RegenerateOptions {
 
 /** Module-level for the same reason as the job lock: one process, one admin. */
 let current: RegenerateJobState | null = null;
+
+/**
+ * The id of the job still running in the background, if any — set the moment
+ * `startRegenerateJob` acquires the lock, cleared only by that job's own
+ * `finally`. Deliberately separate from `current`: Discard nulls `current`
+ * immediately (the preview is forgotten right away), so "is a job still
+ * running" cannot be read off `current` — a SECOND Discard while that job is
+ * still mid-run would otherwise see `current` already null, compute `running`
+ * as false, and release the lock out from under it. Holding the id (rather
+ * than a bare boolean) makes it useful in a debugger.
+ */
+let runningJobId: string | null = null;
 
 export function getRegenerateJob(): RegenerateJobState | null {
   return current;
@@ -78,20 +92,24 @@ export function getRegenerateJob(): RegenerateJobState | null {
  * kind that has started since (e.g. a scrape). `releaseJob('regenerate')`
  * only clears the lock when regenerate is actually the one holding it.
  *
- * While the CURRENT job is still running, the lock is left alone: the lock is
+ * While a job is still running, the lock is left alone: the lock is
  * kind-scoped, not job-scoped, so releasing it here would let a second
  * `startRegenerateJob` acquire it while the first is still mid-run, and that
  * first job's own `finally` would later call `releaseJob('regenerate')` and
  * clear the SECOND job's lock instead — allowing a scrape to start alongside a
  * still-running regeneration, exactly the overlap the lock exists to prevent
  * (§2.2). The preview is still forgotten immediately; only the lock outlives
- * it, until the running job's own `finally` lets it go. `force` is a test seam
- * for the unconditional reset some tests still want.
+ * it, until the running job's own `finally` lets it go. This is why the check
+ * below reads `runningJobId` rather than `current`: `current` is already null
+ * by the time a SECOND Discard (a retried or double-fired DELETE) can fire,
+ * which would otherwise make this function think nothing is running and
+ * release the lock anyway. `force` is a test seam for the unconditional reset
+ * some tests still want.
  */
 export function resetRegenerateJob(force = false): void {
-  const running = current?.running === true;
   current = null;
-  if (running && !force) return;
+  if (runningJobId !== null && !force) return;
+  runningJobId = null;
   releaseJob('regenerate');
 }
 
@@ -138,6 +156,7 @@ export function startRegenerateJob(
     costUsd: 0,
   };
   current = job;
+  runningJobId = job.id;
 
   // Deliberately not awaited: the caller gets the state back straight away.
   void (async () => {
@@ -197,6 +216,9 @@ export function startRegenerateJob(
       // Always: a leaked lock would block every later scrape and batch.
       job.running = false;
       job.finishedAt = clock();
+      // Cleared regardless of whether Discard already nulled `current`: this
+      // is the only signal resetRegenerateJob has that this job is done.
+      if (runningJobId === job.id) runningJobId = null;
       // Ownership-checked: by the time this runs, a later Discard call may
       // already have released this same lock, or (job-shaped bug aside) a
       // different kind may have taken it. Either way this must clear only
