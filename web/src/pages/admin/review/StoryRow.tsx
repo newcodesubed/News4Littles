@@ -51,6 +51,7 @@ export function StoryRow({
   actions,
   pending = null,
   locked = false,
+  progress = null,
 }: {
   story: AdminStory;
   selected: boolean;
@@ -59,6 +60,8 @@ export function StoryRow({
   pending?: PendingAction;
   /** True while any action anywhere in the queue is running. */
   locked?: boolean;
+  /** Live counter while this story's regeneration job runs. */
+  progress?: { done: number; total: number } | null;
 }) {
   const icon = (action: PendingAction, fallback: React.ReactNode) =>
     pending === action ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : fallback;
@@ -156,7 +159,11 @@ export function StoryRow({
           </Button>
           <Button size="sm" variant="outline" onClick={actions.onRegenerate} disabled={locked}>
             {icon('regenerate', <RotateCcw className="w-3.5 h-3.5" />)}
-            {pending === 'regenerate' ? 'Regenerating…' : 'Regenerate'}
+            {progress
+              ? `Regenerating… ${progress.done}/${progress.total}`
+              : pending === 'regenerate'
+                ? 'Regenerating…'
+                : 'Regenerate'}
           </Button>
           {/* §7.2: open the sandbox pre-loaded with this story's raw text. */}
           <Link

@@ -59,13 +59,32 @@ function mockApi({ slowMutations = false } = {}) {
         total: articles.length,
       });
     }
+    // Placed above the GET catch-all: below it, the poll would get an
+    // article list back and the hook would treat the preview as lost.
+    if (path.includes('/articles/regenerate/status')) {
+      return json({
+        running: true,
+        job: {
+          id: 'job-1', originalId: ARTICLE.originalId, kidHeadline: ARTICLE.kidHeadline,
+          startedAt: '2026-09-10T09:00:00.000Z', ages: [ARTICLE.ageTarget], done: 0,
+          running: true, versions: [], costUsd: 0,
+        },
+      });
+    }
     if (method === 'GET') return json({ articles, total: articles.length });
 
     if (slowMutations) {
       await new Promise<void>((resolve) => { releaseMutation = resolve; });
     }
     if (path.includes('/regenerate')) {
-      return json({ current: articles[0], generated: { ...articles[0], kidHeadline: 'Regenerated' } });
+      return json({
+        running: true,
+        job: {
+          id: 'job-1', originalId: ARTICLE.originalId, kidHeadline: ARTICLE.kidHeadline,
+          startedAt: '2026-09-10T09:00:00.000Z', ages: [ARTICLE.ageTarget], done: 0,
+          running: true, versions: [], costUsd: 0,
+        },
+      }, 202);
     }
     return json(articles[0]);
   }));

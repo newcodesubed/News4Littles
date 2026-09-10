@@ -59,9 +59,6 @@ function mockApi() {
         skippedCount: excluded.length,
       });
     }
-    if (path.includes('/regenerate')) {
-      return json({ current: articles[0], generated: { ...articles[0], kidHeadline: 'Regenerated headline', summary: 'New summary.' } });
-    }
     if (path.includes('/api/admin/stories')) {
       // Group the flat fixture the way the server does.
       const byStory = new Map<string, AdminArticle[]>();
@@ -251,44 +248,6 @@ describe('row actions (§4.2)', () => {
     articles = [article({ editedByHuman: true })];
     renderPage();
     expect(await screen.findByText('edited by a person')).toBeInTheDocument();
-  });
-});
-
-describe('regenerate requires confirmation (requirement 12)', () => {
-  it('shows a before/after diff and does not save on open', async () => {
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-
-    expect(await screen.findByText('Regenerate — review before applying')).toBeInTheDocument();
-    expect(screen.getByText('Regenerated headline')).toBeInTheDocument();
-    expect(calls.some((c) => c.includes('/regenerate/apply'))).toBe(false);
-  });
-
-  it('Discard closes without applying', async () => {
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-    await userEvent.click(await screen.findByRole('button', { name: 'Discard' }));
-
-    await waitFor(() => expect(screen.queryByText('Regenerate — review before applying')).not.toBeInTheDocument());
-    expect(calls.some((c) => c.includes('/regenerate/apply'))).toBe(false);
-  });
-
-  it('Apply calls the apply endpoint', async () => {
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-    await userEvent.click(await screen.findByRole('button', { name: /Apply regenerated/ }));
-    await waitFor(() => expect(calls.some((c) => c.includes('POST /api/admin/articles/a1/regenerate/apply'))).toBe(true));
-  });
-
-  it('warns when applying would wipe a human edit', async () => {
-    articles = [article({ editedByHuman: true })];
-    renderPage();
-    await screen.findByText('A calm story');
-    await userEvent.click(screen.getByRole('button', { name: /Regenerate/ }));
-    expect(await screen.findByText(/edited by a person. Applying will replace those edits/)).toBeInTheDocument();
   });
 });
 

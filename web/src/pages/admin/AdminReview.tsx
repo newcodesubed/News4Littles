@@ -16,6 +16,7 @@ import { StoryRow, type PendingAction } from './review/StoryRow';
 import { BulkBar, SkippedReport } from './review/BulkBar';
 import { FilterBar } from './review/FilterBar';
 import { WaitingPanel } from './review/WaitingPanel';
+import { useRegenerateJob } from './review/useRegenerateJob';
 
 const TABS = [
   { key: 'pending_review', label: 'Pending review' },
@@ -51,7 +52,6 @@ export function AdminReview() {
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
   /** Which row is mid-action, so its button can show a spinner. */
   const [pending, setPending] = useState<{ id: string; action: PendingAction } | null>(null);
-  const [regenerating, setRegenerating] = useState<{ current: AdminArticle; generated: AdminArticle } | null>(null);
 
   const query = useMemo(() => toQueryString(filters), [filters]);
 
@@ -107,6 +107,10 @@ export function AdminReview() {
 
   const { notice, setNotice, run: act } = useAdminAction(load);
 
+  // §4.2 Regenerate is a background job over every age version (§5), so it
+  // has progress and a lifecycle rather than a single awaited request.
+  const regen = useRegenerateJob({ setNotice, onApplied: load });
+
   /** Runs a row action while showing a spinner on the button that started it. */
   const runRowAction = useCallback(
     async (id: string, action: PendingAction, path: string, init: RequestInit, message: string) => {
@@ -143,23 +147,6 @@ export function AdminReview() {
     setBulkSkipped(result.skipped);
     setNotice(`${result.appliedCount} article(s) ${action}d.`);
     await load();
-  }
-
-  async function openRegenerate(article: AdminArticle) {
-    setNotice(null);
-    setPending({ id: article.id, action: 'regenerate' });
-    try {
-      const res = await adminFetch(`/api/admin/articles/${article.id}/regenerate`, { method: 'POST' });
-      if (!res.ok) {
-        setNotice('⚠ Could not regenerate.');
-        return;
-      }
-      setRegenerating((await res.json()) as { current: AdminArticle; generated: AdminArticle });
-    } catch {
-      setNotice('⚠ Could not reach the server. Check it is running, then try again.');
-    } finally {
-      setPending(null);
-    }
   }
 
   const toggleSelected = (id: string, isSelected: boolean) =>
@@ -271,14 +258,24 @@ export function AdminReview() {
                   // Any version resolves to the story server-side; the youngest
                   // is the deterministic choice.
                   const id = story.versions[0].id;
+                  const running = regen.job?.running ? regen.job : null;
+                  const isRegenerating =
+                    regen.startingId === id || running?.originalId === story.originalId;
                   return (
                     <StoryRow
                       key={story.originalId}
                       story={story}
                       selected={selected.has(id)}
                       onSelectedChange={(isSelected) => toggleSelected(id, isSelected)}
-                      pending={pending?.id === id ? pending.action : null}
-                      locked={pending !== null}
+                      pending={
+                        pending?.id === id ? pending.action : isRegenerating ? 'regenerate' : null
+                      }
+                      locked={pending !== null || regen.startingId !== null || running !== null}
+                      progress={
+                        running?.originalId === story.originalId
+                          ? { done: running.done, total: running.ages.length }
+                          : null
+                      }
                       actions={{
                         onView: () => setViewing(story),
                         onPublish: () => void runRowAction(id, 'publish',
@@ -287,7 +284,7 @@ export function AdminReview() {
                         onUnpublish: () => void runRowAction(id, 'unpublish',
                           `/api/admin/articles/${id}/unpublish`, { method: 'PATCH' }, 'Moved back to pending review.'),
                         onEdit: () => setEditing(story.versions[0]),
-                        onRegenerate: () => void openRegenerate(story.versions[0]),
+                        onRegenerate: () => void regen.start(id),
                         onDelete: () => setConfirming({
                           // Names the count only when there is more than one:
                           // "Delete all 1 versions" reads like a bug.
@@ -363,16 +360,11 @@ export function AdminReview() {
         />
       )}
 
-      {regenerating && (
+      {regen.job && !regen.job.running && regen.job.versions.length > 0 && (
         <RegenerateDialog
-          current={regenerating.current}
-          generated={regenerating.generated}
-          onDiscard={() => setRegenerating(null)}
-          onApply={() => {
-            const { id } = regenerating.current;
-            setRegenerating(null);
-            void act(`/api/admin/articles/${id}/regenerate/apply`, { method: 'POST' }, 'Regenerated version applied.');
-          }}
+          job={regen.job}
+          onDiscard={() => void regen.discard()}
+          onApply={(ages) => void regen.apply(ages)}
         />
       )}
     </div>
