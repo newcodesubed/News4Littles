@@ -12,16 +12,18 @@
  */
 import { ConflictError } from '../core/errors.js';
 
-export type JobKind = 'scrape' | 'simplify';
+export type JobKind = 'scrape' | 'simplify' | 'regenerate';
 
 const HOLDER: Record<JobKind, string> = {
   scrape: 'A scrape is already running',
   simplify: 'A simplification batch is already running',
+  regenerate: 'A regeneration is already running',
 };
 
 const WANTED: Record<JobKind, string> = {
   scrape: 'starting another scrape',
   simplify: 'simplifying more articles',
+  regenerate: 'regenerating a story',
 };
 
 let held: JobKind | null = null;
