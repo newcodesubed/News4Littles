@@ -52,6 +52,14 @@ function seedStory(rawId: string, safety = 'calm') {
   return raw;
 }
 
+/**
+ * A story the simplifier finished on the LLM path. `engine` matters: auto mode
+ * refuses a story where any age fell back (§9.2), so the default here is the
+ * healthy case and a test opts into the degraded one.
+ */
+const candidate = (originalId: string, engine = 'llm', fallbackReason?: string) =>
+  ({ originalId, engine, fallbackReason });
+
 const statuses = (rawId: string) =>
   ctx.db.prepare(`SELECT DISTINCT status FROM kid_articles WHERE originalId = ?`).pluck().all(rawId);
 
@@ -178,7 +186,7 @@ describe('autoApproveStories', () => {
     const raw = seedStory('s1');
     const { client } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
 
-    const report = await autoApproveStories(ctx.db, [raw], { client });
+    const report = await autoApproveStories(ctx.db, [candidate(raw)], { client });
 
     expect(statuses('s1')).toEqual(['published']);
     // Every version, because publishing is story-scoped.
@@ -190,7 +198,7 @@ describe('autoApproveStories', () => {
     const raw = seedStory('s1');
     const { client } = stubClient({ ok: true, body: { approved: false, reason: 'Too grim.' } });
 
-    const report = await autoApproveStories(ctx.db, [raw], { client });
+    const report = await autoApproveStories(ctx.db, [candidate(raw)], { client });
 
     expect(statuses('s1')).toEqual(['pending_review']);
     expect(approvedBy('s1')).toEqual([null]);
@@ -205,7 +213,7 @@ describe('autoApproveStories', () => {
     const raw = seedStory('s1');
     const { client } = stubClient(reply as { ok: boolean; body: unknown });
 
-    await autoApproveStories(ctx.db, [raw], { client });
+    await autoApproveStories(ctx.db, [candidate(raw)], { client });
 
     // The requirement: a failure must change nothing.
     expect(statuses('s1')).toEqual(['pending_review']);
@@ -216,7 +224,7 @@ describe('autoApproveStories', () => {
     const raw = seedStory('s1', 'skip-young');
     const { client, calls } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
 
-    const report = await autoApproveStories(ctx.db, [raw], { client });
+    const report = await autoApproveStories(ctx.db, [candidate(raw)], { client });
 
     expect(statuses('s1')).toEqual(['pending_review']);
     // No call made: the content most likely to upset a child is human-only, so
@@ -231,10 +239,40 @@ describe('autoApproveStories', () => {
       .run('2026-09-09T10:00:00.000Z', raw);
     const { client, calls } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
 
-    await autoApproveStories(ctx.db, [raw], { client });
+    await autoApproveStories(ctx.db, [candidate(raw)], { client });
 
     // Still human-published: approvedBy stays NULL and no call was wasted.
     expect(approvedBy('s1')).toEqual([null]);
+    expect(calls()).toBe(0);
+  });
+
+  it('never publishes a story where any age fell back, and never even asks', async () => {
+    // §9.2: the judge only reads the age-5 version, so a fallback at another
+    // age would publish text neither the judge nor a person ever read — and
+    // the rule-based fallback echoes the adult wording.
+    const raw = seedStory('s1');
+    const { client, calls } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
+
+    const report = await autoApproveStories(
+      ctx.db,
+      [candidate(raw, 'mixed', 'age 11: the response could not be understood')],
+      { client },
+    );
+
+    expect(statuses('s1')).toEqual(['pending_review']);
+    expect(approvedBy('s1')).toEqual([null]);
+    // No call spent: the gate is decided before the judge is asked.
+    expect(calls()).toBe(0);
+    expect(report.held[0].reason).toContain('age 11');
+  });
+
+  it('holds a story where every age fell back', async () => {
+    const raw = seedStory('s1');
+    const { client, calls } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
+
+    await autoApproveStories(ctx.db, [candidate(raw, 'local-fallback')], { client });
+
+    expect(statuses('s1')).toEqual(['pending_review']);
     expect(calls()).toBe(0);
   });
 
@@ -255,7 +293,7 @@ describe('autoApproveStories', () => {
       };
     }) as unknown as typeof fetch;
 
-    await autoApproveStories(ctx.db, [a, b], {
+    await autoApproveStories(ctx.db, [candidate(a), candidate(b)], {
       client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
     });
 

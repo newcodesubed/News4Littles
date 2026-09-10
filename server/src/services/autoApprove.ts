@@ -8,6 +8,11 @@
  *  - a story is published ONLY on an explicit `approved === true`
  *  - a skip-young story is never published and never even judged (§6, §4.2 —
  *    the content most likely to upset a child stays human-only)
+ *  - a story where ANY age fell back to the rule-based pipeline is never
+ *    published and never judged (§9.2): the judge reads only the age-5
+ *    version, so a fallback elsewhere would publish text neither it nor a
+ *    person ever read — and the fallback echoes the adult wording rather than
+ *    writing for a child
  *  - an already-published story is left alone, so a human's decision is never
  *    relabelled as the judge's
  *  - every publish records `approvedBy = 'auto'`, so a story no person read is
@@ -30,6 +35,15 @@ export interface AutoApproveReport {
   costUsd: number;
 }
 
+/** One story the simplifier just finished, as the caller already knows it. */
+export interface AutoApproveCandidate {
+  originalId: string;
+  /** 'llm', 'local-fallback', or 'mixed' when the ages disagree. */
+  engine: string;
+  /** Present when at least one age fell back (§9.2); already age-prefixed. */
+  fallbackReason?: string;
+}
+
 export interface AutoApproveOptions {
   /**
    * REQUIRED, deliberately. This was optional once, and because the caller's
@@ -45,16 +59,17 @@ export interface AutoApproveOptions {
 
 export async function autoApproveStories(
   db: Database,
-  originalIds: string[],
+  candidates: AutoApproveCandidate[],
   options: AutoApproveOptions,
 ): Promise<AutoApproveReport> {
   const articles = createArticleRepository(db);
   const clock = options.now ?? (() => new Date().toISOString());
   const report: AutoApproveReport = { published: [], held: [], costUsd: 0 };
 
-  for (const originalId of originalIds) {
+  for (const candidate of candidates) {
+    const { originalId } = candidate;
     // findStory gives the strictest safety across versions and the versions
-    // themselves, which is exactly what the two gates below need.
+    // themselves, which is what the gates below need.
     const story = articles.findStory(originalId);
     if (!story) continue;
 
@@ -68,6 +83,18 @@ export async function autoApproveStories(
       // Not judged at all: §6 makes these an explicit human decision, so there
       // is no verdict here for the judge to get wrong.
       report.held.push({ originalId, reason: 'held: skip-young needs a person (§6)' });
+      continue;
+    }
+
+    if (candidate.engine !== 'llm') {
+      // §9.2: one verdict on the age-5 version only covers all ten while all
+      // ten came from the same path. A story that needed the rule-based
+      // fallback anywhere is exactly the one a person should read, so it is
+      // held before the judge is even asked.
+      report.held.push({
+        originalId,
+        reason: `held: ${candidate.fallbackReason ?? 'a version fell back to the rule-based pipeline'} (§9.2)`,
+      });
       continue;
     }
 
