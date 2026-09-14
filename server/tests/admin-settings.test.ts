@@ -74,7 +74,10 @@ describe('sources CRUD (§5.1)', () => {
 describe('guard config (§6)', () => {
   it('returns the deny-list as an array of strings', async () => {
     const config = await json('/api/admin/guard-config');
-    expect(config.denyList).toHaveLength(11);
+    // Named terms rather than a count: the seeded list grows when a gap turns
+    // up, and a length assertion fails for that instead of for a real defect.
+    expect(config.denyList).toEqual(expect.arrayContaining(['war', 'killed', 'sexual']));
+    expect(config.denyList.every((term: unknown) => typeof term === 'string')).toBe(true);
     expect(config.denyListEnabled).toBe(true);
   });
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { CategoryBadge, CATEGORIES, SafetyBadge } from '../../components/Badges';
 import { ConfirmDialog, type Confirmation } from './dialogs';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
@@ -40,6 +40,8 @@ export function AdminSubmit() {
   const [preview, setPreview] = useState<KidArticle | null>(null);
   const [guard, setGuard] = useState<GuardInfo | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Which save is in flight, so only the pressed button says it is working. */
+  const [saving, setSaving] = useState<'pending_review' | 'published' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
@@ -74,6 +76,7 @@ export function AdminSubmit() {
 
   async function save(status: 'pending_review' | 'published') {
     setBusy(true);
+    setSaving(status);
     setError(null);
     setNotice(null);
     try {
@@ -105,6 +108,7 @@ export function AdminSubmit() {
       setError(caught instanceof Error ? caught.message : 'Could not save.');
     } finally {
       setBusy(false);
+      setSaving(null);
     }
   }
 
@@ -165,7 +169,8 @@ export function AdminSubmit() {
         </div>
 
         <Button size="xl" onClick={simplify} disabled={!complete || busy}>
-          <Sparkles className="w-4 h-4" /> {busy ? 'Working…' : 'Simplify with AI'}
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          {busy ? 'Working…' : 'Simplify with AI'}
         </Button>
         <p className="text-xs text-muted-foreground">
           No AI key is configured, so this runs the local rule-based simplifier. Nothing is saved
@@ -263,8 +268,12 @@ export function AdminSubmit() {
 
       {/* §4.3 actions. "Save draft" is deliberately absent — see the notes. */}
       <div className="mt-6 flex flex-wrap gap-3 border-t border-border pt-6">
+        {/* Saving writes one version per reading age, so with an LLM configured
+            it is ten model calls — a minute or more. The label has to say so,
+            or a working button looks like a dead one. */}
         <Button size="xl" onClick={() => save('pending_review')} disabled={!complete || busy}>
-          Send for review
+          {saving === 'pending_review' && <Loader2 className="w-4 h-4 animate-spin" />}
+          {saving === 'pending_review' ? 'Writing every age version…' : 'Send for review'}
         </Button>
         <Button
           variant="outline" size="xl" disabled={!complete || busy}
@@ -275,10 +284,12 @@ export function AdminSubmit() {
             onConfirm: () => void save('published'),
           })}
         >
-          Publish now
+          {saving === 'published' && <Loader2 className="w-4 h-4 animate-spin" />}
+          {saving === 'published' ? 'Publishing every age version…' : 'Publish now'}
         </Button>
         <p className="w-full text-xs text-muted-foreground">
-          You can save without simplifying — the pipeline runs on the server either way.
+          You can save without simplifying — the pipeline runs on the server either way, once
+          per reading age (5-14), so saving takes a moment.
         </p>
       </div>
 

@@ -29,6 +29,8 @@ const versions: AdminArticle[] = [5, 8, 14].map((age) => ({
 }));
 
 let jobRunning = false;
+/** Whether the server is holding a preview at all, as the real one reports. */
+let jobExists = false;
 let jobLost = false;
 let jobError: string | null = null;
 let done = 1;
@@ -70,7 +72,8 @@ function mockApi() {
     });
 
     if (path.includes('/articles/regenerate/status')) {
-      return json({ running: jobRunning, job: jobLost ? null : job() });
+      if (!jobExists || jobLost) return json({ running: false, job: null });
+      return json({ running: jobRunning, job: job() });
     }
     if (path.includes('/articles/regenerate/apply')) {
       applyBody = JSON.parse(String(init.body)) as { jobId: string; ages: number[] };
@@ -81,12 +84,14 @@ function mockApi() {
     }
     if (path.endsWith('/articles/regenerate') && method === 'DELETE') {
       discarded = true;
+      jobExists = false;
       return json({ discarded: true });
     }
     if (path.includes('/regenerate') && method === 'POST') {
       if (startStatus !== 202) {
         return json({ error: 'A scrape is already running. Wait for it to finish before regenerating a story.' }, startStatus);
       }
+      jobExists = true;
       jobRunning = true;
       return json({ running: true, job: job() }, 202);
     }
@@ -124,6 +129,7 @@ async function finishJob() {
 
 beforeEach(() => {
   jobRunning = false;
+  jobExists = false;
   jobLost = false;
   jobError = null;
   done = 1;
@@ -201,6 +207,34 @@ describe('starting a story-scoped regeneration', () => {
     expect(
       await screen.findByText(/model backend is unreachable/i, {}, { timeout: 6000 }),
     ).toBeInTheDocument();
+    expect(screen.queryByText('Regenerate — review before applying')).not.toBeInTheDocument();
+  });
+});
+
+describe('coming back to a preview the server still holds', () => {
+  it('picks up a finished preview without regenerating again', async () => {
+    // The editor left the queue and came back. Those ten calls are already
+    // paid for, so the preview is theirs to apply or discard.
+    jobExists = true;
+    jobRunning = false;
+    done = 3;
+    view();
+
+    expect(
+      await screen.findByText('Regenerate — review before applying', {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Age 8/ })).toBeInTheDocument();
+  });
+
+  it('picks up a running job and shows how far it has got', async () => {
+    jobExists = true;
+    jobRunning = true;
+    done = 2;
+    view();
+
+    const button = await screen.findByRole('button', { name: /Regenerating… 2\/3/ }, { timeout: 6000 });
+    expect(button).toBeDisabled();
+    // Still running, so there is nothing to review yet.
     expect(screen.queryByText('Regenerate — review before applying')).not.toBeInTheDocument();
   });
 });

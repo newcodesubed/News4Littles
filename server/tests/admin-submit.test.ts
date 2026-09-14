@@ -63,10 +63,52 @@ describe('POST /articles (§4.3 save)', () => {
     expect(kid.publishedAt).toBeNull();
   });
 
-  it('appears in the review queue under source=manual', async () => {
+  it('appears in the review queue as ONE story with every age version', async () => {
     await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' });
+
+    // Ten versions, but one row in the grouped queue an editor actually reads.
     const { total } = await (await ctx.api('/api/admin/articles?source=manual')).json();
-    expect(total).toBe(1);
+    expect(total).toBe(10);
+    const { stories } = await (await ctx.api('/api/admin/stories?source=manual')).json();
+    expect(stories).toHaveLength(1);
+    expect(stories[0].versions).toHaveLength(10);
+  });
+
+  it('creates one version per reading age, so Regenerate can rebuild them all', async () => {
+    const created = await (await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' })).json();
+
+    const rows = ctx.db
+      .prepare('SELECT ageTarget, originalId FROM kid_articles ORDER BY ageTarget')
+      .all() as { ageTarget: number; originalId: string }[];
+
+    expect(rows.map((r) => r.ageTarget)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    // One story: every version shares the submitted raw article.
+    expect(new Set(rows.map((r) => r.originalId)).size).toBe(1);
+    // The response is the age the editor reviewed on the form.
+    expect(
+      (ctx.db.prepare('SELECT ageTarget FROM kid_articles WHERE id = ?').get(created.id) as { ageTarget: number })
+        .ageTarget,
+    ).toBe(SUBMISSION.ageTarget);
+  });
+
+  it("applies the editor's text to the age they reviewed and no other", async () => {
+    // §4.3's form reviews ONE age, so their wording belongs to that age alone —
+    // and editedByHuman stays a per-version flag (§5).
+    await post('/api/admin/articles', {
+      ...SUBMISSION, status: 'pending_review', kidHeadline: 'A friendlier headline',
+    });
+
+    const reviewed = ctx.db
+      .prepare('SELECT kidHeadline, editedByHuman FROM kid_articles WHERE ageTarget = ?')
+      .get(SUBMISSION.ageTarget) as { kidHeadline: string; editedByHuman: number };
+    expect(reviewed).toMatchObject({ kidHeadline: 'A friendlier headline', editedByHuman: 1 });
+
+    const others = ctx.db
+      .prepare('SELECT kidHeadline, editedByHuman FROM kid_articles WHERE ageTarget != ?')
+      .all(SUBMISSION.ageTarget) as { kidHeadline: string; editedByHuman: number }[];
+    expect(others).toHaveLength(9);
+    expect(others.every((r) => r.kidHeadline !== 'A friendlier headline')).toBe(true);
+    expect(others.every((r) => r.editedByHuman === 0)).toBe(true);
   });
 
   it('publishes with a timestamp when asked', async () => {

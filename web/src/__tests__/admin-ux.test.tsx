@@ -31,6 +31,10 @@ let articles: any[] = [];
 let releaseMutation: (() => void) | null = null;
 
 function mockApi({ slowMutations = false } = {}) {
+  // The real status endpoint reports no job until one is started, and the hook
+  // adopts whatever it reports on mount — so a mock that always answers with a
+  // running job would lock the queue in every test.
+  let regenStarted = false;
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, '');
     const method = init.method ?? 'GET';
@@ -62,6 +66,7 @@ function mockApi({ slowMutations = false } = {}) {
     // Placed above the GET catch-all: below it, the poll would get an
     // article list back and the hook would treat the preview as lost.
     if (path.includes('/articles/regenerate/status')) {
+      if (!regenStarted) return json({ running: false, job: null });
       return json({
         running: true,
         job: {
@@ -77,6 +82,7 @@ function mockApi({ slowMutations = false } = {}) {
       await new Promise<void>((resolve) => { releaseMutation = resolve; });
     }
     if (path.includes('/regenerate')) {
+      regenStarted = true;
       return json({
         running: true,
         job: {

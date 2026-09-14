@@ -12,7 +12,9 @@ import { createArticleRepository } from '../db/repositories/articleRepository.js
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository } from '../db/repositories/sourceRepository.js';
 import { loadLocalPipelineConfig } from '../pipeline/localPipeline.js';
-import { simplifyArticle, type SimplifyOutcome } from '../pipeline/simplifyArticle.js';
+import {
+  simplifyArticle, simplifyArticleForAllAges, type SimplifyOutcome,
+} from '../pipeline/simplifyArticle.js';
 import type { GuardResult } from '../pipeline/guard.js';
 
 /** §4.2's source dropdown includes 'manual'; §4.3 submissions belong to it. */
@@ -87,7 +89,18 @@ export async function simplifySubmission(
 }
 
 /**
- * Store a manual submission.
+ * Store a manual submission as a full story — one version per reading age.
+ *
+ * A story is one raw article's ten age versions (§3.6), and every story-scoped
+ * action assumes they exist: a submission saved at one age could be published
+ * but never regenerated for the other nine, and readers outside that age saw
+ * nothing. So this runs the same all-ages pass the scraper does, which also
+ * spends ONE §6.2 prompt-guard call for the story rather than one per age.
+ *
+ * The form reviews a single age, so the editor's text edits belong to THAT
+ * version only; the other nine are machine output and stay unedited, keeping
+ * editedByHuman per-version as §5 requires. The reviewed version is what comes
+ * back, so the route's response is the article the editor was looking at.
  *
  * The guard ALWAYS re-runs here, and its verdict is what gets saved: an editor
  * may adjust the kid-facing TEXT from this form, never the safety
@@ -109,15 +122,18 @@ export async function createManualArticle(
 
   const now = new Date().toISOString();
   const rawId = randomUUID();
-  const { article } = await simplifyArticle(db, toRawInput(submission, rawId), {
-    ageTarget: submission.ageTarget,
-    now,
-  });
+  const outcome = await simplifyArticleForAllAges(db, toRawInput(submission, rawId), { now });
+
+  // The age the form previewed. Falls back to the youngest only if the age
+  // vanished from the range between validation and here, which it cannot.
+  const reviewed =
+    outcome.versions.find((version) => version.article.ageTarget === submission.ageTarget)
+    ?? outcome.versions[0];
 
   // Apply the editor's edits on top of the generated output, tracking whether
   // anything actually changed so editedByHuman stays truthful.
   let edited = false;
-  const final: KidArticle = { ...article, id: randomUUID() };
+  const final: KidArticle = { ...reviewed.article };
 
   const applyText = (key: 'kidHeadline' | 'summary' | 'whatHappened' | 'whyItMatters' | 'thinkAbout') => {
     const value = overrides[key];
@@ -137,15 +153,20 @@ export async function createManualArticle(
     final.vocab = overrides.vocab;
   }
 
-  const stored: KidArticle = {
-    ...final,
+  const lifecycle = {
     originalId: rawId,
-    editedByHuman: edited,
     status,
     createdAt: now,
     // Schema CHECK: a published row must carry publishedAt.
     publishedAt: status === 'published' ? now : null,
-  };
+  } as const;
+
+  const stored: KidArticle = { ...final, ...lifecycle, editedByHuman: edited };
+  const rows: KidArticle[] = outcome.versions.map((version) =>
+    version === reviewed
+      ? stored
+      : { ...version.article, ...lifecycle, editedByHuman: false },
+  );
 
   db.transaction(() => {
     createRawArticleRepository(db).insert({
@@ -164,7 +185,10 @@ export async function createManualArticle(
       simplifiedAt: now,
     });
 
-    createArticleRepository(db).insert(stored);
+    // Every version commits with the raw article: a story holding some of its
+    // ages cannot be reviewed or published coherently.
+    const articles = createArticleRepository(db);
+    for (const row of rows) articles.insert(row);
   })();
 
   return stored;

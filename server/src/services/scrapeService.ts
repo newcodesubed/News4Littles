@@ -213,7 +213,13 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
         // LLM_ENABLED, so a key exists whenever this runs.
         const judged = await autoApproveStories(
           db,
-          report.simplified.map((row) => row.rawId),
+          // engine and fallbackReason come along: auto mode refuses a story
+          // where any age fell back (§9.2).
+          report.simplified.map((row) => ({
+            originalId: row.rawId,
+            engine: row.engine,
+            fallbackReason: row.fallbackReason,
+          })),
           { client: options.client ?? new OpenRouterClient({}) },
         );
         state.autoPublished = judged.published.length;
