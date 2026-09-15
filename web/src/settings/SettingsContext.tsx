@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { DEFAULT_AGE, MAX_AGE, MIN_AGE } from '../lib/ageBands';
 
 /**
  * Public settings (PRD §3.6). Client-side only — §2.2 rules out user accounts,
@@ -10,9 +11,8 @@ import type { ReactNode } from 'react';
  * Mirrored into localStorage so a refresh doesn't reset the reader's choices.
  */
 
-export const MIN_AGE = 5;
-export const MAX_AGE = 14;
-export const DEFAULT_AGE = 6; // §3.6
+// Re-exported so the pages that already import the range from here keep working.
+export { DEFAULT_AGE, MAX_AGE, MIN_AGE };
 
 const STORAGE_KEY = 'news4littles.settings';
 

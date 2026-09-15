@@ -1,8 +1,7 @@
 import { Field, Select, TextArea } from '../../../ui/Field';
 import { Card } from '../../../ui/Surface';
+import { AGE_BANDS, ageBandLabel, bandForAge } from '../../../lib/ageBands';
 import type { PromptTarget, RawArticleSummary } from './types';
-
-const AGES = Array.from({ length: 10 }, (_, i) => i + 5);
 
 /** §7.3 panel 1: what is being edited, and what it is tested against. */
 export function InputPanel({
@@ -31,19 +30,20 @@ export function InputPanel({
         </Select>
       </Field>
 
-      {/* §7.3: the age target applies to simplification prompts only. */}
+      {/* §7.3: the age target applies to simplification prompts only. A story
+          is written once per reading group, so a variant is scoped to a group. */}
       {target === 'simplification' && (
         <Field
           label="Prompt variant"
-          hint="A variant edits the prompt used for that one age. Generic covers every other age."
+          hint="A variant edits the prompt used for that one reading group. Generic covers every other group."
         >
           <Select
             value={age === null ? 'generic' : String(age)}
             onChange={(e) => onChange({ age: e.target.value === 'generic' ? null : Number(e.target.value) })}
           >
             <option value="generic">Generic (all ages)</option>
-            {AGES.map((value) => (
-              <option key={value} value={value}>Age {value} override</option>
+            {AGE_BANDS.map((band) => (
+              <option key={band.minAge} value={band.minAge}>{ageBandLabel(band.minAge)} override</option>
             ))}
           </Select>
         </Field>
@@ -88,7 +88,8 @@ export function InputPanel({
 
       {target === 'simplification' && (
         <p className="text-xs text-muted-foreground">
-          Runs at age {age ?? defaultAge}{age === null && ' (the app default)'}.
+          Runs for {ageBandLabel(age ?? bandForAge(defaultAge).minAge).toLowerCase()}
+          {age === null && ` (the group the default age, ${defaultAge}, falls in)`}.
         </p>
       )}
     </Card>

@@ -49,7 +49,7 @@ function mockApi() {
       { id: 'v2', target: 'simplification', age: null, promptText: 'second text', version: 2, promotedBy: 'admin', promotedAt: '2026-09-09T10:00:00.000Z', note: null },
     ]);
     if (path.startsWith('/api/admin/prompts')) return json({
-      simplification: { generic: 'PRODUCTION GENERIC PROMPT', ageOverrides: { '6': 'AGE SIX PROMPT' } },
+      simplification: { generic: 'PRODUCTION GENERIC PROMPT', ageOverrides: { '5': 'YOUNG READERS PROMPT' } },
       guard: { promptText: 'GUARD PROMPT', enabled: false },
       versions: { simplification: 2 },
       drafts: [],
@@ -83,11 +83,19 @@ describe('loading the live prompt (§7.3)', () => {
     expect(await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT')).toBeInTheDocument();
   });
 
-  it('loads the age override when that variant is chosen', async () => {
+  it('loads the reading-group override when that variant is chosen', async () => {
     renderSandbox();
     await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
-    await userEvent.selectOptions(screen.getByLabelText('Prompt variant'), '6');
-    expect(await screen.findByDisplayValue('AGE SIX PROMPT')).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Prompt variant'), '5');
+    expect(await screen.findByDisplayValue('YOUNG READERS PROMPT')).toBeInTheDocument();
+  });
+
+  it('offers one variant per reading group, plus generic', async () => {
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    const options = [...(screen.getByLabelText('Prompt variant') as HTMLSelectElement).options]
+      .map((o) => o.value);
+    expect(options).toEqual(['generic', '5', '8', '11']);
   });
 
   it('loads the guard prompt for the guard target', async () => {

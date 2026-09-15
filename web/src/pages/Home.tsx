@@ -22,7 +22,7 @@ export function Home() {
   });
 
   // Source toggles (§3.6) filter the feed. The reading-age slider changes the
-  // TEXT: a story exists in one version per age, and the API serves the version
+  // TEXT: a story exists in one version per reading group, and the API serves the version
   // for this reader (§6), so moving the slider refetches rather than relabels.
   const published = state.status === 'ready' ? state.data.filter((a) => isSourceEnabled(a.sourceName)) : [];
   const visible = category ? published.filter((a) => a.category === category) : published;

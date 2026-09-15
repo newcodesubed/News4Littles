@@ -277,17 +277,28 @@ describe('auth', () => {
 });
 
 describe('one row per story (§5)', () => {
-  it('shows a single row for a story with several age versions', async () => {
+  it('shows a single row for a story with a version per reading group', async () => {
     articles = [
       article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, kidHeadline: 'A calm story' }),
       article({ id: 'v8', originalId: 'raw-1', ageTarget: 8, kidHeadline: 'A calm story' }),
-      article({ id: 'v14', originalId: 'raw-1', ageTarget: 14, kidHeadline: 'A calm story' }),
+      article({ id: 'v11', originalId: 'raw-1', ageTarget: 11, kidHeadline: 'A calm story' }),
     ];
     renderPage();
 
     // One row, not three.
     await waitFor(() => expect(screen.getAllByText('A calm story')).toHaveLength(1));
-    expect(await screen.findByText(/3 reading ages/i)).toBeInTheDocument();
+    expect(await screen.findByText(/3 reading groups · 5–7, 8–10, 11–14/i)).toBeInTheDocument();
+  });
+
+  it('counts a pre-group ten-version story as three groups, not ten', async () => {
+    // Stories written before reading groups hold one row per age; the row
+    // still describes them by group so the label matches the rest of the queue.
+    articles = Array.from({ length: 10 }, (_, i) =>
+      article({ id: `v${5 + i}`, originalId: 'raw-1', ageTarget: 5 + i, kidHeadline: 'A calm story' }),
+    );
+    renderPage();
+
+    expect(await screen.findByText(/3 reading groups/i)).toBeInTheDocument();
   });
 
   it('shows the strictest safety across the versions', async () => {

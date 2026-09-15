@@ -115,7 +115,8 @@ describe('story detail', () => {
     expect(container.querySelector('article')!.className).toBe('container max-w-3xl py-10');
     expect(container.querySelector('h1')!.className).toBe('font-display text-4xl md:text-5xl leading-tight mb-5');
     expect(screen.getByText('Back to today')).toBeInTheDocument();
-    expect(screen.getByText('For age 8+')).toBeInTheDocument();
+    // ageTarget 8 is the 8-10 reading group's anchor.
+    expect(screen.getByText('For ages 8–10')).toBeInTheDocument();
   });
 
   it('tints Words to know mint and Think about sun, as the prototype', async () => {

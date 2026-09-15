@@ -88,15 +88,18 @@ async function fillForm() {
 describe('editor portal — §4.3 form', () => {
   it('offers every field §4.3 lists', () => {
     renderIn(<AdminSubmit />);
-    for (const label of ['Original headline', 'Source name', 'Source URL', 'Article text', 'Category', 'Age target']) {
+    for (const label of ['Original headline', 'Source name', 'Source URL', 'Article text', 'Category', 'Reading group to preview']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
   });
 
-  it('age target covers 5 to 14', () => {
+  it('offers one reading group per version the save will write', () => {
+    // A version is stored under its group's youngest age (5, 8, 11), so the
+    // form offers groups rather than every age on the slider.
     renderIn(<AdminSubmit />);
-    const options = [...(screen.getByLabelText('Age target') as HTMLSelectElement).options].map((o) => o.value);
-    expect(options).toEqual(['5','6','7','8','9','10','11','12','13','14']);
+    const select = screen.getByLabelText('Reading group to preview') as HTMLSelectElement;
+    const options = [...select.options].map((o) => [o.value, o.text]);
+    expect(options).toEqual([['5', 'Ages 5–7'], ['8', 'Ages 8–10'], ['11', 'Ages 11–14']]);
   });
 
   it('Simplify is disabled until the form is filled in', async () => {
@@ -205,7 +208,7 @@ describe('saving — requirements 2, 4, 5', () => {
     });
   });
 
-  it('shows a loader while the save writes every age version', async () => {
+  it('shows a loader while the save writes every reading group', async () => {
     // With an LLM configured this request is ten model calls, so a static
     // label would leave a working button looking like a dead one.
     releaseSave = () => {};
@@ -214,7 +217,7 @@ describe('saving — requirements 2, 4, 5', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Send for review' }));
 
-    const button = await screen.findByRole('button', { name: /Writing every age version/ });
+    const button = await screen.findByRole('button', { name: /Writing every reading group/ });
     expect(button).toBeDisabled();
 
     releaseSave?.();
@@ -403,9 +406,10 @@ describe('settings — §8.7 app settings', () => {
 
   it('warns that the budget counts stories, not model calls', async () => {
     renderIn(<AdminSettings />);
-    const help = await screen.findByText(/each story is rewritten once for every reading age/i);
+    const help = await screen.findByText(/each story is rewritten once for every reading group/i);
+    expect(help).toHaveTextContent(/ages 5–7, 8–10, 11–14/);
     expect(help).toHaveTextContent(/10 stories/);
-    expect(help).toHaveTextContent(/100 model calls/);
+    expect(help).toHaveTextContent(/30 model calls/);
   });
 
   it('shows the version count for the last run', async () => {

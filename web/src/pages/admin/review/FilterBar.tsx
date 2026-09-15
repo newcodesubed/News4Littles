@@ -3,12 +3,13 @@ import { CategoryBadge } from '../../../components/Badges';
 import { Button } from '../../../ui/Button';
 import { Chip } from '../../../ui/Surface';
 import { EMPTY_FILTERS, type FilterOptions, type Filters } from '../../../admin/types';
+import { bandForAge, formatAgeBand, isAgeBandAnchor } from '../../../lib/ageBands';
 
 const SORTS = [
   { value: 'createdAt', label: 'Created' },
   { value: 'publishedAt', label: 'Published' },
   { value: 'readingMinutes', label: 'Reading time' },
-  { value: 'ageTarget', label: 'Age target' },
+  { value: 'ageTarget', label: 'Reading group' },
 ];
 
 const SAFETY_VALUES = ['calm', 'adult-nearby', 'skip-young'] as const;
@@ -123,11 +124,13 @@ export function FilterBar({
             ))}
           </Group>
 
-          <Group label="Age">
+          <Group label="Reading group">
+            {/* Stored ageTargets are group anchors; a pre-group row shows its
+                own age so the editor can find and regenerate it. */}
             {options.ageTargets.map((age) => (
               <Chip key={age} active={filters.ageTargets.includes(String(age))}
                 onClick={() => toggleIn('ageTargets', String(age))}>
-                {age}
+                {isAgeBandAnchor(age) ? formatAgeBand(bandForAge(age)) : `age ${age}`}
               </Chip>
             ))}
           </Group>

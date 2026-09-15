@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ExternalLink, Heart, Lightbulb, Newspaper, Sparkles } from 'lucide-react';
 import { CategoryBadge, SafetyBadge } from './Badges';
 import { needsFeelingNote, type KidArticle } from '../lib/types';
+import { ageBandLabel } from '../lib/ageBands';
 
 /**
  * The kid-facing rendering of a story — PRD §3.4.
@@ -41,7 +42,7 @@ export function StoryPreview({
         <CategoryBadge category={article.category} />
         <SafetyBadge safety={article.safety} />
         <span className="text-xs text-muted-foreground font-semibold">
-          For age {article.ageTarget}+
+          For {ageBandLabel(article.ageTarget).toLowerCase()}
         </span>
       </div>
 

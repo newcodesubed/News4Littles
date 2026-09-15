@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { CategoryBadge, SafetyBadge } from '../../../components/Badges';
 import { Button } from '../../../ui/Button';
 import type { AdminStory } from '../../../admin/types';
+import { ageBandLabel } from '../../../lib/ageBands';
 
 export interface RowActions {
   onView: () => void;
@@ -36,10 +37,10 @@ const STATUS_STYLE: Record<string, string> = {
  *
  * Two things are story-level rather than version-level:
  *  - the safety badge shows the STRICTEST verdict across versions, because
- *    every button here acts on all of them. Age 14 reading 'calm' while age 5
+ *    every button here acts on all of them. Ages 11-14 reading 'calm' while 5-7
  *    is 'skip-young' would hide exactly what the editor needs to see.
  *  - Publish says "Publish all" when there is more than one version, because
- *    it publishes every age at once.
+ *    it publishes every reading group at once.
  *
  * The headline and summary come from the youngest version, which is the
  * strictest reading level and the one worth showing in a list.
@@ -67,11 +68,13 @@ export function StoryRow({
     pending === action ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : fallback;
 
   const youngest = story.versions[0];
-  const ages = story.versions.map((version) => version.ageTarget);
   // "Publish all" earns its word only when there is more than one version;
   // "Publish all" on a single-version story is just noise.
   const many = story.versions.length > 1;
-  const ageRange = ages.length === 1 ? `Age ${ages[0]}` : `Ages ${Math.min(...ages)}–${Math.max(...ages)}`;
+  // One label per reading group the story has a version in. A story from
+  // before groups existed may hold several rows in one group; they collapse
+  // to one label here, and scripts/migrate-age-bands collapses the rows.
+  const groups = [...new Set(story.versions.map((version) => ageBandLabel(version.ageTarget)))];
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
@@ -92,7 +95,8 @@ export function StoryRow({
               {story.status.replace('_', ' ')}
             </span>
             <span className="text-xs font-semibold text-muted-foreground">
-              {story.versions.length} reading age{story.versions.length === 1 ? '' : 's'} · {ageRange}
+              {groups.length} reading group{groups.length === 1 ? '' : 's'}
+              {' · '}{groups.join(', ').replace(/Ages /g, '')}
               {' · '}{youngest.sourceName}
             </span>
             {story.versions.some((version) => version.editedByHuman) && (

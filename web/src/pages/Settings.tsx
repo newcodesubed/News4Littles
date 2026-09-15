@@ -3,6 +3,7 @@ import { ErrorState, LoadingState } from '../components/States';
 import { fetchPublishedArticles } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import { MAX_AGE, MIN_AGE, useSettings } from '../settings/SettingsContext';
+import { AGE_BANDS, formatAgeBand } from '../lib/ageBands';
 
 /**
  * Settings — PRD §3.6 (public settings only: reading age + source toggles).
@@ -86,8 +87,9 @@ export function Settings() {
         </div>
 
         <p className="mt-3 text-sm text-muted-foreground">
-          Every story is rewritten for each age, so moving this changes the words —
-          shorter sentences and simpler words for younger readers.
+          Every story is rewritten for three reading groups — ages{' '}
+          {AGE_BANDS.map(formatAgeBand).join(', ')} — so moving this between groups changes
+          the words: shorter sentences and simpler words for younger readers.
         </p>
       </div>
 

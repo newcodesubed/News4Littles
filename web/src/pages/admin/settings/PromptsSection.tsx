@@ -3,9 +3,8 @@ import { Link } from 'react-router-dom';
 import { Button } from '../../../ui/Button';
 import { FIELD_CLASS_COMPACT, Select } from '../../../ui/Field';
 import { Notice, Section } from '../../../ui/Surface';
+import { AGE_BANDS, ageBandLabel } from '../../../lib/ageBands';
 import type { PromptConfig, Save } from './types';
-
-const AGES = Array.from({ length: 10 }, (_, i) => i + 5);
 
 /**
  * §8.5 prompt editor. Stored only — the local rule-based simplifier never reads
@@ -13,7 +12,8 @@ const AGES = Array.from({ length: 10 }, (_, i) => i + 5);
  */
 export function PromptsSection({ config, save }: { config: PromptConfig; save: Save }) {
   const [draft, setDraft] = useState(config);
-  const [newOverrideAge, setNewOverrideAge] = useState('7');
+  // Overrides are per reading group, keyed by the group's youngest age.
+  const [newOverrideAge, setNewOverrideAge] = useState(String(AGE_BANDS[0]!.minAge));
 
   const persist = (next: Pick<PromptConfig, 'genericPrompt' | 'ageOverrides'>, message: string) =>
     save('/api/admin/prompt-config', { method: 'PUT', body: JSON.stringify(next) }, message);
@@ -48,15 +48,15 @@ export function PromptsSection({ config, save }: { config: PromptConfig; save: S
         />
       </label>
 
-      <p className="mt-5 text-sm font-bold">Per-age overrides</p>
+      <p className="mt-5 text-sm font-bold">Per-group overrides</p>
       {Object.keys(draft.ageOverrides).length === 0 && (
-        <p className="text-sm text-muted-foreground">None. The generic prompt is used for every age.</p>
+        <p className="text-sm text-muted-foreground">None. The generic prompt is used for every reading group.</p>
       )}
 
       {Object.entries(draft.ageOverrides).map(([age, text]) => (
         <div key={age} className="mt-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold">Age {age}</span>
+            <span className="text-sm font-bold">{ageBandLabel(Number(age))}</span>
             <Link to={`/admin/sandbox?target=simplification&age=${age}`}
               className="ml-auto mr-3 text-sm font-semibold text-primary hover:underline">
               Test in sandbox →
@@ -85,9 +85,11 @@ export function PromptsSection({ config, save }: { config: PromptConfig; save: S
       ))}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Select value={newOverrideAge} aria-label="Override age" className="mt-0"
+        <Select value={newOverrideAge} aria-label="Override reading group" className="mt-0"
           onChange={(e) => setNewOverrideAge(e.target.value)}>
-          {AGES.map((age) => <option key={age} value={age}>Age {age}</option>)}
+          {AGE_BANDS.map((band) => (
+            <option key={band.minAge} value={band.minAge}>{ageBandLabel(band.minAge)}</option>
+          ))}
         </Select>
         <Button
           variant="outline"

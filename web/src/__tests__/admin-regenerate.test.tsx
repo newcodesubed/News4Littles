@@ -24,7 +24,7 @@ const BASE: AdminArticle = {
   sourceId: 'bbc', originalHeadline: 'Adult headline', approvedBy: null,
 };
 
-const versions: AdminArticle[] = [5, 8, 14].map((age) => ({
+const versions: AdminArticle[] = [5, 8, 11].map((age) => ({
   ...BASE, id: `v${age}`, ageTarget: age, kidHeadline: `Stored age ${age}`,
 }));
 
@@ -54,7 +54,7 @@ function mockApi() {
 
     const job = () => ({
       id: 'job-1', originalId: 'r1', kidHeadline: 'Stored age 5',
-      startedAt: '2026-09-10T09:00:00.000Z', ages: [5, 8, 14], done,
+      startedAt: '2026-09-10T09:00:00.000Z', ages: [5, 8, 11], done,
       running: jobRunning, costUsd: 0.0043,
       // Only for a thrown failure; a truthy value here ends the job the same
       // way the service does — running: false, and no versions to show.
@@ -162,8 +162,8 @@ describe('starting a story-scoped regeneration', () => {
     await startJob(user);
     await finishJob();
 
-    for (const age of [5, 8, 14]) {
-      expect(screen.getByRole('tab', { name: new RegExp(`Age ${age}`) })).toBeInTheDocument();
+    for (const label of ['Ages 5–7', 'Ages 8–10', 'Ages 11–14']) {
+      expect(screen.getByRole('tab', { name: new RegExp(label) })).toBeInTheDocument();
     }
     expect(screen.getByText('Fresh age 5')).toBeInTheDocument();
   });
@@ -223,7 +223,7 @@ describe('coming back to a preview the server still holds', () => {
     expect(
       await screen.findByText('Regenerate — review before applying', {}, { timeout: 6000 }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Age 8/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Ages 8–10/ })).toBeInTheDocument();
   });
 
   it('picks up a running job and shows how far it has got', async () => {
@@ -246,10 +246,10 @@ describe('applying a story-scoped regeneration', () => {
     await startJob(user);
     await finishJob();
 
-    await user.click(screen.getByRole('checkbox', { name: 'Apply age 8' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Apply ages 8–10' }));
     await user.click(screen.getByRole('button', { name: 'Apply 2 of 3 versions' }));
 
-    await waitFor(() => expect(applyBody).toEqual({ jobId: 'job-1', ages: [5, 14] }));
+    await waitFor(() => expect(applyBody).toEqual({ jobId: 'job-1', ages: [5, 11] }));
     await waitFor(() =>
       expect(screen.queryByText('Regenerate — review before applying')).not.toBeInTheDocument(),
     );
