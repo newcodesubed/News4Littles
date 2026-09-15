@@ -4,6 +4,7 @@ import { ErrorState, LoadingState } from '../components/States';
 import { fetchPublishedArticles } from '../lib/api';
 import { useSettings } from '../settings/SettingsContext';
 import { useAsync } from '../lib/useAsync';
+import { useSpeech } from '../lib/useSpeech';
 import type { KidArticle } from '../lib/types';
 
 /**
@@ -25,6 +26,52 @@ function segmentScript(article: KidArticle): string {
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+/**
+ * One story, with the script a child hears and a button that speaks it.
+ *
+ * The script is the STORED `audioScript`, written and reviewed with the story
+ * (§2.2: a person reads every word a child sees, and hearing is seeing).
+ * `segmentScript` remains only for stories published before that field
+ * existed — it recombines approved sentences and nothing more. The rule is:
+ * play exactly what is on screen.
+ */
+function Segment({ article, index }: { article: KidArticle; index: number }) {
+  const speech = useSpeech(article.audioScript ?? segmentScript(article));
+
+  return (
+    <li className="bg-card rounded-2xl p-5 border border-border shadow-soft">
+      <div className="flex items-start gap-3">
+        {speech.supported && (
+          <button
+            onClick={speech.speaking ? speech.stop : speech.play}
+            aria-label={
+              speech.speaking ? `Stop story ${index + 1}` : `Listen to story ${index + 1}`
+            }
+            className="w-10 h-10 shrink-0 rounded-full bg-primary text-primary-foreground grid place-items-center shadow-pop"
+          >
+            {speech.speaking ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+          </button>
+        )}
+
+        <div className="min-w-0">
+          <div className="text-xs font-bold text-primary mb-1">Story {index + 1}</div>
+          <h3 className="font-display text-lg mb-2">{article.kidHeadline}</h3>
+          <p className="text-sm text-foreground/70 leading-relaxed">
+            {speech.sentences.map((sentence, i) => (
+              <span
+                key={i}
+                className={i === speech.current ? 'rounded bg-surface-sun px-0.5' : undefined}
+              >
+                {sentence}{' '}
+              </span>
+            ))}
+          </p>
+        </div>
+      </div>
+    </li>
+  );
 }
 
 export function Podcast() {
@@ -114,16 +161,7 @@ export function Podcast() {
               ) : (
                 <ol className="space-y-4">
                   {articles.map((article, index) => (
-                    <li
-                      key={article.id}
-                      className="bg-card rounded-2xl p-5 border border-border shadow-soft"
-                    >
-                      <div className="text-xs font-bold text-primary mb-1">Story {index + 1}</div>
-                      <h3 className="font-display text-lg mb-2">{article.kidHeadline}</h3>
-                      <p className="text-sm text-foreground/70 leading-relaxed">
-                        {segmentScript(article)}
-                      </p>
-                    </li>
+                    <Segment key={article.id} article={article} index={index} />
                   ))}
                 </ol>
               )}
