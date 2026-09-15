@@ -37,6 +37,9 @@ function readContentChanges(body: Record<string, unknown>): Partial<ArticleConte
     if (body[field] !== undefined) changes[field] = requireString(body[field], field);
   }
   if (body.feelingNote !== undefined) changes.feelingNote = optionalString(body.feelingNote);
+  // Optional like feelingNote: clearing it is a legitimate edit — an editor
+  // who does not want a story spoken empties the box.
+  if (body.audioScript !== undefined) changes.audioScript = optionalString(body.audioScript);
   if (body.safety !== undefined) changes.safety = requireSafety(body.safety);
   if (body.readingMinutes !== undefined) {
     changes.readingMinutes = requireInt(body.readingMinutes, 'readingMinutes', { min: 1 });

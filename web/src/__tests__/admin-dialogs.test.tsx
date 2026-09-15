@@ -116,6 +116,19 @@ describe('EditDialog (§4.2)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ vocab: [] }));
   });
+
+  it('sends an edited audio script', async () => {
+    const onSave = open({ audioScript: 'Old script.' });
+
+    const box = screen.getByLabelText('Audio script');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'New spoken version.');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ audioScript: 'New spoken version.' }),
+    );
+  });
 });
 
 describe('RegenerateDialog (§4.2, story-scoped)', () => {

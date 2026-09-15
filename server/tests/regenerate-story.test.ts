@@ -347,6 +347,21 @@ describe('applyRegeneratedVersions', () => {
     expect(getKidArticle(ctx.db, 'r1-v8')!.kidHeadline).toBe('Stored headline for age 8');
   });
 
+  it('writes the regenerated audio script onto the row it replaces', async () => {
+    seedStory('r1', [5, 8, 11]);
+    // KID_REPLY (top of this file) carries no audioScript; add one for this case.
+    const { client } = countingClient(
+      JSON.stringify({ ...JSON.parse(KID_REPLY), audioScript: 'A robot went down to the reef.' }),
+    );
+    const job = await runJob('r1-v5', { client });
+
+    applyRegeneratedVersions(ctx.db, job.id, [5]);
+
+    expect(getKidArticle(ctx.db, 'r1-v5')!.audioScript).toBe('A robot went down to the reef.');
+    // Not ticked, so untouched — seedStory writes no script.
+    expect(getKidArticle(ctx.db, 'r1-v8')!.audioScript).toBeNull();
+  });
+
   it('moves a pre-band row onto its band anchor when applied', async () => {
     seedStory('r1', [9]);
     const { client } = countingClient();

@@ -3,7 +3,7 @@ import type { AdminArticle } from '../../../admin/types';
 /** The kid-facing fields §4.2 lets a regeneration replace. */
 export const DIFF_FIELDS = [
   'kidHeadline', 'summary', 'whatHappened', 'whyItMatters',
-  'thinkAbout', 'feelingNote', 'safety', 'category', 'readingMinutes',
+  'thinkAbout', 'audioScript', 'feelingNote', 'safety', 'category', 'readingMinutes',
 ] as const;
 
 function display(value: unknown): string {

@@ -216,6 +216,7 @@ export function createArticleRepository(db: Database): ArticleRepository {
       if (changes[key] !== undefined) put(key, changes[key] as string);
     }
     if (changes.feelingNote !== undefined) put('feelingNote', changes.feelingNote);
+    if (changes.audioScript !== undefined) put('audioScript', changes.audioScript);
     if (changes.safety !== undefined) put('safety', changes.safety);
     if (changes.readingMinutes !== undefined) put('readingMinutes', changes.readingMinutes);
     if (changes.ageTarget !== undefined) put('ageTarget', changes.ageTarget);

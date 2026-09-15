@@ -21,6 +21,7 @@ export function EditDialog({
     whatHappened: article.whatHappened,
     whyItMatters: article.whyItMatters,
     thinkAbout: article.thinkAbout,
+    audioScript: article.audioScript ?? '',
     feelingNote: article.feelingNote ?? '',
     safety: article.safety,
     category: article.category,
@@ -59,6 +60,20 @@ export function EditDialog({
         <label className="block">
           <span className="text-sm font-bold">Think about</span>
           <textarea value={draft.thinkAbout} onChange={(e) => set('thinkAbout', e.target.value)} rows={3} className={`mt-1 ${FIELD_CLASS}`} />
+        </label>
+
+        <label className="md:col-span-2 block">
+          <span className="text-sm font-bold">Audio script</span>
+          <p className="text-xs text-muted-foreground">
+            What a child hears on the podcast page. Empty means the story is not spoken.
+          </p>
+          <textarea
+            aria-label="Audio script"
+            value={draft.audioScript}
+            onChange={(e) => set('audioScript', e.target.value)}
+            rows={5}
+            className={`mt-1 ${FIELD_CLASS}`}
+          />
         </label>
 
         <label className="block">
