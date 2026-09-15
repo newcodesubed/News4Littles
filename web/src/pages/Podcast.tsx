@@ -13,9 +13,9 @@ import type { KidArticle } from '../lib/types';
  * The player is a placeholder: real text-to-speech is out of scope (§2.2, §14)
  * and needs a key only the product owner can supply (§13.2).
  *
- * The prototype reads a pre-written episode object; here the intro and segment
- * scripts are derived from today's published stories, using the prototype's
- * phrasing.
+ * The prototype reads a pre-written episode object; here the intro is derived
+ * from today's published stories, using the prototype's phrasing. Segment
+ * scripts are not derived here — see `Segment` below.
  */
 function segmentScript(article: KidArticle): string {
   const word = article.vocab[0];
