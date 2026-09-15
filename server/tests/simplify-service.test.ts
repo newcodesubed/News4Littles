@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AGE_BANDS, AGE_BAND_ANCHORS } from '../src/core/article.js';
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
+import { OpenRouterClient } from '../src/llm/openRouterClient.js';
 import { acquireJob, activeJob, releaseJob } from '../src/services/jobLock.js';
 import {
   getSimplifyJob, resetSimplifyJob, simplifyRawArticles, startSimplifyJob,
@@ -237,6 +238,80 @@ describe('simplifyRawArticles', () => {
     const report = await simplifyRawArticles(ctx.db, ['r1']);
 
     expect(report.simplified[0].sourceId).toBe('npr');
+  });
+
+  describe('the spoken script the model wrote', () => {
+    const SCRIPT = 'Hello! A robot went down to the reef today. It found the coral is doing well.';
+
+    /** A model that answers every band with the same well-formed version. */
+    const modelWriting = (audioScript: string | null) =>
+      new OpenRouterClient({
+        apiKey: 'test-key',
+        maxRetries: 0,
+        fetchImpl: (async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  kidHeadline: 'A robot went to look at a reef',
+                  summary: 'A robot explored a reef under the sea.',
+                  whatHappened: 'A robot with lights went down to the reef.',
+                  whyItMatters: 'Reefs are home to lots of sea animals.',
+                  vocab: [{ word: 'reef', definition: 'A ridge of rock under the sea.' }],
+                  thinkAbout: 'What would you look for down there?',
+                  audioScript,
+                  feelingNote: null,
+                  safety: 'calm',
+                  contentWarnings: [],
+                  readingMinutes: 3,
+                }),
+              },
+            }],
+            usage: { total_tokens: 800, cost: 0.00017 },
+          }),
+        })) as unknown as typeof fetch,
+      });
+
+    it('round-trips from the model onto the row and back out of the API', async () => {
+      seedWaiting('r1');
+
+      const report = await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(SCRIPT) });
+
+      expect(report.simplified[0].engine).toBe('llm');
+      // Stored on every band: one call per band, each writing its own script.
+      expect(ctx.db.prepare(`SELECT audioScript FROM kid_articles`).pluck().all())
+        .toEqual(Array(AGE_BANDS.length).fill(SCRIPT));
+
+      // And read back by the queue an editor reviews from — the whole point of
+      // storing it is that a person sees the same words the child hears.
+      const { stories } = await (await ctx.api('/api/admin/stories')).json();
+      expect(stories[0].versions.map((v: { audioScript: string | null }) => v.audioScript))
+        .toEqual(Array(AGE_BANDS.length).fill(SCRIPT));
+    });
+
+    it('serves it to the podcast page once the story is published', async () => {
+      seedWaiting('r1');
+      await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(SCRIPT) });
+      const id = ctx.db.prepare(`SELECT id FROM kid_articles WHERE ageTarget = 8`).pluck().get() as string;
+      await ctx.api(`/api/admin/articles/${id}/publish`, { method: 'PATCH' });
+
+      const published = await (await ctx.anon('/api/articles?age=9')).json();
+
+      expect(published[0].audioScript).toBe(SCRIPT);
+    });
+
+    it('stores null when the model omitted it, rather than failing the story', async () => {
+      seedWaiting('r1');
+
+      const report = await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(null) });
+
+      // §9.1: a missing script is a much smaller loss than a lost story.
+      expect(report.simplified[0].engine).toBe('llm');
+      expect(ctx.db.prepare(`SELECT DISTINCT audioScript FROM kid_articles`).pluck().all())
+        .toEqual([null]);
+    });
   });
 });
 
