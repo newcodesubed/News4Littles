@@ -135,7 +135,7 @@ story-scoped and move the whole row.
 - Uses the device's default voice — no `voiceschanged` listener and no
   `getVoices()` call, because the hook never selects a voice — and cancels on
   unmount so speech does not outlive the page.
-- Reports `supported: boolean` when `speechSynthesis` is absent, and the button
+- Reports `supported: false` when `speechSynthesis` is absent, and the button
   is not rendered rather than rendered dead.
 
 Playback needs a user gesture, so there is no autoplay. Voice quality is the
