@@ -34,12 +34,12 @@ export interface AdminArticle extends KidArticle {
 }
 
 /**
- * One story as the review queue shows it: every age version, plus the
+ * One story as the review queue shows it: every band version, plus the
  * story-level facts an editor decides on.
  *
- * `safety` is the STRICTEST across versions (§6). A story that is skip-young at
- * age 5 must never present as calm because age 14 is — the editor is about to
- * approve all ten at once.
+ * `safety` is the STRICTEST across versions (§6). A story that is skip-young for
+ * ages 5-7 must never present as calm because ages 11-14 is — the editor is
+ * about to approve every band at once.
  */
 export interface AdminStory {
   originalId: string;
@@ -110,13 +110,14 @@ const ADMIN_SELECT = `
 export interface ArticleRepository {
   insert(article: KidArticle): void;
   /**
-   * §6: the published version written FOR this reading age. Exact match only —
-   * a story exists in one version per age (5-14), so a missing age means the
-   * story was never simplified for this reader, and showing them an age-12
-   * rewrite instead is worse than showing nothing.
+   * §6: the published version stored under this ageTarget — a band anchor
+   * (AGE_BAND_ANCHORS), which the route resolves from the reader's age. Exact
+   * match only: a story exists in one version per band, so a missing anchor
+   * means the story was never simplified for this reader, and showing them the
+   * 11-14 rewrite instead is worse than showing nothing.
    */
-  listPublishedForAge(age: number): KidArticle[];
-  findPublishedForAge(id: string, age: number): KidArticle | undefined;
+  listPublishedForAge(ageTarget: number): KidArticle[];
+  findPublishedForAge(id: string, ageTarget: number): KidArticle | undefined;
   findAdminById(id: string): AdminArticle | undefined;
   /** Status + safety only — enough to decide whether an action is allowed. */
   findState(id: string): { id: string; status: ArticleStatus; safety: Safety } | undefined;
@@ -130,7 +131,7 @@ export interface ArticleRepository {
   distinctAgeTargets(): number[];
   /**
    * §5: publish, reject, unpublish and delete are STORY-scoped — an editor
-   * approves a story, and every age version has to move with it. Each takes any
+   * approves a story, and every band version has to move with it. Each takes any
    * one version's id and resolves it to the story.
    */
   publishStory(id: string, at: string, approvedBy?: 'auto' | null): void;
@@ -150,8 +151,8 @@ export function createArticleRepository(db: Database): ArticleRepository {
     insert: db.prepare(INSERT_SQL),
     adminById: db.prepare(`${ADMIN_SELECT} WHERE k.id = ?`),
     state: db.prepare(`SELECT id, status, safety FROM kid_articles WHERE id = ?`),
-    // §6: the version written for this age. One version per age per story, so
-    // this is one row per story with no grouping needed.
+    // §6: the version written for this band. One version per band per story,
+    // so this is one row per story with no grouping needed.
     publishedForAge: db.prepare(
       `SELECT * FROM kid_articles
        WHERE status = 'published' AND ageTarget = @age
@@ -307,8 +308,8 @@ export function createArticleRepository(db: Database): ArticleRepository {
     },
 
     countsByStatus() {
-      // DISTINCT originalId: ten age versions are ONE story to review, and a
-      // Pending badge reading 100 for ten stories is useless.
+      // DISTINCT originalId: a story's band versions are ONE story to review,
+      // and a Pending badge reading 30 for ten stories is useless.
       const counts = { pending_review: 0, published: 0, rejected: 0, total: 0 };
       for (const row of statements.storyCounts.all() as { status: ArticleStatus; n: number }[]) {
         counts[row.status] = row.n;
