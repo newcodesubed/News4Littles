@@ -73,6 +73,7 @@ describe('GET /prompts', () => {
     expect(body.simplification.generic).toContain('rewriting a real news story');
     expect(body.simplification.ageOverrides['6']).toBeTruthy();
     expect(body.templateVariables).toContain('{{headline}}');
+    expect(body.templateVariables).toContain('{{ageRange}}');
     expect(body.versions).toEqual({});
     expect(body.drafts).toEqual([]);
   });

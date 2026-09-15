@@ -7,7 +7,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenRouterClient, stripCodeFence } from '../src/llm/openRouterClient.js';
-import { parseLlmContent, renderPrompt, selectPrompt, LlmResponseError } from '../src/llm/llmSimplifier.js';
+import {
+  parseLlmContent, renderPrompt, selectPrompt, LlmResponseError, TEMPLATE_VARIABLES,
+} from '../src/llm/llmSimplifier.js';
 import { simplifyArticle, simplifyArticleForAllAges } from '../src/pipeline/simplifyArticle.js';
 import { AGE_6_SIMPLIFICATION_PROMPT, GENERIC_SIMPLIFICATION_PROMPT } from '../src/db/seed-prompts.js';
 import { createTestContext, type TestContext } from './helpers.js';
@@ -86,6 +88,18 @@ describe('prompt rendering (§7.3 variables)', () => {
 
   it('substitutes repeated variables', () => {
     expect(renderPrompt('{{age}} and {{age}}', context)).toBe('8 and 8');
+  });
+
+  it('renders {{ageRange}} as the whole band the age falls in', () => {
+    expect(renderPrompt('{{ageRange}}', context)).toBe('8 to 10');
+    expect(renderPrompt('{{ageRange}}', { ...context, age: 5 })).toBe('5 to 7');
+    expect(renderPrompt('{{ageRange}}', { ...context, age: 14 })).toBe('11 to 14');
+  });
+
+  it('lists every variable it renders, so the editor sees the full set', () => {
+    const rendered = renderPrompt(TEMPLATE_VARIABLES.join('|'), context);
+    expect(rendered).not.toContain('{{');
+    expect(TEMPLATE_VARIABLES).toContain('{{ageRange}}');
   });
 
   it('truncates the body, so one huge paste cannot run up a bill', () => {

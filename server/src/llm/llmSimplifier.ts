@@ -11,7 +11,7 @@
  *     calling a war story "calm" cannot override the deny-list.
  */
 import { LLM_MAX_BODY_CHARS } from '../env.js';
-import { SAFETY_VALUES, type Safety, type VocabEntry } from '../core/article.js';
+import { SAFETY_VALUES, bandForAge, type Safety, type VocabEntry } from '../core/article.js';
 
 /** §7.3's template variables. */
 export interface PromptContext {
@@ -19,8 +19,19 @@ export interface PromptContext {
   body: string;
   category: string;
   sourceName: string;
+  /**
+   * The band's anchor — its youngest age. {{age}} renders it as-is, and
+   * {{ageRange}} renders the whole band ("5 to 7"), so a prompt can pitch
+   * vocabulary at the youngest reader while framing the story for everyone in
+   * the band.
+   */
   age: number;
 }
+
+/** The variables a prompt may reference (§7.3), listed for the editor. */
+export const TEMPLATE_VARIABLES = [
+  '{{headline}}', '{{body}}', '{{category}}', '{{sourceName}}', '{{age}}', '{{ageRange}}',
+] as const;
 
 /**
  * Substitute the §7.3 variables. The body is truncated first: without a cap,
@@ -31,16 +42,18 @@ export function renderPrompt(template: string, context: PromptContext, maxBodyCh
     context.body.length > maxBodyChars
       ? `${context.body.slice(0, maxBodyChars)}…[truncated]`
       : context.body;
+  const band = bandForAge(context.age);
 
   return template
     .replaceAll('{{headline}}', context.headline)
     .replaceAll('{{body}}', body)
     .replaceAll('{{category}}', context.category)
     .replaceAll('{{sourceName}}', context.sourceName)
-    .replaceAll('{{age}}', String(context.age));
+    .replaceAll('{{age}}', String(context.age))
+    .replaceAll('{{ageRange}}', `${band.minAge} to ${band.maxAge}`);
 }
 
-/** §9.1 step 1: an age-specific override if one exists, else the generic prompt. */
+/** §9.1 step 1: the band's override if one exists, else the generic prompt. */
 export function selectPrompt(
   generic: string,
   ageOverrides: Record<string, string>,
