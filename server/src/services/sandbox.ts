@@ -7,7 +7,7 @@
  */
 import type { Database } from 'better-sqlite3';
 import { BadRequestError, NotFoundError } from '../core/errors.js';
-import { MAX_AGE, MIN_AGE, type KidArticle } from '../core/article.js';
+import { AGE_BAND_ANCHORS, bandForAge, isAgeBandAnchor, type KidArticle } from '../core/article.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import {
   createPromptRepository, versionKey,
@@ -62,11 +62,18 @@ export interface TestResult {
   usingLocalFallback: boolean;
 }
 
+/**
+ * A prompt override is scoped to a reading BAND, named by its anchor; null is
+ * the generic prompt. Any other age would be an override nothing ever selects,
+ * because selectPrompt looks up the anchor a version is being written for.
+ */
 function requireAge(age: unknown): number | null {
   if (age === null || age === undefined || age === '') return null;
   const value = Number(age);
-  if (!Number.isInteger(value) || value < MIN_AGE || value > MAX_AGE) {
-    throw new BadRequestError(`age must be a whole number from ${MIN_AGE} to ${MAX_AGE}, or absent.`);
+  if (!isAgeBandAnchor(value)) {
+    throw new BadRequestError(
+      `age must be the youngest age of a reading band (${AGE_BAND_ANCHORS.join(', ')}), or absent.`,
+    );
   }
   return value;
 }
@@ -127,7 +134,9 @@ export interface TestOptions {
 export async function runSandboxTest(db: Database, options: TestOptions): Promise<TestResult> {
   const settings = createSettingsRepository(db);
   const appSettings = settings.getAppSettings();
-  const ageTarget = options.age ?? appSettings.defaultAge;
+  // A generic-prompt test runs for the band the default age falls in — the
+  // same band production would write for a reader at that age.
+  const ageTarget = options.age ?? bandForAge(appSettings.defaultAge).minAge;
   const raw = resolveSubject(db, options.subject);
 
   /**

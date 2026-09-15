@@ -137,6 +137,8 @@ describe('drafts (§7.4: a draft never affects production)', () => {
   it.each([
     ['an unknown target', { target: 'nonsense', promptText: 'x' }],
     ['an out-of-range age', { target: 'simplification', age: 99, promptText: 'x' }],
+    // Overrides are per band, so an age that anchors no band is not a scope.
+    ['an age that is not a band anchor', { target: 'simplification', age: 6, promptText: 'x' }],
     ['an empty prompt', { target: 'simplification', promptText: '  ' }],
   ])('rejects %s', async (_label, body) => {
     expect((await put('/api/admin/prompts/draft', body)).status).toBe(400);
@@ -206,6 +208,13 @@ describe('POST /prompts/test — §7.4: writes nothing', () => {
 
     expect(younger.draft.validation.ageLimit).toBe(14);
     expect(older.draft.validation.ageLimit).toBe(28);
+  });
+
+  it('runs a generic-prompt test for the band the default age falls in', async () => {
+    // defaultAge is 6 (§3.6); production writes a reader of 6 the 5-7 version.
+    const body = await (await post('/api/admin/prompts/test', testBody({ age: null }))).json();
+    expect(body.draft.article.ageTarget).toBe(5);
+    expect(body.draft.validation.ageLimit).toBe(14);
   });
 
   it('comparison mode returns both runs (§7.3)', async () => {
