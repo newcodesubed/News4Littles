@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toSentences, useSpeech } from '../lib/useSpeech';
 
@@ -18,7 +18,15 @@ beforeEach(() => {
     cancel: () => { queue = []; },
   });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  // Unmount every rendered hook here, while the stubbed globals are still in
+  // place — RTL's own auto-cleanup afterEach was registered (at import time)
+  // before this one, so Vitest's LIFO ordering would otherwise run
+  // vi.unstubAllGlobals() first and leave `stop`'s effect cleanup calling a
+  // global that no longer exists.
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe('toSentences', () => {
   it('splits on sentence endings and drops blanks', () => {

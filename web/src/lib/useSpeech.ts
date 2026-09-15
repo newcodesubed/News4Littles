@@ -41,10 +41,7 @@ export function useSpeech(text: string | null): Speech {
   const cancelled = useRef(false);
 
   const stop = useCallback(() => {
-    // Checked live, not via the memoized `supported` flag: this also runs from
-    // the unmount cleanup below, by which point a test (or a real navigation)
-    // may have already torn the global down.
-    if (!supported || !window.speechSynthesis) return;
+    if (!supported) return;
     cancelled.current = true;
     window.speechSynthesis.cancel();
     setCurrent(-1);
