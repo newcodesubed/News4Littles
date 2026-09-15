@@ -5,6 +5,7 @@ import { toSentences, useSpeech } from '../lib/useSpeech';
 class FakeUtterance {
   onstart: (() => void) | null = null;
   onend: (() => void) | null = null;
+  onerror: ((event: { error: string }) => void) | null = null;
   constructor(public text: string) {}
 }
 
@@ -90,6 +91,54 @@ describe('useSpeech', () => {
     unmount();
 
     expect(cancel).toHaveBeenCalled();
+  });
+
+  it('clears the highlight when an utterance fails, instead of sticking', () => {
+    // Per the spec a cancelled or failed utterance fires `error`, never `end`;
+    // Chrome fires `end` anyway, which is why this only broke elsewhere.
+    const { result } = renderHook(() => useSpeech('One. Two.'));
+    act(() => result.current.play());
+    act(() => queue[0].onstart?.());
+
+    act(() => queue[0].onerror?.({ error: 'synthesis-failed' }));
+
+    expect(result.current.current).toBe(-1);
+    expect(result.current.speaking).toBe(false);
+  });
+
+  it('does not cancel the tab queue when it was the one interrupted', () => {
+    const cancel = vi.fn();
+    vi.stubGlobal('speechSynthesis', { speak: (u: FakeUtterance) => queue.push(u), cancel });
+    const { result } = renderHook(() => useSpeech('One. Two.'));
+    act(() => result.current.play());
+    act(() => queue[0].onstart?.());
+    cancel.mockClear();
+
+    act(() => queue[0].onerror?.({ error: 'interrupted' }));
+
+    expect(result.current.speaking).toBe(false);
+    // The queue belongs to whoever interrupted us; cancelling would cut off
+    // their story.
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('hands the queue over when a second story starts, leaving no stale Pause', () => {
+    // speechSynthesis is one queue per tab, so the second play() cancels the
+    // first story's utterances. Without the handover the first is left with a
+    // highlighted sentence and a Pause button that stops the SECOND story.
+    const first = renderHook(() => useSpeech('One. Two.'));
+    const second = renderHook(() => useSpeech('Three. Four.'));
+    act(() => first.result.current.play());
+    act(() => queue[0].onstart?.());
+    expect(first.result.current.speaking).toBe(true);
+
+    act(() => second.result.current.play());
+    act(() => queue[0].onstart?.());
+
+    expect(first.result.current.speaking).toBe(false);
+    expect(first.result.current.current).toBe(-1);
+    expect(second.result.current.speaking).toBe(true);
+    expect(queue.map((u) => u.text)).toEqual(['Three.', 'Four.']);
   });
 
   it('reports unsupported when the browser has no speech synthesis', () => {
