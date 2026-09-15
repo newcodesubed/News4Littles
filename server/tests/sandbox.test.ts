@@ -190,20 +190,19 @@ describe('POST /prompts/test — §7.4: writes nothing', () => {
     expect((await post('/api/admin/prompts/test', { target: 'simplification', promptText: 'p' })).status).toBe(400);
   });
 
-  it('reports the words-per-sentence check against the age limit (§7.3)', async () => {
-    const body = await (await post('/api/admin/prompts/test', testBody({ age: 6 }))).json();
-    // age * 2: every reading age has its own limit now that a story exists in
-    // one version per age. Age 6 is 12, where the old three-band rule said 14.
-    expect(body.draft.validation.ageLimit).toBe(12);
+  it('reports the words-per-sentence check against the band limit (§7.3)', async () => {
+    const body = await (await post('/api/admin/prompts/test', testBody({ age: 8 }))).json();
+    // §9.2's band rule: the 8-10 band allows 20 words per sentence.
+    expect(body.draft.validation.ageLimit).toBe(20);
     expect(typeof body.draft.validation.longestSentenceWords).toBe('number');
     expect(typeof body.draft.validation.withinAgeLimit).toBe('boolean');
   });
 
-  it('reports a different limit for a different age, proving it honours the age', async () => {
+  it('reports a different limit for a different band, proving it honours the band', async () => {
     const younger = await (await post('/api/admin/prompts/test', testBody({ age: 5 }))).json();
-    const older = await (await post('/api/admin/prompts/test', testBody({ age: 14 }))).json();
+    const older = await (await post('/api/admin/prompts/test', testBody({ age: 11 }))).json();
 
-    expect(younger.draft.validation.ageLimit).toBe(10);
+    expect(younger.draft.validation.ageLimit).toBe(14);
     expect(older.draft.validation.ageLimit).toBe(28);
   });
 

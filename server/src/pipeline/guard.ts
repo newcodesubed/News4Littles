@@ -65,7 +65,7 @@ export function denyListGuard(text: string, denyList: string[]): GuardResult {
 /**
  * §6: "the strictest result wins", over bare verdicts.
  *
- * The one place that knows the severity order. A story's ten age versions, a
+ * The one place that knows the severity order. A story's band versions, a
  * set of guard results and a review-queue row all need "the worst of these",
  * and three copies of this comparison would be three chances to let a
  * skip-young story present as calm.

@@ -4,22 +4,18 @@
  * Deterministic and dependency-free: no LLM, no network, no clock, no database.
  * Everything here is a pure function of its arguments.
  */
-import type { VocabEntry } from '../core/article.js';
+import { bandForAge, type VocabEntry } from '../core/article.js';
 
 /**
- * Words per sentence for one reading age.
+ * Words per sentence for one reading age — §9.2's three bands: "<=7 -> max 14
+ * words/sentence; <=10 -> 20; else 28".
  *
- * §9.2 states three bands: "<=7 -> max 14 words/sentence; <=10 -> 20; else 28".
- * A story now exists in one version per age (5-14), so three bands would make
- * ages 5, 6 and 7 byte-identical and the reading-age slider would still change
- * nothing across most of its travel.
- *
- * `age * 2` reproduces all three of §9.2's anchors exactly — 7 -> 14, 10 -> 20,
- * 14 -> 28 — while giving every age its own limit. Ages below an anchor do get
- * shorter sentences than before (age 5 goes from 14 to 10), which is the point.
+ * The bands are the same ones a story is written in (AGE_BANDS), so the
+ * fallback and the LLM path agree on what a "version" is: every age in a band
+ * gets the same limit because every age in a band reads the same version.
  */
 export function maxWordsForAge(ageTarget: number): number {
-  return ageTarget * 2;
+  return bandForAge(ageTarget).maxWordsPerSentence;
 }
 
 /**
