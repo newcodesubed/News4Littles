@@ -132,10 +132,11 @@ story-scoped and move the whole row.
 - Drives highlighting from the **chunk index**, not `onboundary`. Word-level
   boundary events are reliable only in Chrome and Edge; sentence boundaries are
   ours, so they work everywhere.
-- Waits for `voiceschanged`, which fires asynchronously and may fire before the
-  hook mounts, and cancels on unmount so speech does not outlive the page.
-- Reports `unsupported` when `speechSynthesis` is absent, and the button is not
-  rendered rather than rendered dead.
+- Uses the device's default voice — no `voiceschanged` listener and no
+  `getVoices()` call, because the hook never selects a voice — and cancels on
+  unmount so speech does not outlive the page.
+- Reports `supported: boolean` when `speechSynthesis` is absent, and the button
+  is not rendered rather than rendered dead.
 
 Playback needs a user gesture, so there is no autoplay. Voice quality is the
 device's, not ours: good on iOS and macOS, acceptable on Windows, often robotic
