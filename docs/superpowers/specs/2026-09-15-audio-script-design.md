@@ -124,6 +124,17 @@ editing sets `editedByHuman`, which is already per-version. `PATCH /articles/:id
 accepts it. Publish, reject, unpublish and delete need no change — they are
 story-scoped and move the whole row.
 
+`ViewArticleDialog` — the screen an editor decides from — shows the stored
+script under the story, per reading group. `StoryPreview` is deliberately left
+alone: it is shared with the public story page, which never shows the script.
+
+**Auto mode.** `audioScript` joins the judged fields in `approvalGuard.ts`: the
+prompt's fenced field list, the injection pre-scan, and the `Judged` type. The
+model writes the script from the ARTICLE rather than from the finished story,
+so judging the other five fields would leave a separately generated piece of
+text unread on the one path that has no editor. A `null` script contributes no
+field rather than an empty one.
+
 **Speech.** A new `web/src/lib/useSpeech.ts`:
 
 - Splits the script into sentences and queues **one utterance per sentence**.
@@ -137,6 +148,17 @@ story-scoped and move the whole row.
   unmount so speech does not outlive the page.
 - Reports `supported: false` when `speechSynthesis` is absent, and the button
   is not rendered rather than rendered dead.
+- Treats `error` as an ending. Per the spec a cancelled utterance fires
+  `error`, not `end`; Chrome papers over it by firing `end`, which is why only
+  Chrome looked right. A genuine `synthesis-failed` arrives the same way, and
+  either one would otherwise leave the UI speaking forever.
+- Hands over the tab's single queue. `speechSynthesis` is one queue per TAB, so
+  pressing play on a second story cancels the first story's utterances. A
+  module-level "who is speaking" reference is released before `play()` cancels,
+  so the displaced story resets instead of keeping a highlighted sentence and a
+  Pause button that would stop the story now playing. It is module-level
+  because the one-speaker-per-tab constraint is the browser's, not the
+  component tree's.
 
 Playback needs a user gesture, so there is no autoplay. Voice quality is the
 device's, not ours: good on iOS and macOS, acceptable on Windows, often robotic
@@ -159,28 +181,33 @@ would go blank for all of them. It decays on its own as stories turn over.
 - **The intro and closing copy.** Static page text, not story content, and
   nothing generates them.
 - **Model call count.** Still three per story plus the shared §6.2 guard.
-- **Auto-approve.** A missing script is not a pipeline fallback and never
-  enters `outcome.fallbacks`, so it cannot hold a story from publishing. A
-  version with no script publishes normally and shows no play button.
+- **What holds a story in auto mode.** A missing script is not a pipeline
+  fallback and never enters `outcome.fallbacks`, so it cannot hold a story from
+  publishing. A version with no script publishes normally and shows no play
+  button. The judge does read the script when there is one — see §3.
 - **The public API shape**, apart from the new field. Only published versions
   are served, so a script reaches a child only after approval.
 
 ## 5. Testing
 
-**Server.** 619 tests passing. The parser keeps a well-formed script, nulls an
+**Server.** 628 tests passing. The parser keeps a well-formed script, nulls an
 empty or non-string one, and — the case that matters — still parses an article
 whose `audioScript` is malformed, without falling back. Both seeded prompts
 request the field. A generated version round-trips the script through insert
 and read. `PATCH` accepts an edited script and sets `editedByHuman`. Regenerate
 carries it into the preview and writes it on apply. The rule-based fallback
-yields `null`.
+yields `null`. The auto-mode judge is shown the script, and an injection
+attempt inside it is refused before the call is spent.
 
-**Web.** 281 tests passing. `useSpeech` against a mocked `speechSynthesis` —
+**Web.** 286 tests passing. `useSpeech` against a mocked `speechSynthesis` —
 jsdom has none — sentences are queued one utterance at a time, the highlight
-advances with the chunk, cancel stops playback, unmount cancels, and
+advances with the chunk, cancel stops playback, an `error` clears the highlight
+without touching a queue that is now someone else's, a second story takes the
+queue and leaves the first with no stale Pause, unmount cancels, and
 `unsupported` renders no button. The podcast page shows a stored script when
 present, falls back to the assembled one when `null`, and plays what it
-displays.
+displays. The review dialog shows the stored script, and says so when there is
+none.
 
 ## 6. Work
 

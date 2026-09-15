@@ -449,8 +449,8 @@ it instead); and JSON columns are checked with `json_valid`.
 ## Tests
 
 ```bash
-cd server && npm test    # 619 tests
-cd web    && npm test    # 281 tests
+cd server && npm test    # 628 tests
+cd web    && npm test    # 286 tests
 ```
 
 Both suites are offline and free. Each server suite gets its own temporary
