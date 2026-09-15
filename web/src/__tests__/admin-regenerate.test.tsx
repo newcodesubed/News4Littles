@@ -213,7 +213,7 @@ describe('starting a story-scoped regeneration', () => {
 
 describe('coming back to a preview the server still holds', () => {
   it('picks up a finished preview without regenerating again', async () => {
-    // The editor left the queue and came back. Those ten calls are already
+    // The editor left the queue and came back. Those three calls are already
     // paid for, so the preview is theirs to apply or discard.
     jobExists = true;
     jobRunning = false;

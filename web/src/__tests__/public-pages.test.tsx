@@ -243,14 +243,15 @@ describe('the reading-age slider changes the story (§6)', () => {
   });
 });
 
-describe('exact age matching (§6)', () => {
+describe('exact band matching (§6)', () => {
   it('shows the story the API served, with no age caveat', () => {
-    // Exact match only: a story exists in one version per age, so whatever the
-    // feed returns IS the version written for this reader. There is no
-    // "closest version" note, because there is no closest-version behaviour.
-    renderIn(<StoryCard article={article({ ageTarget: 7, kidHeadline: 'Written for age 7' })} />);
+    // Exact match only: a story exists in one version per reading band and the
+    // API resolves the reader's age to a band, so whatever the feed returns IS
+    // the version written for this reader. There is no "closest version" note,
+    // because there is no closest-version behaviour.
+    renderIn(<StoryCard article={article({ ageTarget: 8, kidHeadline: 'Written for ages 8–10' })} />);
 
-    expect(screen.getByText('Written for age 7')).toBeInTheDocument();
+    expect(screen.getByText('Written for ages 8–10')).toBeInTheDocument();
     expect(screen.queryByText(/closest version/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/written for age \d+ —/i)).not.toBeInTheDocument();
   });

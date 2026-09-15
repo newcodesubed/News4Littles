@@ -19,7 +19,7 @@ import { DATABASE_PATH, openDatabase } from './connection.js';
  * 2 — added scrape_runs (§4.4 last-run results).
  * 3 — added raw_articles.simplifiedAt, app_settings.simplifyBudget and the
  *     scrape_runs simplification counts (the per-run simplification budget).
- * 4 — added scrape_runs.versions (one story now yields one version per age).
+ * 4 — added scrape_runs.versions (one story yields several versions).
  * 5 — added kid_articles.approvedBy (records an auto-approved publish).
  */
 export const SCHEMA_VERSION = 5;
