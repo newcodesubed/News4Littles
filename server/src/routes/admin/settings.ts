@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import type { Database } from 'better-sqlite3';
 import { BadRequestError } from '../../core/errors.js';
-import { MAX_AGE, MIN_AGE } from '../../core/article.js';
+import { AGE_BAND_ANCHORS, isAgeBandAnchor } from '../../core/article.js';
 import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
 import {
   optionalString, requireInt, requireReaderAge, requireTimeOfDay,
@@ -40,12 +40,13 @@ function readAgeOverrides(value: unknown): Record<string, string> {
     typeof value === 'object' && value !== null && !Array.isArray(value) &&
     Object.entries(value).every(
       ([age, prompt]) =>
-        /^\d+$/.test(age) && Number(age) >= MIN_AGE && Number(age) <= MAX_AGE && typeof prompt === 'string',
+        /^\d+$/.test(age) && isAgeBandAnchor(Number(age)) && typeof prompt === 'string',
     );
 
   if (!valid) {
     throw new BadRequestError(
-      `ageOverrides must be an object mapping an age from ${MIN_AGE} to ${MAX_AGE} to a prompt string.`,
+      `ageOverrides must be an object mapping a reading band's youngest age `
+      + `(${AGE_BAND_ANCHORS.join(', ')}) to a prompt string.`,
     );
   }
   return value as Record<string, string>;

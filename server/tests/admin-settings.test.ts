@@ -117,11 +117,11 @@ describe('translation prompts (§8.5)', () => {
     expect(config.inertUntilLlm).toBe(true);
   });
 
-  it('saves the generic prompt and age overrides', async () => {
-    await put('/api/admin/prompt-config', { genericPrompt: 'New prompt', ageOverrides: { '6': 'Age six' } });
+  it('saves the generic prompt and band overrides', async () => {
+    await put('/api/admin/prompt-config', { genericPrompt: 'New prompt', ageOverrides: { '8': 'Ages 8 to 10' } });
     const config = await json('/api/admin/prompt-config');
     expect(config.genericPrompt).toBe('New prompt');
-    expect(config.ageOverrides['6']).toBe('Age six');
+    expect(config.ageOverrides['8']).toBe('Ages 8 to 10');
   });
 
   it('does not let the version counter be written by hand (§7.5)', async () => {
@@ -132,6 +132,9 @@ describe('translation prompts (§8.5)', () => {
 
   it.each([
     ['an out-of-range override age', { genericPrompt: 'x', ageOverrides: { '99': 'y' } }],
+    // An override at 6 is one selectPrompt would never look up: a version is
+    // written for a band anchor, so only an anchor can carry an override.
+    ['an override age that is not a band anchor', { genericPrompt: 'x', ageOverrides: { '6': 'y' } }],
     ['a non-string prompt', { genericPrompt: 5, ageOverrides: {} }],
     ['an array instead of a map', { genericPrompt: 'x', ageOverrides: [] }],
   ])('rejects %s with 400', async (_label, body) => {
