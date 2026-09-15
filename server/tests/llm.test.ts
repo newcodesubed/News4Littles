@@ -399,6 +399,24 @@ describe('the seeded prompts must keep their safety criteria', () => {
     // One version serves three or four ages, so the model must be told so.
     expect(GENERIC_SIMPLIFICATION_PROMPT).toContain('{{ageRange}}');
   });
+
+  // An override REPLACES the generic prompt (§9.1), so a field taught only to
+  // the generic one leaves ages 5-7 — the youngest readers, who need listening
+  // most — as the single band with no spoken version.
+  it.each([
+    ['generic', GENERIC_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
+  ])('%s prompt asks for an audioScript', (_label, prompt) => {
+    expect(prompt).toContain('"audioScript"');
+  });
+
+  it.each([
+    ['generic', GENERIC_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
+  ])('%s prompt tells the model to write the script from the article', (_label, prompt) => {
+    // Otherwise it summarises its own summary and the spoken version is flat.
+    expect(prompt).toContain('from the article');
+  });
 });
 
 describe('sharing one prompt-guard verdict across bands', () => {

@@ -51,6 +51,7 @@ Return ONLY a JSON object — no markdown fences, no commentary — in exactly t
   "whyItMatters": "Two or three short sentences on why it is interesting or important.",
   "vocab": [{ "word": "reef", "definition": "A ridge of coral or rock near the surface of the sea." }],
   "thinkAbout": "One open question inviting the child to think or talk about the story.",
+  "audioScript": "The story told out loud for radio, for children aged {{ageRange}}. 60 to 90 words.",
   "feelingNote": "One or two reassuring sentences, but ONLY if the story could worry a child. Otherwise null.",
   "safety": "calm",
   "contentWarnings": [],
@@ -82,6 +83,12 @@ Field notes:
 - "vocab" holds two to four words that ACTUALLY APPEAR in the story. Never proper
   nouns, brand names or people's names — choose words a child would need
   explained.
+- "audioScript" is the same story as a newsreader would say it out loud to
+  children aged {{ageRange}}. Write it from the article, not from the summary
+  you just wrote — it is a second telling of the news, not a reading of the
+  first. Say what happened first. One idea per sentence. Never a clause a
+  listener has to hold in their head while you finish. No headings, no bullet
+  points, no stage directions, no "welcome back". 60 to 90 words.
 - "readingMinutes" is a whole number, at least 1.`;
 
 /** The 5-7 band: children who are just learning to read. Keyed by '5'. */
@@ -111,6 +118,7 @@ Return ONLY a JSON object — no markdown fences, no commentary — in exactly t
   "whyItMatters": "One or two very short sentences.",
   "vocab": [{ "word": "reef", "definition": "A long line of rock and coral under the sea." }],
   "thinkAbout": "One simple question a grown-up could ask at the dinner table.",
+  "audioScript": "The story read out loud to a 5-year-old. 40 to 60 words.",
   "feelingNote": "One gentle, reassuring sentence, but ONLY if the story could worry a child. Otherwise null.",
   "safety": "calm",
   "contentWarnings": [],
@@ -135,4 +143,8 @@ Field notes:
   it is not.
 - "vocab" holds exactly two words that appear in the story, each explained in
   under 12 words. Never proper nouns, brand names or people's names.
+- "audioScript" is the same story as a kind grown-up would read it out loud to
+  a 5-year-old. Write it from the article, not from the sentences you just
+  wrote. Very short sentences, one idea each. Warm and calm. No headings, no
+  bullet points, no stage directions. 40 to 60 words.
 - "readingMinutes" is a whole number, at least 1.`;
