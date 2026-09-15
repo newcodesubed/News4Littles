@@ -18,7 +18,7 @@ import bcrypt from 'bcryptjs';
 import { ADMIN_PASSWORD, ADMIN_USERNAME } from '../env.js';
 import { DATABASE_PATH, openDatabase } from './connection.js';
 import { initialiseSchema } from './init.js';
-import { AGE_6_SIMPLIFICATION_PROMPT, GENERIC_SIMPLIFICATION_PROMPT } from './seed-prompts.js';
+import { GENERIC_SIMPLIFICATION_PROMPT, YOUNG_READERS_SIMPLIFICATION_PROMPT } from './seed-prompts.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -102,13 +102,13 @@ export function seed(path: string = DATABASE_PATH): SeedResult {
        ON CONFLICT (id) DO NOTHING`,
     ).run({
       genericPrompt: GENERIC_SIMPLIFICATION_PROMPT,
-      // Record<string, string>: age -> complete replacement prompt.
-      // Age 6 is seeded because it is the default reading age (§3.6) and it
-      // demonstrates the override mechanism for the sandbox.
-      ageOverrides: JSON.stringify({ '6': AGE_6_SIMPLIFICATION_PROMPT }),
+      // Record<string, string>: band anchor -> complete replacement prompt.
+      // The 5-7 band is seeded because the default reading age (6, §3.6) falls
+      // in it, and it is the band where the generic prompt is least suited.
+      ageOverrides: JSON.stringify({ '5': YOUNG_READERS_SIMPLIFICATION_PROMPT }),
       // versions stays '{}': nothing has been promoted through the sandbox yet,
       // so there are no PromptVersion records to count. Key convention for
-      // later code: 'guard', 'simplification', 'simplification:6'.
+      // later code: 'guard', 'simplification', 'simplification:5'.
       now,
     }).changes);
 

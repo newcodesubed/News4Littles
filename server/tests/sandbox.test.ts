@@ -71,7 +71,8 @@ describe('GET /prompts', () => {
   it('returns the live prompts, drafts, versions and template variables', async () => {
     const body = await (await ctx.api('/api/admin/prompts')).json();
     expect(body.simplification.generic).toContain('rewriting a real news story');
-    expect(body.simplification.ageOverrides['6']).toBeTruthy();
+    // The seeded override is keyed by its band's anchor, not a single age.
+    expect(body.simplification.ageOverrides['5']).toBeTruthy();
     expect(body.templateVariables).toContain('{{headline}}');
     expect(body.templateVariables).toContain('{{ageRange}}');
     expect(body.versions).toEqual({});
@@ -326,9 +327,9 @@ describe('GET /prompts/production — the "reset to production" source', () => {
     expect(body.promptText).toContain('rewriting a real news story');
   });
 
-  it('returns the age override when one exists', async () => {
-    const body = await (await ctx.api('/api/admin/prompts/production?target=simplification&age=6')).json();
-    expect(body.promptText).toContain('6-year-old');
+  it('returns the band override when one exists', async () => {
+    const body = await (await ctx.api('/api/admin/prompts/production?target=simplification&age=5')).json();
+    expect(body.promptText).toContain('aged 5 to 7');
   });
 
   it('falls back to generic for an age with no override', async () => {

@@ -8,11 +8,17 @@
  * promote new versions; seeding them empty would leave nothing to test against.
  *
  * Template variables available (§7.3): {{headline}}, {{body}}, {{category}},
- * {{sourceName}}, {{age}}.
+ * {{sourceName}}, {{age}}, {{ageRange}}.
  *
- * NOTE: an age override REPLACES the generic prompt rather than extending it
+ * A story is written once per reading BAND (AGE_BANDS: 5-7, 8-10, 11-14), so
+ * {{age}} is the band's youngest age and {{ageRange}} the whole band. The
+ * generic prompt frames the story for the band and pitches vocabulary at its
+ * youngest reader, which is the safe direction for a children's product.
+ *
+ * NOTE: an override REPLACES the generic prompt rather than extending it
  * (§9.1: "age-specific override if it exists, else generic"), so each override
- * must be a complete, standalone prompt.
+ * must be a complete, standalone prompt. Overrides are keyed by the band's
+ * youngest age.
  *
  * The safety criteria below are deliberately explicit. With only the three-line
  * description they replaced, a real model rated a story about four people killed
@@ -20,7 +26,7 @@
  * these criteria it was 5 of 5, in the same single call.
  */
 
-export const GENERIC_SIMPLIFICATION_PROMPT = `You are rewriting a real news story for a {{age}}-year-old child.
+export const GENERIC_SIMPLIFICATION_PROMPT = `You are rewriting a real news story for children aged {{ageRange}}.
 
 SOURCE: {{sourceName}}
 CATEGORY: {{category}}
@@ -32,7 +38,7 @@ ARTICLE:
 Rules:
 - Stay true to the article. Never invent facts, numbers, names or quotes. If the article does not say something, leave it out.
 - Write calmly. Do not sensationalise and do not frighten.
-- Keep sentences short and use everyday words a {{age}}-year-old knows.
+- Keep sentences short and use everyday words a {{age}}-year-old knows, so the youngest readers can follow it too.
 - Do not describe violence, injury or death in detail. State plainly that it happened and move on.
 - Explain any word a {{age}}-year-old is unlikely to know.
 
@@ -78,7 +84,8 @@ Field notes:
   explained.
 - "readingMinutes" is a whole number, at least 1.`;
 
-export const AGE_6_SIMPLIFICATION_PROMPT = `You are rewriting a real news story for a 6-year-old child who is just learning to read.
+/** The 5-7 band: children who are just learning to read. Keyed by '5'. */
+export const YOUNG_READERS_SIMPLIFICATION_PROMPT = `You are rewriting a real news story for children aged 5 to 7 who are just learning to read.
 
 SOURCE: {{sourceName}}
 CATEGORY: {{category}}
@@ -93,7 +100,7 @@ Rules:
 - Use simple, common words. Avoid "actually", "essentially", "moreover", "furthermore", "subsequently".
 - Be warm and calm. Never frightening.
 - Do not describe violence, injury or death. If the story is about those things, keep it to a single gentle sentence.
-- Prefer concrete things a 6-year-old can picture over abstract ideas.
+- Prefer concrete things a 5-year-old can picture over abstract ideas.
 
 Return ONLY a JSON object — no markdown fences, no commentary — in exactly this shape:
 

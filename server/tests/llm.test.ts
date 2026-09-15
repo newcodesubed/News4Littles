@@ -11,7 +11,9 @@ import {
   parseLlmContent, renderPrompt, selectPrompt, LlmResponseError, TEMPLATE_VARIABLES,
 } from '../src/llm/llmSimplifier.js';
 import { simplifyArticle, simplifyArticleForAllAges } from '../src/pipeline/simplifyArticle.js';
-import { AGE_6_SIMPLIFICATION_PROMPT, GENERIC_SIMPLIFICATION_PROMPT } from '../src/db/seed-prompts.js';
+import {
+  GENERIC_SIMPLIFICATION_PROMPT, YOUNG_READERS_SIMPLIFICATION_PROMPT,
+} from '../src/db/seed-prompts.js';
 import { createTestContext, type TestContext } from './helpers.js';
 
 const RAW = {
@@ -323,10 +325,10 @@ describe('simplifyArticle orchestration', () => {
 
   it('reports which prompt was used', async () => {
     const out = await simplifyArticle(ctx.db, RAW, {
-      client: withClient(completion(JSON.stringify(GOOD))), ageTarget: 6,
+      client: withClient(completion(JSON.stringify(GOOD))), ageTarget: 5,
     });
-    // The seed ships an age-6 override.
-    expect(out.promptSource).toBe('age-6');
+    // The seed ships an override for the 5-7 band, keyed by its anchor.
+    expect(out.promptSource).toBe('age-5');
   });
 });
 
@@ -338,14 +340,14 @@ describe('the seeded prompts must keep their safety criteria', () => {
    */
   it.each([
     ['generic', GENERIC_SIMPLIFICATION_PROMPT],
-    ['age-6', AGE_6_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
   ])('%s prompt tells the model to judge the subject, not its own rewrite', (_label, prompt) => {
     expect(prompt).toContain('Judge the SUBJECT of the story');
   });
 
   it.each([
     ['generic', GENERIC_SIMPLIFICATION_PROMPT],
-    ['age-6', AGE_6_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
   ])('%s prompt names the skip-young triggers from §6.1', (_label, prompt) => {
     for (const trigger of ['war', 'killing', 'attack', 'violence']) {
       expect(prompt.toLowerCase()).toContain(trigger);
@@ -354,7 +356,7 @@ describe('the seeded prompts must keep their safety criteria', () => {
 
   it.each([
     ['generic', GENERIC_SIMPLIFICATION_PROMPT],
-    ['age-6', AGE_6_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
   ])('%s prompt biases towards the stricter level when unsure', (_label, prompt) => {
     expect(prompt).toContain('choose the STRICTER one');
   });
@@ -362,6 +364,11 @@ describe('the seeded prompts must keep their safety criteria', () => {
   it('generic prompt forbids proper nouns as vocabulary', () => {
     // It picked "Volkswagen, Audi, Porsche, Skoda" as words to know.
     expect(GENERIC_SIMPLIFICATION_PROMPT).toContain('Never proper');
+  });
+
+  it('generic prompt frames the story for the whole band, not one age', () => {
+    // One version serves three or four ages, so the model must be told so.
+    expect(GENERIC_SIMPLIFICATION_PROMPT).toContain('{{ageRange}}');
   });
 });
 
