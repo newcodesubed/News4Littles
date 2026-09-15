@@ -15,7 +15,7 @@ import { BadRequestError } from '../core/errors.js';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
-import { simplifyArticleForAllAges } from '../pipeline/simplifyArticle.js';
+import { simplifyStory } from '../pipeline/simplifyArticle.js';
 import { strictestSafety } from '../pipeline/guard.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 
@@ -27,9 +27,9 @@ export interface SimplifiedRow {
   kidHeadline: string;
   /** The strictest safety across every version — what an editor must see first. */
   safety: string;
-  /** 'llm', 'local-fallback', or 'mixed' when the ages disagree. */
+  /** 'llm', 'local-fallback', or 'mixed' when the bands disagree. */
   engine: string;
-  /** How many versions were written. Ten unless something failed. */
+  /** How many versions were written: one per reading band. */
   versions: number;
   costUsd: number;
   fallbackReason?: string;
@@ -91,9 +91,9 @@ export async function simplifyRawArticles(
       }
 
       const now = clock();
-      // One version per reading age (§3.6). simplifyArticle never throws: it
-      // falls back to the rule-based pipeline (§9.2) per age and flags why.
-      const outcome = await simplifyArticleForAllAges(
+      // One version per reading band (§3.6). simplifyArticle never throws: it
+      // falls back to the rule-based pipeline (§9.2) per band and flags why.
+      const outcome = await simplifyStory(
         db,
         {
           id: raw.id,
@@ -110,8 +110,8 @@ export async function simplifyRawArticles(
       );
 
       const claimed = db.transaction(() => {
-        // The claim and every version commit together: a story holding four of
-        // ten versions cannot be reviewed or published coherently.
+        // The claim and every version commit together: a story holding two of
+        // three versions cannot be reviewed or published coherently.
         if (!raws.markSimplified(raw.id, now)) return false;
         for (const version of outcome.versions) {
           articles.insert({
@@ -136,8 +136,8 @@ export async function simplifyRawArticles(
         rawId: raw.id,
         sourceId: raw.sourceId,
         kidHeadline: outcome.versions[0].article.kidHeadline,
-        // The strictest across ages, so the queue cannot show 'calm' for a
-        // story that is 'skip-young' at age 5.
+        // The strictest across bands, so the queue cannot show 'calm' for a
+        // story that is 'skip-young' for ages 5-7.
         safety: strictestSafety(outcome.versions.map((version) => version.article.safety)),
         engine: engines.size === 1 ? [...engines][0] : 'mixed',
         versions: outcome.versions.length,
@@ -186,8 +186,9 @@ export function resetSimplifyJob(): void {
 
 /**
  * Begin a manual batch and return immediately; the client polls for progress.
- * Fifteen articles is a minute or more of sequential model calls, which is too
- * long to hold an HTTP request open — the same reason scraping works this way.
+ * Fifteen articles is a minute or more of sequential model calls (three per
+ * story), which is too long to hold an HTTP request open — the same reason
+ * scraping works this way.
  */
 export function startSimplifyJob(
   db: Database,

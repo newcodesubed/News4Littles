@@ -8,7 +8,7 @@
  */
 import type { Database } from 'better-sqlite3';
 import { LLM_ENABLED, LLM_MODEL } from '../env.js';
-import { MAX_AGE, MIN_AGE, type KidArticle } from '../core/article.js';
+import { AGE_BANDS, formatAgeBand, type AgeBand, type KidArticle } from '../core/article.js';
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { OpenRouterClient } from '../llm/openRouterClient.js';
 import {
@@ -41,6 +41,11 @@ export interface SimplifyOutcome {
 }
 
 export interface SimplifyOptions extends LocalPipelineOptions {
+  /**
+   * A band's anchor (AGE_BAND_ANCHORS) for anything that will be stored;
+   * callers that only preview may pass any age. Defaults to the band the
+   * configured default age falls in.
+   */
   ageTarget?: number;
   /** Force the rule-based path — used to produce a comparison. */
   forceLocal?: boolean;
@@ -52,8 +57,8 @@ export interface SimplifyOptions extends LocalPipelineOptions {
   /**
    * A prompt-guard verdict already obtained for this article. §6.2's guard
    * judges the SOURCE text, which does not vary by age, so a caller producing
-   * one version per age runs it once and passes the same outcome in for all
-   * ten — otherwise the guard costs ten calls per story instead of one.
+   * one version per band runs it once and passes the same outcome in for all
+   * of them — otherwise the guard costs one call per band instead of one.
    */
   promptGuard?: PromptGuardOutcome;
 }
@@ -105,8 +110,8 @@ export async function simplifyArticle(
     sourceName: raw.sourceName,
     age: config.ageTarget,
   };
-  // A caller doing one version per age supplies the verdict rather than paying
-  // for it once per age.
+  // A caller doing one version per band supplies the verdict rather than
+  // paying for it once per band.
   const promptGuard =
     options.promptGuard ??
     (guardConfig.promptGuardEnabled
@@ -203,67 +208,66 @@ export async function simplifyArticle(
   }
 }
 
-/** Every reading age the slider offers (§3.6), ascending. */
-const ALL_AGES = Array.from({ length: MAX_AGE - MIN_AGE + 1 }, (_, i) => MIN_AGE + i);
-
-export interface AllAgesOutcome {
-  /** One per age, MIN_AGE..MAX_AGE, in ascending age order. */
+export interface StoryOutcome {
+  /** One per band, ascending by band. */
   versions: SimplifyOutcome[];
   /** The shared §6.2 verdict, present only when the guard ran. */
   promptGuard?: PromptGuardOutcome;
   /** Summed across every version plus the one guard call. */
   costUsd: number;
-  /** One entry per age that fell back, already prefixed with its age. */
+  /** One entry per band that fell back, already prefixed with its ages. */
   fallbacks: string[];
 }
 
 /**
- * The all-ages options, on top of everything one age already takes.
+ * The per-story options, on top of everything one version already takes.
  *
- * `perAge` exists because a REGENERATION rewrites stored rows: each age has to
- * be built with the id and createdAt of the row it will replace, or ten
- * versions would either collide on one id or arrive as ten strangers.
+ * `perBand` exists because a REGENERATION rewrites stored rows: each band has
+ * to be built with the id and createdAt of the row it will replace, or the
+ * versions would either collide on one id or arrive as strangers.
  */
-export interface AllAgesOptions extends Omit<SimplifyOptions, 'ageTarget' | 'promptGuard'> {
-  /** Which ages to build, ascending. Defaults to every age (§3.6). */
-  ages?: number[];
-  /** Per-age identity, so a regeneration writes back to the stored rows. */
-  perAge?: (ageTarget: number) => { id?: string; now?: string } | undefined;
-  /** Called with the number of ages attempted so far, for progress polling. */
+export interface StoryOptions extends Omit<SimplifyOptions, 'ageTarget' | 'promptGuard'> {
+  /** Which bands to build, ascending. Defaults to every band (§3.6). */
+  bands?: readonly AgeBand[];
+  /** Per-band identity, so a regeneration writes back to the stored rows. */
+  perBand?: (band: AgeBand) => { id?: string; now?: string } | undefined;
+  /** Called with the number of bands attempted so far, for progress polling. */
   onProgress?: (done: number) => void;
 }
 
+/** "ages 5–7", for a fallback reason a reviewer reads. */
+const describeBand = (band: AgeBand) => `ages ${formatAgeBand(band)}`;
+
 /**
- * One version of a story per reading age (§3.6), so the public slider selects
- * real content rather than relabelling one version.
+ * One version of a story per reading band (AGE_BANDS), so the public slider
+ * selects real content rather than relabelling one version.
  *
- * Ten calls, not one combined call: every stored prompt template embeds the
- * article and its own JSON envelope, so combining them would either send the
- * article ten times or mangle the templates — and the saving was 40 cents a
- * month against losing per-age prompt control and the sandbox's fidelity to
- * production (§7.4).
+ * One call per band, not one combined call: every stored prompt template
+ * embeds the article and its own JSON envelope, so combining them would either
+ * send the article once per band or mangle the templates, and would lose
+ * per-band prompt control and the sandbox's fidelity to production (§7.4).
  *
  * The §6.2 prompt guard runs ONCE and is shared, because it judges the source
- * article and that does not vary by age.
+ * article and that does not vary by band.
  *
  * Sequential on purpose. A run is already a background job that warns it takes
  * minutes, and limited concurrency is a later change that has to consider the
  * provider's rate limits.
  */
-export async function simplifyArticleForAllAges(
+export async function simplifyStory(
   db: Database,
   raw: RawArticleInput,
-  options: AllAgesOptions = {},
-): Promise<AllAgesOutcome> {
+  options: StoryOptions = {},
+): Promise<StoryOutcome> {
   const settings = createSettingsRepository(db);
   const guardConfig = settings.getGuardConfig();
-  const { ages = ALL_AGES, perAge, onProgress, ...perCall } = options;
+  const { bands = AGE_BANDS, perBand, onProgress, ...perCall } = options;
 
-  // Shared across every age. Uses the youngest age being built purely to
+  // Shared across every band. Uses the youngest band being built purely to
   // render the guard prompt's {{age}} variable; the verdict is about the
-  // source text, which does not vary by age.
+  // source text, which does not vary by band.
   let promptGuard: PromptGuardOutcome | undefined;
-  if (guardConfig.promptGuardEnabled && !options.forceLocal) {
+  if (guardConfig.promptGuardEnabled && !options.forceLocal && bands.length > 0) {
     const client = options.client ?? new OpenRouterClient({ model: options.model });
     promptGuard = await runPromptGuard(
       guardConfig.promptGuardText,
@@ -272,7 +276,7 @@ export async function simplifyArticleForAllAges(
         body: raw.body,
         category: raw.topic,
         sourceName: raw.sourceName,
-        age: ages[0],
+        age: bands[0]!.minAge,
       },
       client,
     );
@@ -283,16 +287,16 @@ export async function simplifyArticleForAllAges(
   let costUsd = promptGuard?.costUsd ?? 0;
 
   let done = 0;
-  for (const ageTarget of ages) {
+  for (const band of bands) {
     const outcome = await simplifyArticle(db, raw, {
-      ...perCall, ...perAge?.(ageTarget), ageTarget, promptGuard,
+      ...perCall, ...perBand?.(band), ageTarget: band.minAge, promptGuard,
     });
 
     versions.push(outcome);
     costUsd += outcome.costUsd ?? 0;
-    // Prefixed with the age: a reviewer needs to know WHICH version is weaker,
-    // and with per-age calls a story can be nine parts LLM and one part local.
-    if (outcome.fallbackReason) fallbacks.push(`age ${ageTarget}: ${outcome.fallbackReason}`);
+    // Prefixed with the band: a reviewer needs to know WHICH version is weaker,
+    // and with per-band calls a story can be two parts LLM and one part local.
+    if (outcome.fallbackReason) fallbacks.push(`${describeBand(band)}: ${outcome.fallbackReason}`);
 
     done += 1;
     onProgress?.(done);

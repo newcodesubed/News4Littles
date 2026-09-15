@@ -12,9 +12,7 @@ import { createArticleRepository } from '../db/repositories/articleRepository.js
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository } from '../db/repositories/sourceRepository.js';
 import { loadLocalPipelineConfig } from '../pipeline/localPipeline.js';
-import {
-  simplifyArticle, simplifyArticleForAllAges, type SimplifyOutcome,
-} from '../pipeline/simplifyArticle.js';
+import { simplifyArticle, simplifyStory, type SimplifyOutcome } from '../pipeline/simplifyArticle.js';
 import type { GuardResult } from '../pipeline/guard.js';
 
 /** §4.2's source dropdown includes 'manual'; §4.3 submissions belong to it. */
@@ -26,6 +24,7 @@ export interface Submission {
   sourceUrl: string;
   body: string;
   category: string;
+  /** A band anchor (AGE_BAND_ANCHORS): the version the editor previews and edits. */
   ageTarget: number;
 }
 
@@ -89,16 +88,16 @@ export async function simplifySubmission(
 }
 
 /**
- * Store a manual submission as a full story — one version per reading age.
+ * Store a manual submission as a full story — one version per reading band.
  *
- * A story is one raw article's ten age versions (§3.6), and every story-scoped
- * action assumes they exist: a submission saved at one age could be published
- * but never regenerated for the other nine, and readers outside that age saw
- * nothing. So this runs the same all-ages pass the scraper does, which also
- * spends ONE §6.2 prompt-guard call for the story rather than one per age.
+ * A story is one raw article's band versions (§3.6), and every story-scoped
+ * action assumes they exist: a submission saved for one band could be
+ * published but never regenerated for the others, and readers outside that
+ * band saw nothing. So this runs the same per-band pass the scraper does, which
+ * also spends ONE §6.2 prompt-guard call for the story rather than one per band.
  *
- * The form reviews a single age, so the editor's text edits belong to THAT
- * version only; the other nine are machine output and stay unedited, keeping
+ * The form reviews a single band, so the editor's text edits belong to THAT
+ * version only; the others are machine output and stay unedited, keeping
  * editedByHuman per-version as §5 requires. The reviewed version is what comes
  * back, so the route's response is the article the editor was looking at.
  *
@@ -122,10 +121,10 @@ export async function createManualArticle(
 
   const now = new Date().toISOString();
   const rawId = randomUUID();
-  const outcome = await simplifyArticleForAllAges(db, toRawInput(submission, rawId), { now });
+  const outcome = await simplifyStory(db, toRawInput(submission, rawId), { now });
 
-  // The age the form previewed. Falls back to the youngest only if the age
-  // vanished from the range between validation and here, which it cannot.
+  // The band the form previewed. Falls back to the youngest only if the anchor
+  // vanished from AGE_BANDS between validation and here, which it cannot.
   const reviewed =
     outcome.versions.find((version) => version.article.ageTarget === submission.ageTarget)
     ?? outcome.versions[0];
@@ -186,7 +185,7 @@ export async function createManualArticle(
     });
 
     // Every version commits with the raw article: a story holding some of its
-    // ages cannot be reviewed or published coherently.
+    // bands cannot be reviewed or published coherently.
     const articles = createArticleRepository(db);
     for (const row of rows) articles.insert(row);
   })();

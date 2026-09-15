@@ -321,8 +321,11 @@ describe('the flag gates it', () => {
     resetRunState();
 
     try {
-      // No feed URL configured for any source, so phase 1 stores nothing and
-      // phase 2 has nothing to judge — what matters is autoPublished staying 0.
+      // Blank every feed URL so phase 1 stores nothing without touching the
+      // network, and phase 2 has nothing to judge — what matters is
+      // autoPublished staying 0. (The seed ships a real BBC URL; fetching it
+      // here made this test time out whenever the network was slow.)
+      ctx.db.prepare(`UPDATE sources SET url = ''`).run();
       const state = await new Promise<{ autoPublished: number }>((resolve) => {
         startScrapeRun(ctx.db, { budget: 0, autoApprove: false, onFinished: resolve });
       });

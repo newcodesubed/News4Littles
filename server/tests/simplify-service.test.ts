@@ -6,6 +6,7 @@
  * two kid articles for one raw article.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AGE_BANDS, AGE_BAND_ANCHORS } from '../src/core/article.js';
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
 import { acquireJob, activeJob, releaseJob } from '../src/services/jobLock.js';
 import {
@@ -74,10 +75,10 @@ describe('simplifyRawArticles', () => {
 
     const report = await simplifyRawArticles(ctx.db, ['r1'], { now: () => '2026-09-09T10:00:00.000Z' });
 
-    // One report row per story, ten kid_articles rows: one per reading age.
+    // One report row per story, three kid_articles rows: one per reading band.
     expect(report.simplified).toHaveLength(1);
     expect(report.failures).toEqual([]);
-    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(3);
 
     const article = ctx.db
       .prepare(`SELECT status, publishedAt, originalId FROM kid_articles LIMIT 1`)
@@ -98,7 +99,7 @@ describe('simplifyRawArticles', () => {
 
     await simplifyRawArticles(ctx.db, ['r1']);
 
-    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(3);
     expect(createRawArticleRepository(ctx.db).countWaiting()).toBe(1);
   });
 
@@ -110,8 +111,8 @@ describe('simplifyRawArticles', () => {
 
     expect(again.skipped).toEqual(['r1']);
     expect(again.simplified).toEqual([]);
-    // Still ten, not twenty: the claim stops a second set being written.
-    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
+    // Still three, not six: the claim stops a second set being written.
+    expect(countRows(ctx.db, 'kid_articles')).toBe(3);
   });
 
   it('reports an unknown id as a failure without stopping the batch', async () => {
@@ -151,7 +152,7 @@ describe('simplifyRawArticles', () => {
     expect(link).not.toMatch(/rss\.xml$/);
   });
 
-  it('creates one version per reading age', async () => {
+  it('creates one version per reading band, stored under the band anchor', async () => {
     seedWaiting('r1');
 
     await simplifyRawArticles(ctx.db, ['r1']);
@@ -159,7 +160,7 @@ describe('simplifyRawArticles', () => {
     const ages = ctx.db
       .prepare(`SELECT ageTarget FROM kid_articles WHERE originalId = 'r1' ORDER BY ageTarget`)
       .pluck().all();
-    expect(ages).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(ages).toEqual([...AGE_BAND_ANCHORS]);
   });
 
   it('reports how many versions a story produced', async () => {
@@ -167,9 +168,9 @@ describe('simplifyRawArticles', () => {
 
     const report = await simplifyRawArticles(ctx.db, ['r1']);
 
-    // One row per STORY, carrying the version count — not ten rows.
+    // One row per STORY, carrying the version count — not one row per band.
     expect(report.simplified).toHaveLength(1);
-    expect(report.simplified[0].versions).toBe(10);
+    expect(report.simplified[0].versions).toBe(AGE_BANDS.length);
   });
 
   it('never auto-publishes any version', async () => {
@@ -185,8 +186,8 @@ describe('simplifyRawArticles', () => {
   });
 
   it('raises every version when the deny-list fires', async () => {
-    // §6: the deny-list judges the source article, so a hit must apply to all
-    // ten ages. A story that is skip-young at 5 cannot be calm at 14.
+    // §6: the deny-list judges the source article, so a hit must apply to
+    // every band. A story that is skip-young at 5-7 cannot be calm at 11-14.
     seedWaiting('r1', {
       headline: 'A disaster and an earthquake struck',
       body: 'A disaster struck. An earthquake killed people. There was violence.',
@@ -207,14 +208,14 @@ describe('simplifyRawArticles', () => {
     expect(links).toEqual(['https://www.bbc.co.uk/news/articles/the-story']);
   });
 
-  it('writes all ten versions or none', async () => {
+  it('writes every band or none', async () => {
     seedWaiting('r1');
-    // A trigger that aborts the age-14 insert. The versions are written in
-    // ascending age order, so this fails on the LAST one — the case that proves
-    // the earlier nine are rolled back rather than left behind.
+    // A trigger that aborts the 11-14 insert. The versions are written in
+    // ascending band order, so this fails on the LAST one — the case that
+    // proves the earlier two are rolled back rather than left behind.
     ctx.db.exec(`
-      CREATE TRIGGER fail_on_age_14 BEFORE INSERT ON kid_articles
-      WHEN NEW.ageTarget = 14
+      CREATE TRIGGER fail_on_last_band BEFORE INSERT ON kid_articles
+      WHEN NEW.ageTarget = 11
       BEGIN SELECT RAISE(ABORT, 'simulated failure on the last version'); END;
     `);
 
@@ -227,7 +228,7 @@ describe('simplifyRawArticles', () => {
     expect(createRawArticleRepository(ctx.db).findById('r1')?.simplifiedAt).toBeNull();
     expect(createRawArticleRepository(ctx.db).countWaiting()).toBe(1);
 
-    ctx.db.exec('DROP TRIGGER fail_on_age_14');
+    ctx.db.exec('DROP TRIGGER fail_on_last_band');
   });
 
   it('carries the source id, so a run can attribute the spend', async () => {
@@ -269,8 +270,8 @@ describe('startSimplifyJob', () => {
     expect(state.finishedAt).toBeTruthy();
     expect(state.done).toBe(2);
     expect(state.report.simplified).toHaveLength(2);
-    // Two stories, ten reading ages each.
-    expect(countRows(ctx.db, 'kid_articles')).toBe(20);
+    // Two stories, one version per reading band each.
+    expect(countRows(ctx.db, 'kid_articles')).toBe(2 * AGE_BANDS.length);
   });
 
   it('holds the lock while running and releases it at the end', async () => {
