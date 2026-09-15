@@ -21,8 +21,9 @@ import { DATABASE_PATH, openDatabase } from './connection.js';
  *     scrape_runs simplification counts (the per-run simplification budget).
  * 4 — added scrape_runs.versions (one story yields several versions).
  * 5 — added kid_articles.approvedBy (records an auto-approved publish).
+ * 6 — added kid_articles.audioScript (the spoken version of a story).
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 
@@ -54,6 +55,10 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
     column: 'approvedBy',
     definition: "TEXT CHECK (approvedBy IS NULL OR approvedBy = 'auto')",
   },
+  // Nullable with no default: a row written before this column existed has no
+  // spoken version, and NULL says exactly that. It is also what a failed or
+  // rule-based generation stores, so the podcast page has one case to handle.
+  { table: 'kid_articles', column: 'audioScript', definition: 'TEXT' },
 ];
 
 /**

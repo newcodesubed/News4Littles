@@ -24,6 +24,7 @@ export interface KidArticle {
   whyItMatters: string;
   vocab: VocabEntry[];
   thinkAbout: string;
+  audioScript: string | null;
   feelingNote: string | null;
   safety: Safety;
   contentWarnings: string[] | null;

@@ -153,6 +153,34 @@ describe('response validation', () => {
   });
 });
 
+describe('audioScript is optional (§9.1)', () => {
+  const withScript = (value: unknown) =>
+    JSON.stringify({ ...GOOD, audioScript: value });
+
+  it('keeps a well-formed script', () => {
+    expect(parseLlmContent(withScript('  A robot went down to the reef.  ')).audioScript)
+      .toBe('A robot went down to the reef.');
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['empty', '   '],
+    ['not a string', 42],
+    ['null', null],
+  ])('nulls a %s script rather than failing', (_label, value) => {
+    expect(parseLlmContent(withScript(value)).audioScript).toBeNull();
+  });
+
+  // The one that matters: a bad script must not cost the story. parseLlmContent
+  // throwing sends the WHOLE version to the rule-based fallback.
+  it('still returns the story when the script is unusable', () => {
+    const content = parseLlmContent(withScript({ nested: 'object' }));
+    expect(content.audioScript).toBeNull();
+    expect(content.kidHeadline).toBe(GOOD.kidHeadline);
+    expect(content.whatHappened).toBe(GOOD.whatHappened);
+  });
+});
+
 describe('OpenRouterClient', () => {
   const client = (fetchImpl: typeof fetch, overrides = {}) =>
     new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1, ...overrides });

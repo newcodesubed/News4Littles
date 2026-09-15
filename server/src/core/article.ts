@@ -86,6 +86,7 @@ export interface KidArticleRow {
   whyItMatters: string;
   vocab: string;                  // JSON text
   thinkAbout: string;
+  audioScript: string | null;
   feelingNote: string | null;
   safety: Safety;
   contentWarnings: string | null; // JSON text or NULL
@@ -111,6 +112,7 @@ export interface KidArticle {
   whyItMatters: string;
   vocab: VocabEntry[];
   thinkAbout: string;
+  audioScript: string | null;
   feelingNote: string | null;
   safety: Safety;
   contentWarnings: string[] | null;

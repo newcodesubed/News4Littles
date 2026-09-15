@@ -361,6 +361,8 @@ export function seedArticles(path: string = DATABASE_PATH): { rawArticles: numbe
         createdAt,
         // Schema CHECK: status 'published' requires publishedAt.
         publishedAt: sample.kid.status === 'published' ? createdAt : null,
+        // Hand-written placeholders, not LLM output — no spoken version to ship.
+        audioScript: null,
       });
     }
   });

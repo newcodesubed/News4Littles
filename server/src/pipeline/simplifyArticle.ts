@@ -160,6 +160,7 @@ export async function simplifyArticle(
       whyItMatters: content.whyItMatters,
       vocab: content.vocab,
       thinkAbout: content.thinkAbout,
+      audioScript: content.audioScript,
       // §3.4 / §11.1: a feeling note belongs only to a non-calm story. If the
       // guard raised the level above what the model expected, the model may
       // not have written one — use the fixed fallback text rather than none.

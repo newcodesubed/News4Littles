@@ -108,6 +108,9 @@ export function simplifyLocally(
     whyItMatters: WHY_IT_MATTERS_FALLBACK,
     vocab: buildVocab(raw.body),
     thinkAbout: THINK_ABOUT_FALLBACK,
+    // §9.2 rewrites sentences; it does not write broadcast copy. A story that
+    // fell back has no spoken version rather than a mechanical one.
+    audioScript: null,
     // §3.4 / §11.1: a feeling note belongs only to a non-calm story.
     feelingNote: safety === 'calm' ? null : FEELING_NOTE_FALLBACK[safety],
     safety,

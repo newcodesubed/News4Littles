@@ -140,6 +140,18 @@ describe('POST /articles (§4.3 save)', () => {
     expect(row.editedByHuman).toBe(0);
   });
 
+  it('stores a null audioScript when the local pipeline wrote the version', async () => {
+    await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' });
+
+    const rows = ctx.db
+      .prepare('SELECT audioScript FROM kid_articles')
+      .all() as { audioScript: string | null }[];
+
+    // No LLM in this test, so §9.2 ran: a story, but nothing to speak.
+    expect(rows).toHaveLength(AGE_BANDS.length);
+    expect(rows.every((r) => r.audioScript === null)).toBe(true);
+  });
+
   it.each([
     ['a draft status (§8.3 has no such status)', { status: 'draft' }],
     ['a missing headline', { headline: '' }],

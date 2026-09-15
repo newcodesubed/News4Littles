@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS kid_articles (
   whyItMatters    TEXT    NOT NULL,                                      -- story detail section (§3.4)
   vocab           TEXT    NOT NULL DEFAULT '[]',                         -- JSON: { word: string; definition: string }[]
   thinkAbout      TEXT    NOT NULL,                                      -- discussion prompt (§3.4)
+  audioScript     TEXT,                                                  -- spoken version for /podcast; NULL when none was produced
   feelingNote     TEXT,                                                  -- optional; shown only when safety <> 'calm' (§3.4)
   safety          TEXT    NOT NULL
                   CHECK (safety IN ('calm', 'adult-nearby', 'skip-young')),

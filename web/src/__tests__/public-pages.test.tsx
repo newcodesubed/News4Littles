@@ -18,7 +18,7 @@ const BASE: KidArticle = {
   kidHeadline: 'A secret coral garden was found', summary: 'Scientists found a coral garden.',
   whatHappened: 'W.', whyItMatters: 'Y.',
   vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
-  thinkAbout: 'T?', feelingNote: null, safety: 'calm', contentWarnings: null,
+  thinkAbout: 'T?', audioScript: null, feelingNote: null, safety: 'calm', contentWarnings: null,
   category: 'Environment', readingMinutes: 3, sourceName: 'BBC News',
   sourceUrl: 'https://example.com/original', status: 'published', rejectReason: null,
   editedByHuman: false, createdAt: '2026-09-04T10:00:00.000Z', publishedAt: '2026-09-04T10:00:00.000Z',

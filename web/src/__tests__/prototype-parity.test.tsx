@@ -20,7 +20,7 @@ const ARTICLE: KidArticle = {
   summary: 'Scientists found a huge coral garden far below the waves.',
   whatHappened: 'A robot went deep underwater.', whyItMatters: 'Sea animals live in coral.',
   vocab: [{ word: 'coral', definition: 'A tiny sea animal.' }],
-  thinkAbout: 'Where would you send a robot?', feelingNote: null,
+  thinkAbout: 'Where would you send a robot?', audioScript: null, feelingNote: null,
   safety: 'calm', contentWarnings: null, category: 'Environment', readingMinutes: 3,
   sourceName: 'BBC News', sourceUrl: 'https://example.com/original',
   status: 'published', rejectReason: null, editedByHuman: false,

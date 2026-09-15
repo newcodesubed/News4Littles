@@ -88,15 +88,16 @@ export interface ArticleQuery {
 export type ArticleContent = Pick<
   KidArticle,
   | 'kidHeadline' | 'summary' | 'whatHappened' | 'whyItMatters' | 'vocab'
-  | 'thinkAbout' | 'feelingNote' | 'safety' | 'contentWarnings'
+  | 'thinkAbout' | 'audioScript' | 'feelingNote' | 'safety' | 'contentWarnings'
   | 'category' | 'readingMinutes' | 'ageTarget'
 >;
 
 /** Written once; every INSERT and the admin SELECT derive from it. */
 const COLUMNS = [
   'id', 'originalId', 'ageTarget', 'kidHeadline', 'summary', 'whatHappened', 'whyItMatters',
-  'vocab', 'thinkAbout', 'feelingNote', 'safety', 'contentWarnings', 'category', 'readingMinutes',
-  'sourceName', 'sourceUrl', 'status', 'rejectReason', 'editedByHuman', 'createdAt', 'publishedAt',
+  'vocab', 'thinkAbout', 'audioScript', 'feelingNote', 'safety', 'contentWarnings',
+  'category', 'readingMinutes', 'sourceName', 'sourceUrl', 'status', 'rejectReason',
+  'editedByHuman', 'createdAt', 'publishedAt',
 ] as const;
 
 const INSERT_SQL = `INSERT INTO kid_articles (${COLUMNS.join(', ')})

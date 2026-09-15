@@ -17,7 +17,7 @@ const BASE: AdminArticle = {
   id: 'v5', originalId: 'r1', ageTarget: 5, kidHeadline: 'Stored age 5',
   summary: 'A summary.', whatHappened: 'What happened.', whyItMatters: 'Why it matters.',
   vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
-  thinkAbout: 'Think?', feelingNote: null, safety: 'calm', contentWarnings: null,
+  thinkAbout: 'Think?', audioScript: null, feelingNote: null, safety: 'calm', contentWarnings: null,
   category: 'Environment', readingMinutes: 3, sourceName: 'BBC News',
   sourceUrl: 'https://example.com/original', status: 'pending_review', rejectReason: null,
   editedByHuman: false, createdAt: '2026-09-08T10:00:00.000Z', publishedAt: null,

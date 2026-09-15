@@ -111,6 +111,7 @@ export function insertKidArticle(
   overrides: Partial<{
     id: string; originalId: string; ageTarget: number; kidHeadline: string; summary: string;
     whatHappened: string; whyItMatters: string; vocab: unknown[]; thinkAbout: string;
+    audioScript: string | null;
     feelingNote: string | null; safety: string; contentWarnings: string[] | null; category: string;
     readingMinutes: number; sourceName: string; sourceUrl: string; status: string;
     rejectReason: string | null; editedByHuman: boolean; createdAt: string; publishedAt: string | null;
@@ -132,6 +133,7 @@ export function insertKidArticle(
     whatHappened: 'What happened.',
     whyItMatters: 'Why it matters.',
     thinkAbout: 'Something to think about?',
+    audioScript: null,
     feelingNote: safety === 'calm' ? null : 'A gentle note.',
     category: 'World',
     readingMinutes: 3,
@@ -157,11 +159,11 @@ export function insertKidArticle(
   db.prepare(
     `INSERT INTO kid_articles
        (id, originalId, ageTarget, kidHeadline, summary, whatHappened, whyItMatters, vocab,
-        thinkAbout, feelingNote, safety, contentWarnings, category, readingMinutes,
+        thinkAbout, audioScript, feelingNote, safety, contentWarnings, category, readingMinutes,
         sourceName, sourceUrl, status, rejectReason, editedByHuman, createdAt, publishedAt)
      VALUES
        (@id, @originalId, @ageTarget, @kidHeadline, @summary, @whatHappened, @whyItMatters, @vocab,
-        @thinkAbout, @feelingNote, @safety, @contentWarnings, @category, @readingMinutes,
+        @thinkAbout, @audioScript, @feelingNote, @safety, @contentWarnings, @category, @readingMinutes,
         @sourceName, @sourceUrl, @status, @rejectReason, @editedByHuman, @createdAt, @publishedAt)`,
   ).run(row);
 

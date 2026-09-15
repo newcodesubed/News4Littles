@@ -74,6 +74,13 @@ export interface LlmContent {
   vocab: VocabEntry[];
   thinkAbout: string;
   feelingNote: string | null;
+  /**
+   * The story as a newsreader would say it. Optional on purpose: it must NOT
+   * join REQUIRED_TEXT, because a throw here drops the whole version to the
+   * rule-based pipeline, and a missing script is a far smaller loss than a
+   * lost story — the same rule vocab already follows.
+   */
+  audioScript: string | null;
   /** The model's opinion. Combined with the other guards, never trusted alone. */
   safety: Safety;
   contentWarnings: string[] | null;
@@ -136,10 +143,16 @@ export function parseLlmContent(text: string): LlmContent {
   const feelingNote =
     typeof raw.feelingNote === 'string' && raw.feelingNote.trim() ? raw.feelingNote.trim() : null;
 
+  const audioScript =
+    typeof raw.audioScript === 'string' && raw.audioScript.trim()
+      ? raw.audioScript.trim()
+      : null;
+
   return {
     ...(content as Pick<LlmContent, (typeof REQUIRED_TEXT)[number]>),
     vocab,
     feelingNote,
+    audioScript,
     safety,
     contentWarnings: warnings.length > 0 ? warnings : null,
     // Clamp rather than reject: the schema requires >= 1, and a model
