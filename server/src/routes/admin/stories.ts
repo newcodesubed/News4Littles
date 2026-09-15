@@ -1,11 +1,11 @@
 /**
  * The review queue, grouped by story (§5).
  *
- * A story is one raw article's ten age versions (§3.6). An editor reviews and
- * approves a story, not a version, so this endpoint returns one row per story
- * with every version nested — and a story-level safety verdict that is the
- * STRICTEST across those versions (§6), because approving the row approves all
- * of them.
+ * A story is one raw article's reading-band versions (§3.6). An editor reviews
+ * and approves a story, not a version, so this endpoint returns one row per
+ * story with every version nested — and a story-level safety verdict that is
+ * the STRICTEST across those versions (§6), because approving the row approves
+ * all of them.
  *
  * The flat `GET /articles` stays: §4.2's age filter and the filter dropdowns
  * need per-version rows.

@@ -146,6 +146,8 @@ describe('POST /articles (§4.3 save)', () => {
     ['a missing source name', { sourceName: '' }],
     ['an age above the range', { ageTarget: 99 }],
     ['an age below the range', { ageTarget: 4 }],
+    // A version is stored under its band anchor; age 6 would be unreachable.
+    ['an age that is not a band anchor', { ageTarget: 6 }],
     ['malformed vocab', { vocab: ['nope'] }],
   ])('rejects %s with 400', async (_label, patch) => {
     expect((await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review', ...patch })).status).toBe(400);

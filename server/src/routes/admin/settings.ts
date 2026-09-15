@@ -10,7 +10,7 @@ import { BadRequestError } from '../../core/errors.js';
 import { MAX_AGE, MIN_AGE } from '../../core/article.js';
 import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
 import {
-  optionalString, requireAgeTarget, requireInt, requireTimeOfDay,
+  optionalString, requireInt, requireReaderAge, requireTimeOfDay,
 } from '../../http/validation.js';
 
 /**
@@ -123,7 +123,8 @@ export function createSettingsRouter(db: Database): Router {
     const current = settings.getAppSettings();
 
     const saved = {
-      defaultAge: requireAgeTarget(body.defaultAge, 'defaultAge'),
+      // A reader's age, not a band: the pipeline resolves it to a band itself.
+      defaultAge: requireReaderAge(body.defaultAge, 'defaultAge'),
       scrapeTimes: times,
       llmProvider: optionalString(body.llmProvider),
       // Absent means "leave it alone", so a client that predates this field

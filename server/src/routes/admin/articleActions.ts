@@ -2,16 +2,16 @@
  * Row actions on one story: publish / reject / re-review / edit / regenerate /
  * delete (§4.2).
  *
- * SCOPE (§5): a story is one raw article's ten age versions (§3.6), and an
+ * SCOPE (§5): a story is one raw article's reading-band versions (§3.6), and an
  * editor approves the story. So publish, reject, unpublish, delete and
  * regenerate take any one version's id and apply to EVERY version of that
  * story. The URLs are unchanged from when a story had one version; the scope
  * is not.
  *
- * Edit is the exception and stays per-version, so one age's wording can be
- * fixed without touching the other nine. Regenerate previews every age but
+ * Edit is the exception and stays per-version, so one band's wording can be
+ * fixed without touching the others. Regenerate previews every band but
  * applies only the ones an editor ticks, which is the same idea from the other
- * end: the machine offers all ten, the person chooses.
+ * end: the machine offers them all, the person chooses.
  */
 import { Router } from 'express';
 import type { Response } from 'express';
@@ -119,8 +119,8 @@ export function createArticleActionsRouter(db: Database): Router {
   /**
    * §4.2 Regenerate — preview only, and story-scoped (§5).
    *
-   * Ten versions is ten sequential model calls, so this returns straight away;
-   * poll /articles/regenerate/status.
+   * One sequential model call per band is too long for a request, so this
+   * returns straight away; poll /articles/regenerate/status.
    */
   router.post('/articles/:id/regenerate', (req, res) => {
     requireStory(req.params.id);

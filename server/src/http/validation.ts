@@ -7,7 +7,7 @@
  */
 import { BadRequestError } from '../core/errors.js';
 import {
-  ARTICLE_STATUSES, MAX_AGE, MIN_AGE, SAFETY_VALUES,
+  AGE_BAND_ANCHORS, ARTICLE_STATUSES, MAX_AGE, MIN_AGE, SAFETY_VALUES, isAgeBandAnchor,
   type ArticleStatus, type Safety, type VocabEntry,
 } from '../core/article.js';
 
@@ -59,8 +59,24 @@ export function requireInt(
   return number;
 }
 
-export const requireAgeTarget = (value: unknown, label = 'Age target'): number =>
+/** A READER's age: anywhere on the §3.6 slider. */
+export const requireReaderAge = (value: unknown, label = 'Age'): number =>
   requireInt(value, label, { min: MIN_AGE, max: MAX_AGE });
+
+/**
+ * An ageTarget a version may be STORED under: a band anchor, not any age. The
+ * public read path matches the anchor exactly, so a row at age 6 would be
+ * unreachable by every reader.
+ */
+export function requireAgeTarget(value: unknown, label = 'Age target'): number {
+  const age = requireReaderAge(value, label);
+  if (!isAgeBandAnchor(age)) {
+    throw new BadRequestError(
+      `${label} must be the youngest age of a reading band: ${AGE_BAND_ANCHORS.join(', ')}.`,
+    );
+  }
+  return age;
+}
 
 export function requireStatus(value: unknown): ArticleStatus {
   const text = String(value);

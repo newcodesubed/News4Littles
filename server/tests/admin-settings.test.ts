@@ -1,6 +1,7 @@
 /** Admin settings — PRD §4.4, §5.1, §6, §8.5, §8.7. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestContext, insertRawArticle, type TestContext } from './helpers.js';
+import { loadLocalPipelineConfig } from '../src/pipeline/localPipeline.js';
 
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
@@ -207,12 +208,16 @@ describe('app settings (§8.7)', () => {
     expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(3);
   });
 
-  it('a saved defaultAge is used by the pipeline', async () => {
+  it('a saved defaultAge is written for the band it falls in', async () => {
+    // defaultAge is a reader's age; a version is stored under its band anchor.
     await put('/api/admin/app-settings', { defaultAge: 12, scrapeTimes: ['06:00'] });
-    const { article } = await (await post('/api/admin/simplify', {
-      headline: 'X', sourceName: 'X', sourceUrl: 'https://x', category: 'World', ageTarget: 12,
-      body: 'A calm story about the sea.',
-    })).json();
-    expect(article.ageTarget).toBe(12);
+    const config = loadLocalPipelineConfig(ctx.db);
+    expect(config.ageTarget).toBe(11);
+  });
+
+  it('accepts any slider age as the default, not just a band anchor', async () => {
+    const res = await put('/api/admin/app-settings', { defaultAge: 9, scrapeTimes: [] });
+    expect(res.status).toBe(200);
+    expect((await res.json()).defaultAge).toBe(9);
   });
 });
