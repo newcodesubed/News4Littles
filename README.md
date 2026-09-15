@@ -59,7 +59,7 @@ Everything under `/admin` needs the admin password.
 
 | Route             | What it is                                                               |
 | ----------------- | ------------------------------------------------------------------------ |
-| `/admin/review`   | The review queue — one row per story, every reading age approved together |
+| `/admin/review`   | The review queue — one row per story, every reading group approved together |
 | `/admin/submit`   | Paste an article by hand and simplify it                                 |
 | `/admin/settings` | Sources, guardrails, prompts, app defaults, and **Run now** scraping     |
 | `/admin/sandbox`  | Edit a prompt and see what it does to a real article before promoting it |
@@ -71,8 +71,9 @@ Everything under `/admin` needs the admin password.
 ```
 BBC RSS feed ─┐                  first 10 per run
               ├─→ raw_articles ─┬─→ guard + simplify ─→ kid_articles
-paste by hand ┘                 │   (once per age, 5-14)  (10 versions,
-                                │                          pending_review)
+paste by hand ┘                 │   (once per reading     (3 versions,
+                                │    group: 5-7, 8-10,     pending_review)
+                                │    11-14)
                                 │                             │
                                 │                 an editor approves it
                                 │                             ↓
@@ -161,9 +162,9 @@ defaults to `false`, unlike every other flag here, because it trades away the
 human review this product otherwise promises. It also needs a working LLM: no
 API key means no judge, and no judge means nothing is auto-published.
 
-The judge reads the **age-5 version** — the strictest reading level and the most
-sensitive reader — and since publishing is story-scoped, one verdict covers all
-ten ages. Its prompt lives in `pipeline/approvalGuard.ts` and is deliberately
+The judge reads the **ages 5–7 version** — the strictest reading level and the
+most sensitive reader — and since publishing is story-scoped, one verdict covers
+every group. Its prompt lives in `pipeline/approvalGuard.ts` and is deliberately
 not editable from admin settings: it is a safety gate, and one careless edit
 would silently approve everything.
 
@@ -177,7 +178,7 @@ before any call is made** — the model is never asked to resist something it do
 not need to see.
 
 That is defence in depth, not a guarantee. A judge can still be wrong about
-ordinary content, only the age-5 version is judged, and the judge is the same
+ordinary content, only the youngest version is judged, and the judge is the same
 model that wrote the story. `approvedBy` is how you find its mistakes.
 
 It fails **closed**. A story is published only on an explicit `approved: true`.
@@ -199,84 +200,110 @@ marks those rows "published by the judge, not a person". That column is the
 record of which live stories no human ever read — so if the judge turns out to
 be a bad one, you can find them all and un-publish them.
 
-### One version per reading age
+### One version per reading group
 
-A story is rewritten once for **every reading age from 5 to 14**, so the
-reading-age slider on `/settings` selects real content rather than relabelling
-a single version. Ten `kid_articles` rows share one `originalId`, one per
-`ageTarget`.
+A story is rewritten once for each of **three reading groups — ages 5–7, 8–10
+and 11–14** — so the reading-age slider on `/settings` selects real content
+rather than relabelling a single version. Three `kid_articles` rows share one
+`originalId`, and each carries its group's **youngest age** as `ageTarget`
+(5, 8 or 11). The groups are the same three bands §9.2 already uses for the
+rule-based pipeline, and they live in one place: `AGE_BANDS` in
+`server/src/core/article.ts` (mirrored for the UI in `web/src/lib/ageBands.ts`).
 
-Each age gets its own model call, using that age's prompt override if one
-exists and the generic prompt with `{{age}}` substituted otherwise
-(`selectPrompt`, §9.1). So a budget of 10 stories is **100 model calls**, about
-$0.87 a month on the default model, and a run takes a few minutes rather than
-seconds.
+Each group gets its own model call, using that group's prompt override if one
+exists and the generic prompt otherwise (`selectPrompt`, §9.1). The prompt sees
+`{{age}}` (the group's youngest age — vocabulary is pitched at the youngest
+reader, the safe direction) and `{{ageRange}}` (the whole group, "5 to 7", so
+the model knows one text serves several ages). A budget of 10 stories is
+**30 model calls** — a run takes about a minute.
 
-A combined single call would have cost about $0.47 a month, but every stored
-prompt template embeds the article and its own JSON envelope — combining them
-would mean sending the article ten times or mangling the templates. Forty cents
-a month was not worth losing per-age prompt control or the sandbox's fidelity
-to production (§7.4).
+This replaced one call per age (ten per story). A 6-year-old and a 7-year-old
+do not need different rewrites, and the ten-version design cost three times the
+calls, tokens and storage and gave editors ten near-identical texts to read
+before approving one story. A combined single call was rejected both times, for
+the same reason: every stored prompt template embeds the article and its own
+JSON envelope, so combining them means sending the article once per group
+anyway, or mangling the templates and losing per-group prompt control and the
+sandbox's fidelity to production (§7.4).
 
-Failures are per age: if the age-7 call fails, age 7 falls back to the
-rule-based pipeline (§9.2) and the other nine keep their model versions.
+Failures are per group: if the 8–10 call fails, that group falls back to the
+rule-based pipeline (§9.2) and the other two keep their model versions.
 
-**The queue is grouped by story.** One row covers all ten versions, and its
+**The queue is grouped by story.** One row covers all three versions, and its
 safety badge shows the strictest verdict across them — a story that is
-`skip-young` at age 5 never presents as `calm` because age 14 is. **View**
-opens every version behind an age selector, because §2.2 promises a human read
-every word a child sees and one Publish covers all ten.
+`skip-young` for ages 5–7 never presents as `calm` because 11–14 is. **View**
+opens every version behind a reading-group selector, because §2.2 promises a
+human read every word a child sees and one Publish covers all three.
 
 Publish, reject, re-review, delete and regenerate are **story-scoped**: they
 take any one version's id and apply to every version of that story, so a
 story's versions always share one status. The endpoint URLs are unchanged from
 when a story had one version — `PATCH /api/admin/articles/:id/publish` now
 publishes the story that id belongs to. **Edit is the exception** and stays
-per-version, so one age's wording can be fixed without touching the other nine,
-and `editedByHuman` stays a per-version flag.
+per-version, so one group's wording can be fixed without touching the others,
+and `editedByHuman` stays a per-version flag. An edit may move a version to a
+different group, but only to a group — `ageTarget` must be 5, 8 or 11, because
+the public read path matches it exactly and a row at age 6 would reach nobody.
 
-**Regenerate previews every age and applies the ones you tick.** Ten versions
-is ten sequential model calls, so `POST /api/admin/articles/:id/regenerate`
-starts a background job and the row polls
-`GET /api/admin/articles/regenerate/status` — the same shape as a scrape or a
-manual simplify batch, and the same one-job-at-a-time lock. The dialog shows a
-tab per age with its own diff; ages a person has edited arrive unticked.
-`POST /api/admin/articles/regenerate/apply` writes the ticked ages from the
-held preview, so applying costs no further model calls and writes exactly the
-text that was on screen.
+**Regenerate previews every group and applies the ones you tick.** Three
+versions is three sequential model calls, so
+`POST /api/admin/articles/:id/regenerate` starts a background job and the row
+polls `GET /api/admin/articles/regenerate/status` — the same shape as a scrape
+or a manual simplify batch, and the same one-job-at-a-time lock. The dialog
+shows a tab per group with its own diff; versions a person has edited arrive
+unticked. `POST /api/admin/articles/regenerate/apply` writes the ticked groups
+from the held preview, so applying costs no further model calls and writes
+exactly the text that was on screen.
 
 Bulk approve still excludes `skip-young` unless you opt in, and that check uses
-the story's strictest version — selecting a calm age-14 row cannot publish a
-skip-young age-5 one.
+the story's strictest version — selecting a calm 11–14 row cannot publish a
+skip-young 5–7 one.
 
 Tab counts show stories, not versions, so Pending reads 10 where you have ten
-stories to read rather than 100.
+stories to read rather than 30.
 
-**The slider on `/settings` picks the text.** `GET /api/articles?age=N` returns
-the version of each story that was **written for age N** — an exact match, no
-nearest-age guessing. A story exists in one version per age, so a missing age
-means it was never simplified for that reader, and it is simply absent from the
-feed. Showing a five-year-old an age-12 rewrite is worse than showing nothing.
-`GET /api/articles/:id?age=N` applies the same rule inside one story, so the
-slider keeps working after a reader has opened something, and 404s for an age
-the story does not have — consistent with the feed, which would not have
-offered it.
+**The slider on `/settings` picks the text.** `GET /api/articles?age=N` resolves
+N to its reading group and returns the version of each story **written for that
+group** — an exact match on the group, no nearest-group guessing. A story with
+no version for the group was never simplified for that reader, and it is simply
+absent from the feed. Showing a five-year-old the 11–14 rewrite is worse than
+showing nothing. `GET /api/articles/:id?age=N` applies the same rule inside one
+story, so the slider keeps working after a reader has opened something, and
+404s for a group the story does not have — consistent with the feed, which
+would not have offered it.
 
 An absent, non-numeric or out-of-range `age` falls back to
 `app_settings.defaultAge` rather than erroring — this is the path a child's
 browser hits, and answering beats a 400 because a query string was odd. The
-status filter stays hardcoded regardless.
+status filter stays hardcoded regardless. `defaultAge` is a reader's age, any
+of 5–14; the pipeline resolves it to a group itself.
 
-A story simplified before this feature has one version, at whatever the default
-age was then, so it appears only at that age. Re-simplify it to give it all ten.
+**Migrating an existing database.** Stories simplified before reading groups
+hold one row per age (5–14), or a single row at whatever the default age was.
+Rows at 6, 7, 9, 10, 12, 13 and 14 are unreachable now. Run
+
+```bash
+cd server
+npm run db:migrate-age-bands            # dry run: prints what would change
+npm run db:migrate-age-bands -- --apply # collapse each story onto 5 / 8 / 11
+npm run db:update-prompts               # adopt the group-aware seeded prompts
+```
+
+In every group a story has rows for, the migration keeps one — the row already
+at the group's youngest age, else the youngest row, re-labelled — and deletes
+the rest. It re-keys per-age prompt overrides and drafts the same way and
+leaves the append-only prompt history alone. Until it is run, a legacy story
+still works wherever it has a row at 5, 8 or 11; **Regenerate** on such a story
+also rebuilds one version per group and moves the row it rewrites onto the
+group's anchor.
 
 The §6 guards run **once per story** — they judge the source article, which does
-not vary by age — so the prompt guard costs one call, not ten.
+not vary by group — so the prompt guard costs one call, not three.
 
-Without an API key the rule-based pipeline handles every age, using
-`age * 2` words per sentence. That reproduces §9.2's three stated anchors
-exactly (7 → 14, 10 → 20, 14 → 28) while giving every age its own limit, so the
-slider still changes the text offline.
+Without an API key the rule-based pipeline handles every group, using §9.2's
+words-per-sentence limits as written: 14 for ages 5–7, 20 for 8–10, 28 for
+11–14. So the slider still changes the text offline, exactly at the group
+boundaries.
 
 ---
 
@@ -309,8 +336,8 @@ npm run llm:check    # runs 3 real articles through both paths and reports the c
 ```
 
 Roughly **$0.0002 per article version** on the default model. A run costs the
-budget times ten, because each story is rewritten for every reading age — so
-the default of 10 stories is 100 calls, about $0.03 a day. Several guards keep
+budget times three, because each story is rewritten for every reading group — so
+the default of 10 stories is 30 calls, about $0.01 a day. Several guards keep
 it that way — the budget in `/admin/settings`, and these in `.env`:
 
 | Setting              | Default                        | Why                                                                     |
@@ -338,7 +365,7 @@ fixed set of test articles — same model, same single call, same cost.
 
 `/admin/sandbox` is the tool for that work:
 
-- pick a prompt (generic, a per-age override, or the safety guard) and an article
+- pick a prompt (generic, a reading-group override, or the safety guard) and an article
 - edit, then **Run test** — the output renders exactly as a reader would see it
 - **Compare with production** shows both side by side with a field-level diff
 - validation shows whether the response parsed and whether sentences fit the age
