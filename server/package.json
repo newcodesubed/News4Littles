@@ -18,7 +18,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "llm:check": "tsx scripts/check-llm.ts",
-    "db:update-prompts": "tsx scripts/update-seeded-prompts.ts"
+    "db:update-prompts": "tsx scripts/update-seeded-prompts.ts",
+    "db:migrate-age-bands": "tsx scripts/migrate-age-bands.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
