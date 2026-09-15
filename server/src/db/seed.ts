@@ -114,9 +114,10 @@ export function seed(path: string = DATABASE_PATH): SeedResult {
 
     record('app_settings', db.prepare(
       `INSERT INTO app_settings (id, defaultAge, scrapeTimes, llmProvider)
-       VALUES ('default', 6, '["06:00"]', NULL)
+       VALUES ('default', 5, '["06:00"]', NULL)
        ON CONFLICT (id) DO NOTHING`,
-      // defaultAge 6 per §3.6; scrapeTimes ["06:00"] per §5.3;
+      // defaultAge is a band anchor: the 5-7 band, which §3.6's default
+      // reading age of 6 falls in. scrapeTimes ["06:00"] per §5.3;
       // llmProvider NULL until a key is supplied (§13.2) — the local fallback
       // (§9.2) runs in the meantime.
     ).run().changes);

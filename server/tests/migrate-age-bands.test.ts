@@ -116,6 +116,23 @@ describe('migrateAgeBands', () => {
     expect(settings.getPromptConfig().ageOverrides).toEqual({ '5': 'five' });
   });
 
+  it('re-keys a pre-band default reading age onto its anchor', () => {
+    ctx.db.prepare(`UPDATE app_settings SET defaultAge = 6 WHERE id = 'default'`).run();
+
+    const report = migrateAgeBands(ctx.db, { apply: true });
+
+    expect(report.defaultAgeMoved).toEqual({ from: 6, to: 5 });
+    expect(
+      (ctx.db.prepare(`SELECT defaultAge FROM app_settings WHERE id = 'default'`)
+        .get() as { defaultAge: number }).defaultAge,
+    ).toBe(5);
+  });
+
+  it('leaves a default reading age that is already a band anchor', () => {
+    const report = migrateAgeBands(ctx.db, { apply: true });
+    expect(report.defaultAgeMoved).toBeUndefined();
+  });
+
   it('re-keys prompt drafts the same way and drops a colliding one', () => {
     const prompts = createPromptRepository(ctx.db);
     prompts.saveDraft({ target: 'simplification', age: 6, promptText: 'six' }, '2026-09-06T09:00:00.000Z');

@@ -59,17 +59,17 @@ export function requireInt(
   return number;
 }
 
-/** A READER's age: anywhere on the §3.6 slider. */
-export const requireReaderAge = (value: unknown, label = 'Age'): number =>
-  requireInt(value, label, { min: MIN_AGE, max: MAX_AGE });
-
 /**
  * An ageTarget a version may be STORED under: a band anchor, not any age. The
  * public read path matches the anchor exactly, so a row at age 6 would be
  * unreachable by every reader.
+ *
+ * A READER's age — anywhere on the §3.6 slider — is never validated here. The
+ * only route that takes one is the public feed, and it falls back to the
+ * default rather than erroring, because a child's browser sent it.
  */
 export function requireAgeTarget(value: unknown, label = 'Age target'): number {
-  const age = requireReaderAge(value, label);
+  const age = requireInt(value, label, { min: MIN_AGE, max: MAX_AGE });
   if (!isAgeBandAnchor(age)) {
     throw new BadRequestError(
       `${label} must be the youngest age of a reading band: ${AGE_BAND_ANCHORS.join(', ')}.`,

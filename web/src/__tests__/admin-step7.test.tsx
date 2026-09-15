@@ -61,8 +61,8 @@ function mockApi(overrides: Record<string, unknown> = {}) {
       { id: 'manual', name: 'Manual submission', url: '', enabled: false, trustLevel: 'high', parser: null, lastFetchedAt: null, lastFetchedItemPublishedAt: null, articleCount: 3 },
     ]);
     if (path.includes('/guard-config')) return json({ denyList: ['war', 'killed'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '', ...overrides });
-    if (path.includes('/prompt-config')) return json({ genericPrompt: 'The generic prompt', ageOverrides: { '6': 'Age six' }, versions: {}, inertUntilLlm: true });
-    if (path.includes('/app-settings')) return json({ defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 10, apiKeyLocation: 'environment variable only (never stored in the database)' });
+    if (path.includes('/prompt-config')) return json({ genericPrompt: 'The generic prompt', ageOverrides: { '5': 'Ages 5 to 7' }, versions: {}, inertUntilLlm: true });
+    if (path.includes('/app-settings')) return json({ defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 10, apiKeyLocation: 'environment variable only (never stored in the database)' });
     return json({});
   }));
 }
@@ -392,9 +392,10 @@ describe('settings — §8.5 prompts are clearly inert', () => {
 });
 
 describe('settings — §8.7 app settings', () => {
-  it('shows defaultAge, scrape times and provider', async () => {
+  it('shows the default reading group, scrape times and provider', async () => {
     renderIn(<AdminSettings />);
-    expect(await screen.findByLabelText('Default reading age')).toHaveValue(6);
+    // A select of bands, not a number: the stored value is a band anchor.
+    expect(await screen.findByLabelText('Default reading group')).toHaveValue('5');
     expect(screen.getByText('06:00')).toBeInTheDocument();
     expect(screen.getByLabelText('LLM provider')).toHaveValue('');
   });

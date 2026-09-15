@@ -1,6 +1,6 @@
 import { Field, Select, TextArea } from '../../../ui/Field';
 import { Card } from '../../../ui/Surface';
-import { AGE_BANDS, ageBandLabel, bandForAge } from '../../../lib/ageBands';
+import { AGE_BANDS, ageBandLabel } from '../../../lib/ageBands';
 import type { PromptTarget, RawArticleSummary } from './types';
 
 /** §7.3 panel 1: what is being edited, and what it is tested against. */
@@ -88,8 +88,8 @@ export function InputPanel({
 
       {target === 'simplification' && (
         <p className="text-xs text-muted-foreground">
-          Runs for {ageBandLabel(age ?? bandForAge(defaultAge).minAge).toLowerCase()}
-          {age === null && ` (the group the default age, ${defaultAge}, falls in)`}.
+          Runs for {ageBandLabel(age ?? defaultAge).toLowerCase()}
+          {age === null && ' (the default reading group)'}.
         </p>
       )}
     </Card>

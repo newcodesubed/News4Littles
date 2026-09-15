@@ -29,6 +29,8 @@ export interface AgeBandMigrationReport {
   overridesDropped: string[];
   draftsMoved: { from: number; to: number }[];
   draftsDropped: number[];
+  /** Set when app_settings.defaultAge was not already a band anchor. */
+  defaultAgeMoved?: { from: number; to: number };
 }
 
 interface VersionRow { id: string; originalId: string; ageTarget: number }
@@ -42,6 +44,19 @@ export function migrateAgeBands(db: Database, options: { apply: boolean }): AgeB
     overridesMoved: [], overridesDropped: [],
     draftsMoved: [], draftsDropped: [],
   };
+
+  // --- app_settings.defaultAge ---------------------------------------------
+  // The band assumed when nothing names a reader. Stored as an anchor since
+  // bands landed; a database from before that holds a plain reading age.
+  const appSettings = db
+    .prepare(`SELECT defaultAge FROM app_settings WHERE id = 'default'`)
+    .get() as { defaultAge: number } | undefined;
+  if (appSettings && !isAgeBandAnchor(appSettings.defaultAge)) {
+    report.defaultAgeMoved = {
+      from: appSettings.defaultAge,
+      to: bandForAge(appSettings.defaultAge).minAge,
+    };
+  }
 
   // --- kid_articles ---------------------------------------------------------
   // Ascending by ageTarget within a story, so the first row seen per band is
@@ -135,6 +150,11 @@ export function migrateAgeBands(db: Database, options: { apply: boolean }): AgeB
     const moveDraft = db.prepare(`UPDATE prompt_drafts SET age = @to WHERE target = @target AND age = @from`);
     for (const draft of draftDrops) dropDraft.run(draft);
     for (const draft of draftMoves) moveDraft.run(draft);
+
+    if (report.defaultAgeMoved) {
+      db.prepare(`UPDATE app_settings SET defaultAge = ? WHERE id = 'default'`)
+        .run(report.defaultAgeMoved.to);
+    }
   })();
 
   return report;

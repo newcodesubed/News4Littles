@@ -10,7 +10,7 @@ import { BadRequestError } from '../../core/errors.js';
 import { AGE_BAND_ANCHORS, isAgeBandAnchor } from '../../core/article.js';
 import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
 import {
-  optionalString, requireInt, requireReaderAge, requireTimeOfDay,
+  optionalString, requireAgeTarget, requireInt, requireTimeOfDay,
 } from '../../http/validation.js';
 
 /**
@@ -124,8 +124,9 @@ export function createSettingsRouter(db: Database): Router {
     const current = settings.getAppSettings();
 
     const saved = {
-      // A reader's age, not a band: the pipeline resolves it to a band itself.
-      defaultAge: requireReaderAge(body.defaultAge, 'defaultAge'),
+      // The band assumed when nothing says which reader this is for. Stored
+      // as its anchor, because every consumer resolves it to a band anyway.
+      defaultAge: requireAgeTarget(body.defaultAge, 'defaultAge'),
       scrapeTimes: times,
       llmProvider: optionalString(body.llmProvider),
       // Absent means "leave it alone", so a client that predates this field

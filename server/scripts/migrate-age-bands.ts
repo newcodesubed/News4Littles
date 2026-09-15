@@ -25,11 +25,14 @@ try {
   console.log(`  overrides dropped     ${report.overridesDropped.join(', ') || 0}`);
   console.log(`  drafts re-keyed       ${report.draftsMoved.map((m) => `${m.from}->${m.to}`).join(', ') || 0}`);
   console.log(`  drafts dropped        ${report.draftsDropped.join(', ') || 0}`);
+  console.log(`  default reading age   ${
+    report.defaultAgeMoved ? `${report.defaultAgeMoved.from}->${report.defaultAgeMoved.to}` : 'already a band'
+  }`);
 
   const nothing =
     report.storiesChanged === 0 && report.overridesMoved.length === 0 &&
     report.overridesDropped.length === 0 && report.draftsMoved.length === 0 &&
-    report.draftsDropped.length === 0;
+    report.draftsDropped.length === 0 && report.defaultAgeMoved === undefined;
 
   if (nothing) console.log('\nNothing to do.');
   else if (apply) console.log('\nApplied.');

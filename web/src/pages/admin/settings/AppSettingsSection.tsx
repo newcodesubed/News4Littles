@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { Button } from '../../../ui/Button';
 import { FIELD_CLASS_COMPACT, Select, TextInput } from '../../../ui/Field';
 import { Section } from '../../../ui/Surface';
-import { AGE_BANDS, MAX_AGE, MIN_AGE, formatAgeBand } from '../../../lib/ageBands';
+import { AGE_BANDS, ageBandLabel, formatAgeBand } from '../../../lib/ageBands';
 import type { AppSettings, Save } from './types';
 
 /** One model call per reading group, so this is the multiplier on the budget. */
@@ -16,12 +16,19 @@ export function AppSettingsSection({ settings, save }: { settings: AppSettings; 
 
   return (
     <Section title="App settings">
+      {/* The group assumed when nothing names a reader — a scrape with no
+          explicit target, or a feed request with no ?age=. Stored as the
+          group's youngest age, which is all any consumer reads. */}
       <label className="block max-w-xs">
-        <span className="text-sm font-bold">Default reading age</span>
-        <TextInput
-          type="number" min={MIN_AGE} max={MAX_AGE} value={draft.defaultAge}
+        <span className="text-sm font-bold">Default reading group</span>
+        <Select
+          value={draft.defaultAge} aria-label="Default reading group"
           onChange={(e) => setDraft({ ...draft, defaultAge: Number(e.target.value) })}
-        />
+        >
+          {AGE_BANDS.map((band) => (
+            <option key={band.minAge} value={band.minAge}>{ageBandLabel(band.minAge)}</option>
+          ))}
+        </Select>
       </label>
 
       <label className="mt-5 block max-w-xs">

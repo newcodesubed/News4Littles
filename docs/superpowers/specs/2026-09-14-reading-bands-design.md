@@ -77,11 +77,15 @@ so the list the editor sees cannot drift from what is substituted. Overrides
 are keyed by band anchor; the seeded age-6 override became the 5–7 band's,
 keyed `'5'`.
 
-**Validation.** Anything that *stores* an `ageTarget` — submit, edit, a prompt
-override or draft's scope — must be a band anchor (`requireAgeTarget`,
-`requireAge` in the sandbox). Anything that names a *reader* — `defaultAge`,
-`?age=` — accepts any of 5–14 (`requireReaderAge`) and is resolved to a band
-where it is used.
+**Validation.** Anything an editor *stores* as an age must be a band anchor:
+submit, edit, a prompt override's key or a draft's scope, and
+`app_settings.defaultAge` (`requireAgeTarget`, `requireAge` in the sandbox).
+`defaultAge` is an anchor rather than a reading age because every consumer
+resolved it to a band anyway, so the year-level precision was never read — and
+an admin control offering ten choices that collapse to three misleads. The one
+place a *reader's* age is still taken as a year is `?age=` on the public feed,
+which resolves it to a band and falls back rather than erroring, because a
+child's browser sent it.
 
 **Reads.** `GET /api/articles?age=N` resolves N to its band's anchor and
 matches exactly, as before. The repository is unchanged; the route does the
@@ -106,6 +110,8 @@ overrides, sandbox variant) offers bands. Labels say "Ages 5–7", never
 ## 4. Not changed
 
 - The slider granularity. Readers still pick an exact age; it selects a band.
+  Its default is a client-side constant (`DEFAULT_AGE`), not
+  `app_settings.defaultAge`, which is why that setting could become a band.
 - The schema. `ageTarget BETWEEN 5 AND 14` still holds; the anchor invariant is
   enforced in code, because tightening the CHECK needs a table rebuild in
   SQLite and the code path is the only writer.

@@ -145,7 +145,7 @@ describe('translation prompts (§8.5)', () => {
 describe('app settings (§8.7)', () => {
   it('returns the seeded defaults', async () => {
     expect(await json('/api/admin/app-settings')).toMatchObject({
-      defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null,
+      defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null,
     });
   });
 
@@ -156,22 +156,24 @@ describe('app settings (§8.7)', () => {
   });
 
   it('normalises and de-duplicates scrape times', async () => {
-    await put('/api/admin/app-settings', { defaultAge: 9, scrapeTimes: ['6:00', '07:30', '06:00'], llmProvider: 'anthropic' });
+    await put('/api/admin/app-settings', { defaultAge: 8, scrapeTimes: ['6:00', '07:30', '06:00'], llmProvider: 'anthropic' });
     expect(await json('/api/admin/app-settings')).toMatchObject({
-      defaultAge: 9, scrapeTimes: ['06:00', '07:30'], llmProvider: 'anthropic',
+      defaultAge: 8, scrapeTimes: ['06:00', '07:30'], llmProvider: 'anthropic',
     });
   });
 
   it('treats a blank provider as none', async () => {
-    await put('/api/admin/app-settings', { defaultAge: 6, scrapeTimes: [], llmProvider: '  ' });
+    await put('/api/admin/app-settings', { defaultAge: 5, scrapeTimes: [], llmProvider: '  ' });
     expect((await json('/api/admin/app-settings')).llmProvider).toBeNull();
   });
 
   it.each([
-    ['an impossible time', { defaultAge: 6, scrapeTimes: ['25:00'] }],
-    ['a non-time', { defaultAge: 6, scrapeTimes: ['morning'] }],
+    ['an impossible time', { defaultAge: 5, scrapeTimes: ['25:00'] }],
+    ['a non-time', { defaultAge: 5, scrapeTimes: ['morning'] }],
     ['an out-of-range age', { defaultAge: 99, scrapeTimes: [] }],
-    ['a non-array of times', { defaultAge: 6, scrapeTimes: '06:00' }],
+    // The default names a reading group, so a plain age is not one.
+    ['a default age that is not a band anchor', { defaultAge: 6, scrapeTimes: [] }],
+    ['a non-array of times', { defaultAge: 5, scrapeTimes: '06:00' }],
   ])('rejects %s with 400', async (_label, body) => {
     expect((await put('/api/admin/app-settings', body)).status).toBe(400);
   });
@@ -180,7 +182,7 @@ describe('app settings (§8.7)', () => {
     expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(10);
 
     const res = await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 4,
+      defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 4,
     });
     expect(res.status).toBe(200);
     expect((await res.json()).simplifyBudget).toBe(4);
@@ -189,7 +191,7 @@ describe('app settings (§8.7)', () => {
 
   it('accepts a budget of 0 — simplify nothing automatically', async () => {
     const res = await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: 0,
+      defaultAge: 5, scrapeTimes: [], llmProvider: null, simplifyBudget: 0,
     });
     expect(res.status).toBe(200);
     expect((await res.json()).simplifyBudget).toBe(0);
@@ -197,7 +199,7 @@ describe('app settings (§8.7)', () => {
 
   it.each([[-1], [101], ['ten'], [2.5]])('rejects a simplifyBudget of %p', async (value) => {
     const res = await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: value,
+      defaultAge: 5, scrapeTimes: [], llmProvider: null, simplifyBudget: value,
     });
     expect(res.status).toBe(400);
   });
@@ -205,22 +207,15 @@ describe('app settings (§8.7)', () => {
   it('leaves the budget alone when the field is absent', async () => {
     // An older client PUTting the pre-budget body must not silently reset it.
     await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: 3,
+      defaultAge: 5, scrapeTimes: [], llmProvider: null, simplifyBudget: 3,
     });
-    await put('/api/admin/app-settings', { defaultAge: 7, scrapeTimes: [], llmProvider: null });
+    await put('/api/admin/app-settings', { defaultAge: 5, scrapeTimes: [], llmProvider: null });
     expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(3);
   });
 
-  it('a saved defaultAge is written for the band it falls in', async () => {
-    // defaultAge is a reader's age; a version is stored under its band anchor.
-    await put('/api/admin/app-settings', { defaultAge: 12, scrapeTimes: ['06:00'] });
+  it('a saved defaultAge is the band the pipeline writes for', async () => {
+    await put('/api/admin/app-settings', { defaultAge: 11, scrapeTimes: ['06:00'] });
     const config = loadLocalPipelineConfig(ctx.db);
     expect(config.ageTarget).toBe(11);
-  });
-
-  it('accepts any slider age as the default, not just a band anchor', async () => {
-    const res = await put('/api/admin/app-settings', { defaultAge: 9, scrapeTimes: [] });
-    expect(res.status).toBe(200);
-    expect((await res.json()).defaultAge).toBe(9);
   });
 });
