@@ -49,7 +49,7 @@ and everything works end to end — just with plainer output. See
 | ------------ | --------------------------------------------------------------------------------------- |
 | `/`          | Today's stories                                                                         |
 | `/story/:id` | One story: what happened, why it matters, words to know, a feeling note                 |
-| `/podcast`   | Daily episode. The player is a **placeholder** — real audio is out of scope (§14)       |
+| `/podcast`   | Daily episode. Each story can be read aloud by the browser; the episode player is still a **placeholder** (§14) |
 | `/about`     | The mission and the editorial guardrails                                                |
 | `/settings`  | Reading age and which sources to show. Saved in the browser only; there are no accounts |
 
@@ -71,8 +71,8 @@ Everything under `/admin` needs the admin password.
 ```
 BBC RSS feed ─┐                  first 10 per run
               ├─→ raw_articles ─┬─→ guard + simplify ─→ kid_articles
-paste by hand ┘                 │   (once per reading     (3 versions,
-                                │    group: 5-7, 8-10,     pending_review)
+paste by hand ┘                 │   (once per reading     (3 versions + a spoken
+                                │    group: 5-7, 8-10,     script, pending_review)
                                 │    11-14)
                                 │                             │
                                 │                 an editor approves it

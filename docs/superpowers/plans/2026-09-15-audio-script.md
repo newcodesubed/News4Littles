@@ -386,7 +386,7 @@ const DIFF_FIELDS = [
 
 - [ ] **Step 7: Run both suites**
 
-Run: `cd server && npm test` — expected PASS, 617 tests.
+Run: `cd server && npm test` — expected PASS, 618 tests.
 Run: `cd web && npx tsc --noEmit && npm test` — expected clean, 267 passing.
 
 - [ ] **Step 8: Commit**

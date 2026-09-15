@@ -1,7 +1,7 @@
 # A spoken version of every story — design
 
 **Date:** 2026-09-15
-**Status:** designed, not yet implemented
+**Status:** implemented
 **Supersedes:** the "real text-to-speech" non-goal in PRD §2.2, and the
 deferral in §13.2. Everything else in the PRD stands — §3.5's podcast page
 keeps its placeholder player.
@@ -166,18 +166,20 @@ would go blank for all of them. It decays on its own as stories turn over.
 
 ## 5. Testing
 
-**Server.** The parser keeps a well-formed script, nulls an empty or non-string
-one, and — the case that matters — still parses an article whose `audioScript`
-is malformed, without falling back. Both seeded prompts request the field. A
-generated version round-trips the script through insert and read. `PATCH`
-accepts an edited script and sets `editedByHuman`. Regenerate carries it into
-the preview and writes it on apply. The rule-based fallback yields `null`.
+**Server.** 619 tests passing. The parser keeps a well-formed script, nulls an
+empty or non-string one, and — the case that matters — still parses an article
+whose `audioScript` is malformed, without falling back. Both seeded prompts
+request the field. A generated version round-trips the script through insert
+and read. `PATCH` accepts an edited script and sets `editedByHuman`. Regenerate
+carries it into the preview and writes it on apply. The rule-based fallback
+yields `null`.
 
-**Web.** `useSpeech` against a mocked `speechSynthesis` — jsdom has none:
-sentences are queued one utterance at a time, the highlight advances with the
-chunk, cancel stops playback, unmount cancels, and `unsupported` renders no
-button. The podcast page shows a stored script when present, falls back to the
-assembled one when `null`, and plays what it displays.
+**Web.** 281 tests passing. `useSpeech` against a mocked `speechSynthesis` —
+jsdom has none — sentences are queued one utterance at a time, the highlight
+advances with the chunk, cancel stops playback, unmount cancels, and
+`unsupported` renders no button. The podcast page shows a stored script when
+present, falls back to the assembled one when `null`, and plays what it
+displays.
 
 ## 6. Work
 
