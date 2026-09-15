@@ -268,10 +268,10 @@ describe('reading every reading-group version before approving (§5)', () => {
     createdAt: '2026-09-04T10:00:00.000Z',
   };
 
-  const open = () =>
+  const open = (subject: AdminStory = story) =>
     render(
       <ViewArticleDialog
-        story={story}
+        story={subject}
         onClose={() => {}}
         onEdit={() => {}}
         onPublish={() => {}}
@@ -302,5 +302,31 @@ describe('reading every reading-group version before approving (§5)', () => {
   it('says how many versions Publish will approve', () => {
     open();
     expect(screen.getByRole('button', { name: /publish all 3/i })).toBeInTheDocument();
+  });
+
+  /** A story whose versions carry the scripts given, youngest first. */
+  const spoken = (scripts: (string | null)[]): AdminStory => ({
+    ...story,
+    versions: story.versions.map((version, i) => ({ ...version, audioScript: scripts[i] })),
+  });
+
+  it('shows the script a child will hear, per reading group', async () => {
+    // §2.2: the model writes the script from the article, not from the story
+    // above it, so reading the story is not reading the script.
+    const user = userEvent.setup();
+    open(spoken(['Spoken to the fives.', 'Spoken to the nines.', 'Spoken to the fourteens.']));
+
+    expect(screen.getByText('Spoken to the fives.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ages 11–14' }));
+
+    expect(screen.getByText('Spoken to the fourteens.')).toBeInTheDocument();
+    expect(screen.queryByText('Spoken to the fives.')).not.toBeInTheDocument();
+  });
+
+  it('says so when a version has no script, rather than showing an empty box', () => {
+    // Every story published before the field existed reads this way.
+    open(spoken([null, null, null]));
+    expect(screen.getByText(/No script for this version/i)).toBeInTheDocument();
   });
 });
