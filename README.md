@@ -286,7 +286,7 @@ Rows at 6, 7, 9, 10, 12, 13 and 14 are unreachable now. Run
 cd server
 npm run db:migrate-age-bands            # dry run: prints what would change
 npm run db:migrate-age-bands -- --apply # collapse each story onto 5 / 8 / 11
-npm run db:update-prompts               # adopt the group-aware seeded prompts
+npm run db:init                         # adopt the group-aware seeded prompts
 ```
 
 In every group a story has rows for, the migration keeps one — the row already
@@ -380,9 +380,15 @@ Nothing in the sandbox writes production article data.
 The prompts that ship are written from the spec, not tuned. Replacing them is a
 good first job, and the sandbox is where to do it.
 
+`npm run db:seed` never overwrites a prompt, so an improved seeded prompt reaches
+an existing database through `npm run db:init` instead: a stored prompt that is
+still, word for word, a seed this project once shipped is swapped for the
+current one, and a prompt you have edited or removed is left exactly as it is.
+(This is how a database seeded before the prompt asked for a spoken version
+starts producing one.) To run just that step and see what it found:
+
 ```bash
-npm run db:update-prompts   # carry improved seeded prompts to an existing database
-                            # (leaves a prompt you have edited alone)
+npm run db:update-prompts   # refresh untouched seeded prompts and report each one
 ```
 
 ---
@@ -426,7 +432,8 @@ layer.
 
 Every statement in `schema.sql` is `CREATE ... IF NOT EXISTS`, so `npm run
 db:init` is safe to re-run and is how a schema addition reaches a database that
-already has rows in it.
+already has rows in it. The same run refreshes any seeded prompt that has not
+been edited since it was seeded (see `src/db/refreshSeededPrompts.ts`).
 
 | Table                               | Holds                                                     |
 | ----------------------------------- | --------------------------------------------------------- |

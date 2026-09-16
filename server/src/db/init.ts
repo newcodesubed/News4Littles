@@ -1,6 +1,6 @@
 /**
  * Creates every table defined in schema.sql. Idempotent — safe to re-run.
- * Seeds nothing.
+ * Seeds nothing, but does bring an untouched seeded prompt up to date.
  *
  *   npm run db:init
  *   DATABASE_PATH=/tmp/test.db npm run db:init
@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Database } from 'better-sqlite3';
 import { DATABASE_PATH, openDatabase } from './connection.js';
+import { refreshSeededPrompts } from './refreshSeededPrompts.js';
 
 /**
  * Bumped whenever schema.sql changes in a way an existing database must migrate
@@ -22,6 +23,10 @@ import { DATABASE_PATH, openDatabase } from './connection.js';
  * 4 — added scrape_runs.versions (one story yields several versions).
  * 5 — added kid_articles.approvedBy (records an auto-approved publish).
  * 6 — added kid_articles.audioScript (the spoken version of a story).
+ *
+ * Seeded prompt TEXT is not versioned here: refreshSeededPrompts decides by
+ * comparing the stored text with every seed ever shipped, so it is safe to run
+ * on every init and needs no version guard.
  */
 export const SCHEMA_VERSION = 6;
 
@@ -98,6 +103,13 @@ export function initialiseSchema(path: string = DATABASE_PATH): string[] {
     if (previousVersion > 0 && previousVersion < 3) {
       db.exec(`UPDATE raw_articles SET simplifiedAt = fetchedAt WHERE simplifiedAt IS NULL`);
     }
+
+    // A prompt row still holding an older seed, untouched, takes the current
+    // seed — so a database set up before the prompt asked for a spoken version
+    // (or for a reading band) starts asking after `npm run db:init`, the same
+    // step that gives it the column to store the answer in. Editors' prompts
+    // are never touched; see refreshSeededPrompts.ts for the exact rule.
+    refreshSeededPrompts(db);
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);
 
