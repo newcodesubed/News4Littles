@@ -15,7 +15,9 @@ import type { Database } from 'better-sqlite3';
 import type { KidArticle } from '../core/article.js';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { TTS_MAX_CHARS } from '../env.js';
-import { audioKey, type AudioCache } from '../tts/audioCache.js';
+import {
+  audioFromBuffer, audioKey, type AudioCache, type CachedAudio,
+} from '../tts/audioCache.js';
 import { SPEECH_CONTENT_TYPES, type SpeechProvider } from '../tts/types.js';
 
 /**
@@ -49,11 +51,12 @@ export function scriptFor(article: KidArticle): string {
 
 export interface AudioSuccess {
   ok: true;
-  audio: Buffer;
+  /** Described, not loaded — the route streams it rather than buffering it. */
+  body: CachedAudio;
   contentType: string;
   /** The cache key, which the route reuses as a strong ETag. */
   key: string;
-  /** False when this request is the one that paid for the synthesis. */
+  /** True when the audio already existed and nothing was synthesised. */
   cached: boolean;
 }
 
@@ -93,7 +96,7 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
    */
   const inFlight = new Map<string, Promise<AudioOutcome>>();
 
-  /** Pay for one rendering, store it, and hand it back. */
+  /** Pay for one rendering, store it, and describe it. */
   const synthesise = async (key: string, script: string): Promise<AudioOutcome> => {
     const spoken = await provider!.speak({ text: script });
     if (!spoken.ok) {
@@ -102,9 +105,17 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
       return { ok: false, status: 502, reason: spoken.reason };
     }
 
-    cache.write(key, spoken.audio);
+    await cache.write(key, spoken.audio);
 
-    return { ok: true, audio: spoken.audio, contentType: spoken.contentType, key, cached: false };
+    // Served from the bytes just paid for rather than read back off disk: this
+    // request already holds them.
+    return {
+      ok: true,
+      body: audioFromBuffer(spoken.audio),
+      contentType: spoken.contentType,
+      key,
+      cached: false,
+    };
   };
 
   return {
@@ -132,12 +143,12 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
         format: provider.format,
       });
 
-      const hit = cache.read(key);
+      const hit = await cache.read(key);
       if (hit) {
         // A hit has no provider response to read the content type off, so it
         // comes from the same format the key was built from.
         const contentType = SPEECH_CONTENT_TYPES[provider.format];
-        return { ok: true, audio: hit, contentType, key, cached: true };
+        return { ok: true, body: hit, contentType, key, cached: true };
       }
 
       // Join the synthesis already running for this rendering, or start it and

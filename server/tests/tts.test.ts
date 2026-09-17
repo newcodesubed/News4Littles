@@ -10,6 +10,7 @@ import express from 'express';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { createTestContext, insertKidArticle, type TestContext } from './helpers.js';
 import { audioKey, createFileAudioCache, createMemoryAudioCache } from '../src/tts/audioCache.js';
 import { OpenRouterSpeechProvider } from '../src/tts/openRouterSpeech.js';
@@ -182,21 +183,52 @@ describe('file audio cache', () => {
   beforeAll(() => { dir = mkdtempSync(join(tmpdir(), 'n4l-audio-')); });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('round-trips bytes', () => {
+  /** Drain a stream, the way the route's pipe does. */
+  const drain = async (audio: Readable): Promise<Buffer> => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of audio) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
+  };
+
+  it('round-trips bytes', async () => {
     const cache = createFileAudioCache(dir);
-    cache.write('abc.mp3', MP3);
-    expect(cache.read('abc.mp3')?.equals(MP3)).toBe(true);
+    await cache.write('abc.mp3', MP3);
+
+    const hit = await cache.read('abc.mp3');
+
+    expect(hit?.size).toBe(MP3.byteLength);
+    expect((await drain(hit!.open())).equals(MP3)).toBe(true);
   });
 
-  it('misses rather than throwing for something never written', () => {
-    expect(createFileAudioCache(dir).read('nothing-here.mp3')).toBeUndefined();
+  it('reports the size without reading the file', async () => {
+    // A hit must cost one metadata call, not half a megabyte into memory.
+    const cache = createFileAudioCache(dir);
+    await cache.write('sized.mp3', MP3);
+
+    expect((await cache.read('sized.mp3'))?.size).toBe(MP3.byteLength);
   });
 
-  it('leaves no partial file behind for a reader to serve', () => {
+  it('opens a fresh stream each time, so two listeners do not share one', async () => {
+    const cache = createFileAudioCache(dir);
+    await cache.write('shared.mp3', MP3);
+    const hit = await cache.read('shared.mp3');
+
+    const [first, second] = await Promise.all([drain(hit!.open()), drain(hit!.open())]);
+
+    expect(first.equals(MP3)).toBe(true);
+    expect(second.equals(MP3)).toBe(true);
+  });
+
+  it('misses rather than throwing for something never written', async () => {
+    expect(await createFileAudioCache(dir).read('nothing-here.mp3')).toBeUndefined();
+  });
+
+  it('leaves no partial file behind for a reader to serve', async () => {
     // write-then-rename: the only name that ever exists is a complete file.
     const cache = createFileAudioCache(dir);
-    cache.write('atomic.mp3', MP3);
-    expect(cache.read('atomic.mp3')?.byteLength).toBe(MP3.byteLength);
+    await cache.write('atomic.mp3', MP3);
+
+    expect((await cache.read('atomic.mp3'))?.size).toBe(MP3.byteLength);
   });
 });
 
@@ -323,6 +355,26 @@ describe('audio service', () => {
 
     expect(calls).toBe(1);
     expect(all.every((r) => r.ok)).toBe(true);
+  });
+
+  it('gives every waiter its own stream, not one they fight over', async () => {
+    const { provider } = stubProvider();
+    const service = createAudioService(ctx.db, { provider, cache: createMemoryAudioCache() });
+
+    const all = await Promise.all(
+      Array.from({ length: 3 }, () => service.forArticle('pub-a', 8)),
+    );
+    const bodies = await Promise.all(
+      all.map(async (r) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of (r as { body: { open(): Readable } }).body.open()) {
+          chunks.push(chunk as Buffer);
+        }
+        return Buffer.concat(chunks);
+      }),
+    );
+
+    expect(bodies.every((b) => b.equals(MP3))).toBe(true);
   });
 
   it('lets a later request retry after the shared attempt failed', async () => {

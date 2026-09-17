@@ -13,11 +13,18 @@
  * SQLite is on the request path for everything else here. Files also mean the
  * cache can be thrown away with `rm -rf data/audio` at any time.
  *
+ * A read hands back a SIZE AND A WAY TO OPEN THE BYTES, never the bytes
+ * themselves. Half a megabyte per listener held in memory, read with a
+ * synchronous call that stops the event loop for everyone else, is the wrong
+ * shape for a file this size — so the route streams it instead.
+ *
  * Deliberately knows nothing about articles or providers — it stores bytes
  * under a key. The article-shaped logic lives in ../services/audioService.ts.
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createReadStream, mkdirSync } from 'node:fs';
+import { rename, stat, writeFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { join } from 'node:path';
 import type { SpeechFormat } from './types.js';
 
@@ -42,19 +49,31 @@ export function audioKey(parts: AudioKeyParts): string {
   return `${digest}.${parts.format}`;
 }
 
+/** Stored audio, described but not yet loaded. */
+export interface CachedAudio {
+  /** Byte length, for Content-Length — known without reading the file. */
+  size: number;
+  /** A fresh stream over the bytes. Called once per response. */
+  open(): Readable;
+}
+
 export interface AudioCache {
-  /** The stored bytes, or undefined if this rendering has never been made. */
-  read(key: string): Buffer | undefined;
-  write(key: string, audio: Buffer): void;
+  /** Undefined if this rendering has never been made. */
+  read(key: string): Promise<CachedAudio | undefined>;
+  write(key: string, audio: Buffer): Promise<void>;
 }
 
 export function createFileAudioCache(directory: string): AudioCache {
   mkdirSync(directory, { recursive: true });
 
   return {
-    read(key) {
+    async read(key) {
+      const path = join(directory, key);
       try {
-        return readFileSync(join(directory, key));
+        // stat, not readFile: a hit costs one metadata call, and the bytes are
+        // only ever touched as they flow to the socket.
+        const { size } = await stat(path);
+        return { size, open: () => createReadStream(path) };
       } catch {
         // Missing is the normal case; unreadable is a cache miss too, because
         // re-synthesising costs money but serving half a file costs trust.
@@ -62,22 +81,32 @@ export function createFileAudioCache(directory: string): AudioCache {
       }
     },
 
-    write(key, audio) {
+    async write(key, audio) {
       // Write-then-rename: a crash mid-write must not leave a truncated file
       // that every later request happily serves as a complete story.
       const final = join(directory, key);
       const temporary = `${final}.${process.pid}.tmp`;
-      writeFileSync(temporary, audio);
-      renameSync(temporary, final);
+      await writeFile(temporary, audio);
+      await rename(temporary, final);
     },
   };
 }
 
-/** For tests: the same contract, held in memory, nothing on disk. */
+/** For tests, and for the case where nothing will ever be written. */
 export function createMemoryAudioCache(): AudioCache {
   const files = new Map<string, Buffer>();
   return {
-    read: (key) => files.get(key),
-    write: (key, audio) => void files.set(key, audio),
+    async read(key) {
+      const audio = files.get(key);
+      return audio && { size: audio.byteLength, open: () => Readable.from([audio]) };
+    },
+    async write(key, audio) {
+      files.set(key, audio);
+    },
   };
+}
+
+/** Audio already in hand, in the same shape a cache read returns. */
+export function audioFromBuffer(audio: Buffer): CachedAudio {
+  return { size: audio.byteLength, open: () => Readable.from([audio]) };
 }

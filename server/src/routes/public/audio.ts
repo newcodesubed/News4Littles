@@ -64,7 +64,7 @@ export function createAudioRouter(db: Database, options: AudioRouterOptions = {}
     // genuine strong validator: if any of those change, so does the ETag.
     res.setHeader('ETag', `"${result.key}"`);
     res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Content-Length', String(result.audio.byteLength));
+    res.setHeader('Content-Length', String(result.body.size));
     // Immutable for a day: the URL's content only changes when an editor
     // rewrites the script, and then the ETag changes with it.
     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -74,7 +74,20 @@ export function createAudioRouter(db: Database, options: AudioRouterOptions = {}
       return;
     }
 
-    res.send(result.audio);
+    // Streamed, not buffered: half a megabyte per listener held in memory is
+    // the wrong shape for a file this size.
+    const audio = result.body.open();
+
+    // A stream that dies mid-response cannot be turned into an error page —
+    // the status and headers are already gone. Dropping the connection at
+    // least lets the browser report a truncated file instead of treating a
+    // half-story as complete.
+    audio.on('error', () => res.destroy());
+    // A listener who navigates away mid-story leaves the file handle open
+    // unless the stream is told the response is over.
+    res.on('close', () => audio.destroy());
+
+    audio.pipe(res);
   });
 
   return router;
