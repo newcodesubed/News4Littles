@@ -109,3 +109,44 @@ export const LLM_MAX_RETRIES = readInt('LLM_MAX_RETRIES', 1);
 /** Admin credentials, used by the seed to create the account (PRD §4.1). */
 export const ADMIN_USERNAME = readString('ADMIN_USERNAME', 'admin');
 export const ADMIN_PASSWORD = readString('ADMIN_PASSWORD', 'admin123');
+
+/**
+ * Text-to-speech (§3.5's player).
+ *
+ * TTS_PROVIDER is the swap point: it names a module in src/tts, and nothing
+ * outside that folder knows which one is running. Adding ElevenLabs means
+ * adding a file and its own key variable here — no route, service or component
+ * changes.
+ *
+ * The OpenRouter adapter reuses OPENROUTER_KEY above, because it is the same
+ * account and the same bill. A provider that is not OpenRouter brings its own.
+ */
+export const TTS_PROVIDER = readString('TTS_PROVIDER', 'openrouter');
+
+/** Master switch. Off, or with no usable provider, the player is simply absent. */
+export const TTS_ENABLED = readString('TTS_ENABLED', 'true').toLowerCase() !== 'false';
+
+/**
+ * Model and voice are provider-specific strings; these defaults belong to
+ * OpenRouter's `microsoft/mai-voice-2`. Note that OpenRouter does NOT serve
+ * OpenAI's gpt-4o-mini-tts — its /audio/speech endpoint answers
+ * "Model openai/gpt-4o-mini-tts does not exist".
+ */
+export const TTS_MODEL = readString('TTS_MODEL', 'microsoft/mai-voice-2');
+export const TTS_VOICE = readString('TTS_VOICE', 'en-US-AvaNeural');
+
+/** Synthesis is slower than a chat completion: a long script takes real seconds. */
+export const TTS_TIMEOUT_MS = readInt('TTS_TIMEOUT_MS', 60_000);
+export const TTS_MAX_RETRIES = readInt('TTS_MAX_RETRIES', 1);
+
+/**
+ * Scripts are truncated to this before being sent. TTS is billed by input
+ * length, so without a cap one runaway script is one runaway bill.
+ */
+export const TTS_MAX_CHARS = readInt('TTS_MAX_CHARS', 2000);
+
+/**
+ * Where synthesised audio is kept. A story is paid for once, not once per
+ * listener — see src/tts/audioCache.ts. Relative to /server, like DATABASE_PATH.
+ */
+export const AUDIO_CACHE_DIR = resolve(SERVER_ROOT, readString('AUDIO_CACHE_DIR', 'data/audio'));
