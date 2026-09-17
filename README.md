@@ -49,7 +49,7 @@ and everything works end to end — just with plainer output. See
 | ------------ | --------------------------------------------------------------------------------------- |
 | `/`          | Today's stories                                                                         |
 | `/story/:id` | One story: what happened, why it matters, words to know, a feeling note                 |
-| `/podcast`   | Daily episode. Each story can be read aloud by the browser; the episode player is still a **placeholder** (§14) |
+| `/podcast`   | Daily episode. Each story is really read aloud by a text-to-speech voice; the whole-episode player is still a **placeholder** (§14) |
 | `/about`     | The mission and the editorial guardrails                                                |
 | `/settings`  | Reading age and which sources to show. Saved in the browser only; there are no accounts |
 
@@ -357,6 +357,79 @@ never in seed data, never committed (§13.2). `.env` is gitignored.
 
 ---
 
+## Reading stories aloud
+
+Stories used to be spoken by the browser's own `SpeechSynthesis` voice. That was
+free and offline, but the voice was whatever the reader's operating system
+happened to ship — not a decision worth leaving to chance for a product read by
+children. The server now synthesises the audio, so every child hears the same
+reviewed script in the same voice.
+
+```
+web                       server                          provider
+─────────────────────────────────────────────────────────────────────────────
+useStoryAudio             GET /api/articles/:id/audio
+  <audio src=…>    ───▶     audioService                (business logic)
+                              ├── cache hit? ───────▶  data/audio/<hash>.mp3
+                              └── SpeechProvider ────▶  OpenRouter /audio/speech
+```
+
+### Swapping the voice provider
+
+`src/tts/types.ts` defines a `SpeechProvider`: text in, audio bytes out. It is
+the only thing the rest of the server knows about. Nothing in `src/routes`,
+`src/services` or `web/` names a provider, holds a key or knows what a voice id
+looks like — so changing provider is three steps and no business-logic edit:
+
+1. Write `server/src/tts/<name>Speech.ts` implementing `SpeechProvider`
+   (`openRouterSpeech.ts` is the reference implementation).
+2. Add one line to the `PROVIDERS` registry in `server/src/tts/index.ts`.
+3. Set `TTS_PROVIDER=<name>` in `server/.env`.
+
+A provider reads its own configuration from `src/env.ts`, which is why its key
+and its voice vocabulary never leak into a shared options type.
+
+### Configuration
+
+| Setting          | Default                 | Why                                                          |
+| ---------------- | ----------------------- | ------------------------------------------------------------ |
+| `TTS_PROVIDER`   | `openrouter`            | Which module in `src/tts` speaks                             |
+| `TTS_ENABLED`    | `true`                  | `false` turns the player off; nothing is synthesised or paid |
+| `TTS_MODEL`      | `microsoft/mai-voice-2` | Provider-specific model id                                   |
+| `TTS_VOICE`      | `en-US-AvaNeural`       | Provider-specific voice id — **must match the model**        |
+| `TTS_MAX_CHARS`  | `2000`                  | Scripts are truncated first; TTS is billed by input length   |
+| `TTS_TIMEOUT_MS` | `60000`                 | Synthesis takes seconds, unlike a chat completion            |
+
+The OpenRouter provider reuses `OPENROUTER_KEY` — same account, same bill.
+
+> **OpenRouter does not serve OpenAI's TTS models.** `openai/gpt-4o-mini-tts`
+> answers `400 Model ... does not exist`, and `openai/gpt-audio-mini` is a
+> streaming chat model rather than a speech endpoint. The models that do work on
+> `/audio/speech` are `microsoft/mai-voice-2` (voice `en-US-AvaNeural`),
+> `x-ai/grok-voice-tts-1.0` (voice `Eve`) and `mistralai/voxtral-mini-tts-2603`
+> (voice `en_paul_neutral`). A voice id from the wrong model is a 400.
+
+Check it:
+
+```bash
+cd server
+npm run tts:check    # synthesises a real published story and writes tts-check.mp3
+```
+
+### Paying once
+
+Audio is cached in `server/data/audio`, content-addressed by a hash of the
+script, provider, model, voice and format. So a story is paid for once rather
+than once per listener, and invalidation is free: an editor rewriting a script,
+or a new `TTS_VOICE`, simply produces a different key. The directory is safe to
+delete at any time.
+
+Measured on the default model: about **1.6s** to synthesise a 335-character
+script, **5ms** to serve it from cache. Only the first listener of a story
+waits, which is why the play button has a real loading state.
+
+---
+
 ## Prompts and the sandbox
 
 Prompt wording is the highest-leverage thing in this project. Strengthening the
@@ -527,8 +600,13 @@ resemblance.
 
 ## Not built
 
-- **Real podcast audio.** The `/podcast` player is a placeholder. Out of scope
-  for v1 (§2.2, §14) and needs a TTS key.
+- **Whole-episode audio.** Individual stories are read aloud for real (see
+  _Reading stories aloud_), but nothing stitches the day's stories into one
+  file, so the big play button at the top of `/podcast` is still a placeholder.
+- **Read-along highlighting.** The old browser-voice player highlighted the
+  sentence being spoken, because each sentence was its own utterance. One audio
+  file per story has no such boundaries; the highlight comes back once timings
+  are carried alongside the audio.
 - **Multiple admin accounts / roles.** One shared account by design (§2.2).
 - **Translations, mobile apps.** Out of scope (§14).
 
