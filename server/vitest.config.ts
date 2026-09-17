@@ -12,7 +12,7 @@ export default defineConfig({
      * Tests that need the LLM path inject a stub client instead. The one live
      * check is a standalone script, run deliberately.
      */
-    env: { LLM_ENABLED: 'false' },
+    env: { LLM_ENABLED: 'false', TTS_ENABLED: 'false' },
     include: ['tests/**/*.test.ts'],
     // Each suite opens its own SQLite file; running files in parallel is fine,
     // but tests inside a file share a database and must stay ordered.
