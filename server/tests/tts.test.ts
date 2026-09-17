@@ -400,6 +400,30 @@ describe('audio service', () => {
     expect((await service.forArticle('pub-a', 8)).ok).toBe(true);
   });
 
+  it('says on the terminal why a story could not be spoken', async () => {
+    // The reader only ever sees "could not be read aloud". Without this line a
+    // wrong voice id, an expired key and a provider outage are indistinguishable
+    // and silent.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { provider } = stubProvider({
+      speak: async () => ({
+        ok: false, reason: 'OpenRouter returned 400: no such voice', transient: false, elapsedMs: 1,
+      }),
+    });
+    const service = createAudioService(ctx.db, { provider, cache: createMemoryAudioCache() });
+
+    await service.forArticle('pub-a', 8);
+
+    expect(logged).toHaveBeenCalledOnce();
+    const line = logged.mock.calls[0]![0] as string;
+    expect(line).toContain('[tts]');
+    expect(line).toContain('pub-a');
+    expect(line).toContain('stub-model/stub-voice');
+    expect(line).toContain('no such voice');
+
+    logged.mockRestore();
+  });
+
   it('never caches a failure, so a blip is not permanent', async () => {
     let attempt = 0;
     const cache = createMemoryAudioCache();

@@ -82,7 +82,10 @@ export function createAudioRouter(db: Database, options: AudioRouterOptions = {}
     // the status and headers are already gone. Dropping the connection at
     // least lets the browser report a truncated file instead of treating a
     // half-story as complete.
-    audio.on('error', () => res.destroy());
+    audio.on('error', (error: Error) => {
+      console.error(`[tts] stream failed for ${result.key}: ${error.message}`);
+      res.destroy();
+    });
     // A listener who navigates away mid-story leaves the file handle open
     // unless the stream is told the response is over.
     res.on('close', () => audio.destroy());

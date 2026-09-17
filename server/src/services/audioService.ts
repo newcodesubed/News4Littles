@@ -97,11 +97,19 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
   const inFlight = new Map<string, Promise<AudioOutcome>>();
 
   /** Pay for one rendering, store it, and describe it. */
-  const synthesise = async (key: string, script: string): Promise<AudioOutcome> => {
-    const spoken = await provider!.speak({ text: script });
+  const synthesise = async (key: string, script: string, id: string): Promise<AudioOutcome> => {
+    const voice = provider!;
+    const spoken = await voice.speak({ text: script });
     if (!spoken.ok) {
       // A provider failure is a story without audio, never a broken page. It
       // is not cached either, so a blip does not become permanent.
+      //
+      // Logged because the reader only ever sees "could not be read aloud":
+      // without this line a wrong TTS_VOICE, an expired key or a provider
+      // outage all look identical from the outside, and silent.
+      console.error(
+        `[tts] ${id} could not be spoken by ${voice.model}/${voice.voice}: ${spoken.reason}`,
+      );
       return { ok: false, status: 502, reason: spoken.reason };
     }
 
@@ -156,7 +164,7 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
       // a failure tries again rather than replaying the old rejection.
       let pending = inFlight.get(key);
       if (!pending) {
-        pending = synthesise(key, script).finally(() => inFlight.delete(key));
+        pending = synthesise(key, script, id).finally(() => inFlight.delete(key));
         inFlight.set(key, pending);
       }
 
