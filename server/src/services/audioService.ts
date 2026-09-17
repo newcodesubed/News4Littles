@@ -83,6 +83,30 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
   const { provider, cache } = options;
   const maxChars = options.maxChars ?? TTS_MAX_CHARS;
 
+  /**
+   * Renderings being synthesised right now, so a crowd pays once.
+   *
+   * Without it, five children pressing play on a new story in the same second
+   * are five cache misses, five provider calls and five identical files — the
+   * bill multiplied by however many people happened to be first. Keyed by the
+   * cache key, which already identifies a rendering exactly.
+   */
+  const inFlight = new Map<string, Promise<AudioOutcome>>();
+
+  /** Pay for one rendering, store it, and hand it back. */
+  const synthesise = async (key: string, script: string): Promise<AudioOutcome> => {
+    const spoken = await provider!.speak({ text: script });
+    if (!spoken.ok) {
+      // A provider failure is a story without audio, never a broken page. It
+      // is not cached either, so a blip does not become permanent.
+      return { ok: false, status: 502, reason: spoken.reason };
+    }
+
+    cache.write(key, spoken.audio);
+
+    return { ok: true, audio: spoken.audio, contentType: spoken.contentType, key, cached: false };
+  };
+
   return {
     async forArticle(id, ageTarget) {
       if (!provider) {
@@ -116,15 +140,16 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
         return { ok: true, audio: hit, contentType, key, cached: true };
       }
 
-      const spoken = await provider.speak({ text: script });
-      if (!spoken.ok) {
-        // A provider failure is a story without audio, never a broken page.
-        return { ok: false, status: 502, reason: spoken.reason };
+      // Join the synthesis already running for this rendering, or start it and
+      // let everyone else join. Cleared once settled, so a later request after
+      // a failure tries again rather than replaying the old rejection.
+      let pending = inFlight.get(key);
+      if (!pending) {
+        pending = synthesise(key, script).finally(() => inFlight.delete(key));
+        inFlight.set(key, pending);
       }
 
-      cache.write(key, spoken.audio);
-
-      return { ok: true, audio: spoken.audio, contentType: spoken.contentType, key, cached: false };
+      return pending;
     },
   };
 }

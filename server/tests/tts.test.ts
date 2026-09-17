@@ -300,6 +300,52 @@ describe('audio service', () => {
     expect(!result.ok && result.status).toBe(502);
   });
 
+  it('pays once when a crowd asks for the same uncached story at once', async () => {
+    // Five children pressing play in the same second used to be five cache
+    // misses, five provider calls and one bill multiplied by five.
+    let calls = 0;
+    const { provider } = stubProvider({
+      speak: async () => {
+        calls += 1;
+        // Long enough that all five requests are genuinely in flight together.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          ok: true, audio: MP3, contentType: 'audio/mpeg', format: 'mp3',
+          model: 'stub-model', voice: 'stub-voice', elapsedMs: 20,
+        };
+      },
+    });
+    const service = createAudioService(ctx.db, { provider, cache: createMemoryAudioCache() });
+
+    const all = await Promise.all(
+      Array.from({ length: 5 }, () => service.forArticle('pub-a', 8)),
+    );
+
+    expect(calls).toBe(1);
+    expect(all.every((r) => r.ok)).toBe(true);
+  });
+
+  it('lets a later request retry after the shared attempt failed', async () => {
+    // The in-flight entry must be cleared on failure too, or one blip would
+    // be replayed to everyone who asked afterwards.
+    let attempt = 0;
+    const { provider } = stubProvider({
+      speak: async (): Promise<SpeechResult> => {
+        attempt += 1;
+        return attempt === 1
+          ? { ok: false, reason: 'blip', transient: true, elapsedMs: 1 }
+          : {
+              ok: true, audio: MP3, contentType: 'audio/mpeg', format: 'mp3',
+              model: 'stub-model', voice: 'stub-voice', elapsedMs: 1,
+            };
+      },
+    });
+    const service = createAudioService(ctx.db, { provider, cache: createMemoryAudioCache() });
+
+    expect((await service.forArticle('pub-a', 8)).ok).toBe(false);
+    expect((await service.forArticle('pub-a', 8)).ok).toBe(true);
+  });
+
   it('never caches a failure, so a blip is not permanent', async () => {
     let attempt = 0;
     const cache = createMemoryAudioCache();
