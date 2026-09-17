@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "llm:check": "tsx scripts/check-llm.ts",
+    "tts:check": "tsx scripts/check-tts.ts",
     "db:update-prompts": "tsx scripts/update-seeded-prompts.ts",
     "db:migrate-age-bands": "tsx scripts/migrate-age-bands.ts"
   },
