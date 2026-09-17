@@ -12,12 +12,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { createTestContext, insertKidArticle, type TestContext } from './helpers.js';
-import { audioKey, createFileAudioCache, createMemoryAudioCache } from '../src/tts/audioCache.js';
+import {
+  audioKey, createFileAudioCache, createMemoryAudioCache, type CachedAudio,
+} from '../src/tts/audioCache.js';
 import { OpenRouterSpeechProvider } from '../src/tts/openRouterSpeech.js';
 import { createSpeechProvider, PROVIDER_IDS } from '../src/tts/index.js';
 import type { SpeechProvider, SpeechResult } from '../src/tts/types.js';
 import {
-  assembleScript, createAudioService, scriptFor,
+  assembleScript, createAudioService, scriptFor, type AudioService,
 } from '../src/services/audioService.js';
 import { createAudioRouter } from '../src/routes/public/audio.js';
 import type { KidArticle } from '../src/core/article.js';
@@ -495,5 +497,81 @@ describe('GET /api/articles/:id/audio', () => {
     const response = await ctx.anon('/api/articles/pub-b/audio?age=8');
     expect(response.status).toBe(503);
     expect((await response.json()).error).toMatch(/not configured/i);
+  });
+});
+
+describe('streaming a story that goes wrong', () => {
+  let ctx: TestContext;
+  beforeAll(() => {
+    ctx = createTestContext();
+    insertKidArticle(ctx.db, { id: 'pub-c', status: 'published', audioScript: 'One.' });
+  });
+  afterAll(() => ctx.close());
+
+  const KEY = `${'a'.repeat(64)}.mp3`;
+
+  /** A server whose audio body is whatever the test wants it to be. */
+  const startWithBody = (body: CachedAudio) => {
+    const service: AudioService = {
+      async forArticle() {
+        return { ok: true, body, contentType: 'audio/mpeg', key: KEY, cached: true };
+      },
+    };
+    const app = express();
+    app.use('/api', createAudioRouter(ctx.db, { service }));
+    const server = app.listen(0);
+    const { port } = server.address() as { port: number };
+    return { server, url: `http://127.0.0.1:${port}/api/articles/pub-c/audio?age=8` };
+  };
+
+  const until = async (done: () => boolean) => {
+    for (let i = 0; i < 100 && !done(); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return done();
+  };
+
+  it('cuts the connection when the file fails halfway, instead of passing off half a story', async () => {
+    // The status and headers are long gone by then, so there is no error page
+    // to send; a truncated body is the only honest signal left.
+    const failing = new Readable({ read() {} });
+    failing.push(Buffer.alloc(1024));
+    // Promises a whole file, delivers 1 KB: exactly what a mid-read failure
+    // looks like to the listener.
+    const { server, url } = startWithBody({ size: 500_000, open: () => failing });
+
+    // Resolves once the headers and that first chunk have arrived, so the
+    // failure below really is mid-story rather than before a byte was sent.
+    const response = await fetch(url);
+    expect(response.status).toBe(200);
+
+    failing.destroy(new Error('the disk went away'));
+
+    await expect(response.arrayBuffer()).rejects.toThrow();
+
+    server.close();
+  });
+
+  it('closes the file when a listener navigates away mid-story', async () => {
+    // Without this the handle stays open for every child who wandered off,
+    // which is most of them.
+    let closed = false;
+    const stalled = new Readable({
+      read() {},
+      destroy(error, callback) {
+        closed = true;
+        callback(error);
+      },
+    });
+    stalled.push(Buffer.alloc(1024));
+    const { server, url } = startWithBody({ size: 500_000, open: () => stalled });
+
+    const listener = new AbortController();
+    const response = await fetch(url, { signal: listener.signal });
+    expect(response.status).toBe(200);
+    listener.abort();
+
+    expect(await until(() => closed)).toBe(true);
+    server.close();
   });
 });
