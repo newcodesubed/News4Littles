@@ -1,24 +1,18 @@
 /**
- * The text-to-speech contract — the seam this whole folder exists to create.
+ * The text-to-speech contract — the seam this folder exists to create.
  *
- * Everything outside src/tts talks to a `SpeechProvider` and nothing else: it
- * hands over text and gets back audio bytes. It does not know whether those
- * bytes came from OpenRouter, ElevenLabs, Azure or a file on disk, and it holds
- * no provider's key, endpoint, model id or voice name.
+ * Everything outside src/tts talks to a `SpeechProvider` and nothing else, so
+ * it holds no provider's key, endpoint, model id or voice name.
  *
- * SWAPPING PROVIDER: write one file in this folder that implements
- * `SpeechProvider`, register it in ./index.ts, set TTS_PROVIDER. No route,
- * service or component changes, because none of them can tell the difference.
+ * SWAPPING PROVIDER: write one file here implementing `SpeechProvider`,
+ * register it in ./index.ts, set TTS_PROVIDER. Nothing else changes.
  *
- * Shaped like `CompletionResult` in ../llm/openRouterClient.ts on purpose:
- * expected failures are returned, not thrown, so a provider being down is a
- * story without audio rather than a 500 for the whole page.
+ * Expected failures are returned, not thrown — a provider being down is a
+ * story without audio, not a 500 for the whole page.
  */
 
-/** Container formats a provider may be asked for. */
 export type SpeechFormat = 'mp3' | 'wav' | 'opus';
 
-/** What each format is called over HTTP, so the route never guesses. */
 export const SPEECH_CONTENT_TYPES: Record<SpeechFormat, string> = {
   mp3: 'audio/mpeg',
   wav: 'audio/wav',
@@ -36,10 +30,8 @@ export interface SpeechRequest {
 export interface SpeechSuccess {
   ok: true;
   audio: Buffer;
-  /** From SPEECH_CONTENT_TYPES; what the route puts on the response. */
   contentType: string;
   format: SpeechFormat;
-  /** What actually spoke, for logs and for the cache key. */
   model: string;
   voice: string;
   elapsedMs: number;
@@ -59,11 +51,7 @@ export type SpeechResult = SpeechSuccess | SpeechFailure;
 export interface SpeechProvider {
   /** The TTS_PROVIDER value that selects this implementation. */
   readonly id: string;
-  /**
-   * The defaults this instance speaks with. They are part of the cache key, so
-   * changing the voice in .env produces new audio instead of serving the old
-   * voice forever.
-   */
+  /** Part of the cache key, so a new voice in .env produces new audio. */
   readonly model: string;
   readonly voice: string;
   readonly format: SpeechFormat;

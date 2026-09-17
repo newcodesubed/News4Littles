@@ -1,22 +1,17 @@
 /**
  * OpenRouter's /audio/speech endpoint, behind the SpeechProvider contract.
+ * One implementation of ./types.ts — delete this file, write another, and the
+ * rest of the server is unaffected.
  *
- * This is ONE implementation of ./types.ts, not the interface itself — delete
- * this file, write another, and the rest of the server is unaffected.
+ * Two traps, both paid for once already:
+ *  * Success is raw audio bytes; only a FAILURE comes back as JSON.
+ *  * `voice` ids are per-model and not interchangeable — mai-voice-2 wants
+ *    Azure names ('en-US-AvaNeural'), voxtral wants 'en_paul_neutral'. The
+ *    wrong one is a 400, not a fallback voice.
  *
- * Two things differ from ../llm/openRouterClient.ts, which talks to the chat
- * endpoint next door:
- *
- *  * The success body is raw audio bytes, not JSON. Only a FAILURE comes back
- *    as JSON, so the content type decides how the response is read.
- *  * `voice` ids are per-model and are not interchangeable. mai-voice-2 wants
- *    Azure names ('en-US-AvaNeural'), voxtral wants 'en_paul_neutral', and the
- *    wrong one is a 400/404 from the provider rather than a fallback voice.
- *
- * Worth recording, because it is the reason this file is not named after GPT:
- * OpenRouter does not serve OpenAI's TTS models. Asking for
- * openai/gpt-4o-mini-tts here answers 400 "Model ... does not exist", and
- * openai/gpt-audio-mini is a streaming CHAT model, not a speech endpoint.
+ * OpenRouter does NOT serve OpenAI's TTS models: openai/gpt-4o-mini-tts
+ * answers 400 "Model ... does not exist", and openai/gpt-audio-mini is a
+ * streaming chat model rather than a speech endpoint.
  */
 import {
   OPENROUTER_KEY, TTS_MAX_RETRIES, TTS_MODEL, TTS_TIMEOUT_MS, TTS_VOICE,
@@ -128,7 +123,7 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
 
     if (!response.ok) {
       // A failure body is JSON and may carry a useful provider message; it
-      // never carries the key. A bad voice id arrives here, as a 400 or 404.
+      // never carries the key. A bad voice id arrives here as a 400 or 404.
       let detail = '';
       try {
         const body = (await response.json()) as { error?: { message?: string } };
