@@ -49,6 +49,17 @@ export function fetchPublishedArticles(age: number): Promise<KidArticle[]> {
   return getJson<KidArticle[]>(`/api/articles?age=${encodeURIComponent(age)}`);
 }
 
+/**
+ * Where a story's audio lives (PRD §3.5). A URL rather than a fetch: it is fed
+ * straight to an <audio> element, which does its own ranged, streamed request
+ * and gets browser caching for free.
+ *
+ * The age is part of it because the audio says what that age's version says.
+ */
+export function storyAudioUrl(id: string, age: number): string {
+  return `${API_BASE_URL}/api/articles/${encodeURIComponent(id)}/audio?age=${encodeURIComponent(age)}`;
+}
+
 /** The id names one version; the reader gets that story at their age. */
 export function fetchArticle(id: string, age: number): Promise<KidArticle> {
   return getJson<KidArticle>(

@@ -1,5 +1,5 @@
 /** Podcast page — playing each story's stored audio script (PRD §3.5). */
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,28 +25,36 @@ const mockFetch = (payload: unknown) =>
 const renderIn = (ui: React.ReactNode) =>
   render(<MemoryRouter><SettingsProvider>{ui}</SettingsProvider></MemoryRouter>);
 
-class FakeUtterance {
-  onstart: (() => void) | null = null;
-  onend: (() => void) | null = null;
-  constructor(public text: string) {}
-}
+/** jsdom has no media pipeline; see use-story-audio.test.ts. */
+class FakeAudio {
+  static instances: FakeAudio[] = [];
 
-let queue: FakeUtterance[];
+  onplaying: (() => void) | null = null;
+  onended: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  currentTime = 0;
+  pause = vi.fn();
+  play = vi.fn(async () => {});
+
+  constructor(public src: string) {
+    FakeAudio.instances.push(this);
+  }
+
+  static get last(): FakeAudio {
+    return FakeAudio.instances[FakeAudio.instances.length - 1];
+  }
+}
 
 beforeEach(() => {
   window.localStorage.clear();
-  queue = [];
-  vi.stubGlobal('SpeechSynthesisUtterance', FakeUtterance);
-  vi.stubGlobal('speechSynthesis', {
-    speak: (u: FakeUtterance) => queue.push(u),
-    cancel: () => { queue = []; },
-  });
+  FakeAudio.instances = [];
+  vi.stubGlobal('Audio', FakeAudio);
 });
 afterEach(() => {
   // Unmount every rendered component here, while the stubbed globals are
   // still in place — RTL's own auto-cleanup afterEach was registered (at
   // import time) before this one, so Vitest's LIFO ordering would otherwise
-  // run vi.unstubAllGlobals() first and leave useSpeech's cleanup effect
+  // run vi.unstubAllGlobals() first and leave the audio hook's cleanup effect
   // calling a global that no longer exists.
   cleanup();
   vi.unstubAllGlobals();
@@ -71,21 +79,35 @@ describe('Podcast', () => {
     expect(await screen.findByText(/Our next story is from/)).toBeInTheDocument();
   });
 
-  it('speaks what it displays', async () => {
-    mockFetch([article({ audioScript: 'One. Two.' })]);
+  it('asks the server for this story at this reading age', async () => {
+    // The audio says what the on-screen version says, so the age is part of
+    // the request — not just of the text fetch.
+    mockFetch([article({ id: 'a1', audioScript: 'One. Two.' })]);
     renderIn(<Podcast />);
 
     await userEvent.click(await screen.findByRole('button', { name: /listen to story 1/i }));
 
-    expect(queue.map((u) => u.text)).toEqual(['One.', 'Two.']);
+    expect(FakeAudio.instances).toHaveLength(1);
+    expect(FakeAudio.last.src).toMatch(/\/api\/articles\/a1\/audio\?age=\d+$/);
+    expect(FakeAudio.last.play).toHaveBeenCalled();
   });
 
-  it('renders no play button when the browser cannot speak', async () => {
-    vi.unstubAllGlobals();
+  it('offers a play button even before the browser knows the audio exists', async () => {
+    // Whether a voice is configured is the server's business; the page finds
+    // out by asking, so the button is always offered.
     mockFetch([article({ audioScript: 'One.' })]);
     renderIn(<Podcast />);
 
-    await screen.findByText('One.');
-    expect(screen.queryByRole('button', { name: /listen to story/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /listen to story 1/i })).toBeInTheDocument();
+  });
+
+  it('says so, gently, when a story cannot be read aloud', async () => {
+    mockFetch([article({ audioScript: 'One.' })]);
+    renderIn(<Podcast />);
+    await userEvent.click(await screen.findByRole('button', { name: /listen to story 1/i }));
+
+    await act(async () => FakeAudio.last.onerror?.());
+
+    expect(await screen.findByText(/could not be read aloud/i)).toBeInTheDocument();
   });
 });

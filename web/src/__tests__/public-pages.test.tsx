@@ -104,10 +104,12 @@ describe('Podcast (§3.5)', () => {
     expect(await screen.findByText(/Today's Curious Kids News/)).toBeInTheDocument();
   });
 
-  it('carries the demo-player notice, since TTS is out of scope', async () => {
+  it('points at the per-story players, since whole-episode audio is not built yet', async () => {
+    // Per-story text-to-speech is real now; stitching the whole episode into
+    // one file is not, and the notice must not claim otherwise.
     mockFetch([article()]);
     renderIn(<Podcast />);
-    expect(await screen.findByText(/Demo player/)).toBeInTheDocument();
+    expect(await screen.findByText(/press play on a story below/i)).toBeInTheDocument();
   });
 
   it('builds one segment per published story', async () => {
