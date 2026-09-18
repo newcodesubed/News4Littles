@@ -529,8 +529,8 @@ it instead); and JSON columns are checked with `json_valid`.
 ## Tests
 
 ```bash
-cd server && npm test    # 628 tests
-cd web    && npm test    # 286 tests
+cd server && npm test    # 676 tests
+cd web    && npm test    # 288 tests
 ```
 
 Both suites are offline and free. Each server suite gets its own temporary
@@ -581,6 +581,7 @@ server/src/
   ingestion/          RSS fetching, parsing, scheduling
   services/           use cases: submit, regenerate, sandbox, scrape runs,
                       simplification (simplifyService, simplifyBudget, jobLock)
+  tts/                the speech provider registry, its contract, and the audio cache
   routes/             public/ and admin/
 
 web/src/
