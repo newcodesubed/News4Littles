@@ -71,8 +71,10 @@ describe('GET /prompts', () => {
   it('returns the live prompts, drafts, versions and template variables', async () => {
     const body = await (await ctx.api('/api/admin/prompts')).json();
     expect(body.simplification.generic).toContain('rewriting a real news story');
-    expect(body.simplification.ageOverrides['6']).toBeTruthy();
+    // The seeded override is keyed by its band's anchor, not a single age.
+    expect(body.simplification.ageOverrides['5']).toBeTruthy();
     expect(body.templateVariables).toContain('{{headline}}');
+    expect(body.templateVariables).toContain('{{ageRange}}');
     expect(body.versions).toEqual({});
     expect(body.drafts).toEqual([]);
   });
@@ -135,6 +137,8 @@ describe('drafts (§7.4: a draft never affects production)', () => {
   it.each([
     ['an unknown target', { target: 'nonsense', promptText: 'x' }],
     ['an out-of-range age', { target: 'simplification', age: 99, promptText: 'x' }],
+    // Overrides are per band, so an age that anchors no band is not a scope.
+    ['an age that is not a band anchor', { target: 'simplification', age: 6, promptText: 'x' }],
     ['an empty prompt', { target: 'simplification', promptText: '  ' }],
   ])('rejects %s', async (_label, body) => {
     expect((await put('/api/admin/prompts/draft', body)).status).toBe(400);
@@ -190,21 +194,27 @@ describe('POST /prompts/test — §7.4: writes nothing', () => {
     expect((await post('/api/admin/prompts/test', { target: 'simplification', promptText: 'p' })).status).toBe(400);
   });
 
-  it('reports the words-per-sentence check against the age limit (§7.3)', async () => {
-    const body = await (await post('/api/admin/prompts/test', testBody({ age: 6 }))).json();
-    // age * 2: every reading age has its own limit now that a story exists in
-    // one version per age. Age 6 is 12, where the old three-band rule said 14.
-    expect(body.draft.validation.ageLimit).toBe(12);
+  it('reports the words-per-sentence check against the band limit (§7.3)', async () => {
+    const body = await (await post('/api/admin/prompts/test', testBody({ age: 8 }))).json();
+    // §9.2's band rule: the 8-10 band allows 20 words per sentence.
+    expect(body.draft.validation.ageLimit).toBe(20);
     expect(typeof body.draft.validation.longestSentenceWords).toBe('number');
     expect(typeof body.draft.validation.withinAgeLimit).toBe('boolean');
   });
 
-  it('reports a different limit for a different age, proving it honours the age', async () => {
+  it('reports a different limit for a different band, proving it honours the band', async () => {
     const younger = await (await post('/api/admin/prompts/test', testBody({ age: 5 }))).json();
-    const older = await (await post('/api/admin/prompts/test', testBody({ age: 14 }))).json();
+    const older = await (await post('/api/admin/prompts/test', testBody({ age: 11 }))).json();
 
-    expect(younger.draft.validation.ageLimit).toBe(10);
+    expect(younger.draft.validation.ageLimit).toBe(14);
     expect(older.draft.validation.ageLimit).toBe(28);
+  });
+
+  it('runs a generic-prompt test for the band the default age falls in', async () => {
+    // defaultAge is 6 (§3.6); production writes a reader of 6 the 5-7 version.
+    const body = await (await post('/api/admin/prompts/test', testBody({ age: null }))).json();
+    expect(body.draft.article.ageTarget).toBe(5);
+    expect(body.draft.validation.ageLimit).toBe(14);
   });
 
   it('comparison mode returns both runs (§7.3)', async () => {
@@ -326,9 +336,9 @@ describe('GET /prompts/production — the "reset to production" source', () => {
     expect(body.promptText).toContain('rewriting a real news story');
   });
 
-  it('returns the age override when one exists', async () => {
-    const body = await (await ctx.api('/api/admin/prompts/production?target=simplification&age=6')).json();
-    expect(body.promptText).toContain('6-year-old');
+  it('returns the band override when one exists', async () => {
+    const body = await (await ctx.api('/api/admin/prompts/production?target=simplification&age=5')).json();
+    expect(body.promptText).toContain('aged 5 to 7');
   });
 
   it('falls back to generic for an age with no override', async () => {

@@ -4,7 +4,7 @@ import type { SandboxRun, TestResult } from './types';
 
 const DIFF_FIELDS = [
   'kidHeadline', 'summary', 'whatHappened', 'whyItMatters',
-  'thinkAbout', 'feelingNote', 'safety', 'readingMinutes',
+  'thinkAbout', 'audioScript', 'feelingNote', 'safety', 'readingMinutes',
 ] as const;
 
 /** §7.4: elapsed time, and which engine produced the output. */

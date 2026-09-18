@@ -107,7 +107,7 @@ export function AdminReview() {
 
   const { notice, setNotice, run: act } = useAdminAction(load);
 
-  // §4.2 Regenerate is a background job over every age version (§5), so it
+  // §4.2 Regenerate is a background job over every reading-group version (§5), so it
   // has progress and a lifecycle rather than a single awaited request.
   const regen = useRegenerateJob({ setNotice, onApplied: load });
 
@@ -279,7 +279,7 @@ export function AdminReview() {
                       actions={{
                         onView: () => setViewing(story),
                         onPublish: () => void runRowAction(id, 'publish',
-                          `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published every age version.'),
+                          `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published every reading group.'),
                         onReject: () => setRejecting(story.versions[0]),
                         onUnpublish: () => void runRowAction(id, 'unpublish',
                           `/api/admin/articles/${id}/unpublish`, { method: 'PATCH' }, 'Moved back to pending review.'),
@@ -294,7 +294,7 @@ export function AdminReview() {
                           body: (
                             <>
                               <strong>{story.kidHeadline}</strong> will be removed for good
-                              {story.versions.length > 1 ? ', at every reading age' : ''}. The original
+                              {story.versions.length > 1 ? ', for every reading group' : ''}. The original
                               article stays, so it can be simplified again later.
                             </>
                           ),

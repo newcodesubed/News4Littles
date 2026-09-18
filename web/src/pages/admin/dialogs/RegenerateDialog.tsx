@@ -3,14 +3,15 @@ import type { RegenerateJob } from '../../../admin/types';
 import { Button } from '../../../ui/Button';
 import { Modal } from './Modal';
 import { changedFields, VersionDiff } from './VersionDiff';
+import { ageBandLabel } from '../../../lib/ageBands';
 
 /**
- * §4.2 Regenerate — every age version of one story, a tab each.
+ * §4.2 Regenerate — every reading-group version of one story, a tab each.
  *
  * Regeneration is story-scoped like publish and reject (§5), but APPLYING is
- * per-age: an editor who likes nine rewrites and not the tenth should be able
- * to take the nine. Ages a person has edited arrive unticked, so no human
- * wording is replaced unless someone chooses to replace it.
+ * per-version: an editor who likes two rewrites and not the third should be
+ * able to take the two. Versions a person has edited arrive unticked, so no
+ * human wording is replaced unless someone chooses to replace it.
  */
 export function RegenerateDialog({
   job,
@@ -48,7 +49,7 @@ export function RegenerateDialog({
       </p>
 
       <div className="mt-4 flex items-start justify-between gap-3">
-        <div className="flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Age versions">
+        <div className="flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Reading group versions">
           {job.versions.map((v) => {
             const count = changedFields(v.current, v.generated).length;
             const isActive = v.ageTarget === active;
@@ -61,12 +62,12 @@ export function RegenerateDialog({
               >
                 <input
                   type="checkbox"
-                  aria-label={`Apply age ${v.ageTarget}`}
+                  aria-label={`Apply ${ageBandLabel(v.ageTarget).toLowerCase()}`}
                   checked={ticked.has(v.ageTarget)}
                   onChange={() => toggle(v.ageTarget)}
                 />
                 <button role="tab" aria-selected={isActive} onClick={() => setActive(v.ageTarget)}>
-                  Age {v.ageTarget}
+                  {ageBandLabel(v.ageTarget)}
                   {v.current.editedByHuman && <span aria-hidden="true"> ✎</span>}
                   <span className="ml-1 text-xs text-muted-foreground">
                     {count === 0 ? '—' : `•${count}`}
@@ -91,17 +92,17 @@ export function RegenerateDialog({
       </div>
 
       <p className="mt-4 text-sm font-bold">
-        Age {version.ageTarget}
+        {ageBandLabel(version.ageTarget)}
         {version.current.editedByHuman && ' · edited by a person'}
         {' · '}
         {changed.length === 0
-          ? 'no differences — applying this age would change nothing'
+          ? 'no differences — applying this version would change nothing'
           : `${changed.length} field(s) would change`}
       </p>
 
       {version.fallbackReason && (
         <p className="mt-2 rounded-2xl bg-surface-sun px-4 py-3 text-sm font-semibold">
-          This age fell back to the rule-based pipeline: {version.fallbackReason}
+          This version fell back to the rule-based pipeline: {version.fallbackReason}
         </p>
       )}
 
@@ -109,7 +110,7 @@ export function RegenerateDialog({
 
       {version.current.editedByHuman && (
         <p className="mt-4 rounded-2xl bg-surface-sun px-4 py-3 text-sm font-semibold">
-          ✎ This age was edited by a person. Tick it only if you want that wording replaced.
+          ✎ This version was edited by a person. Tick it only if you want that wording replaced.
         </p>
       )}
 

@@ -9,7 +9,7 @@
  *   safety     — calm, adult-nearby, skip-young
  *   category   — Environment, Science, World, Sports, Good News
  *   status     — pending_review, published, rejected
- *   ageTarget  — spread across 6-13
+ *   ageTarget  — spread across the three reading bands (5, 8, 11)
  *
  * Every kid article needs a raw_articles parent (originalId is a NOT NULL FK),
  * so each sample below carries the "original" it was rewritten from.
@@ -59,7 +59,7 @@ const SAMPLES: SampleArticle[] = [
       body: 'A survey team using a remotely operated vehicle has documented an extensive cold-water coral formation at depth. Placeholder text for local development only.',
     },
     kid: {
-      ageTarget: 6,
+      ageTarget: 5,
       kidHeadline: 'A secret coral garden was found deep in the sea!',
       summary: 'Scientists found a huge coral garden hiding far below the waves.',
       whatHappened:
@@ -123,7 +123,7 @@ const SAMPLES: SampleArticle[] = [
       body: 'A regional school programme has reported the planting of ten thousand saplings. Placeholder text for local development only.',
     },
     kid: {
-      ageTarget: 7,
+      ageTarget: 5,
       kidHeadline: 'Kids planted ten thousand trees on the hills',
       summary: 'Schoolchildren spent a season planting trees and they are already growing.',
       whatHappened:
@@ -155,7 +155,7 @@ const SAMPLES: SampleArticle[] = [
       body: 'A fifteen-year-old swimmer has set a new national junior record. Placeholder text for local development only.',
     },
     kid: {
-      ageTarget: 9,
+      ageTarget: 8,
       kidHeadline: 'A fifteen-year-old swam faster than anyone her age',
       summary: 'A young swimmer broke a record that had stood for eleven years.',
       whatHappened:
@@ -219,7 +219,7 @@ const SAMPLES: SampleArticle[] = [
       body: 'Coastal communities have moved to temporary shelters ahead of a severe storm. Placeholder text for local development only.',
     },
     kid: {
-      ageTarget: 10,
+      ageTarget: 8,
       kidHeadline: 'Families moved somewhere safe before a big storm',
       summary: 'A strong storm was coming, so families near the coast went to shelters.',
       whatHappened:
@@ -252,7 +252,7 @@ const SAMPLES: SampleArticle[] = [
       body: 'Satellite measurements indicate an accelerating rate of polar ice loss. Placeholder text for local development only.',
     },
     kid: {
-      ageTarget: 12,
+      ageTarget: 11,
       kidHeadline: 'The ice at the top of the world is melting faster',
       summary: 'Satellites show that polar ice is disappearing more quickly than before.',
       whatHappened:
@@ -285,7 +285,7 @@ const SAMPLES: SampleArticle[] = [
       body: 'Negotiations have stalled as a border dispute continues. Placeholder text for local development only.',
     },
     kid: {
-      ageTarget: 13,
+      ageTarget: 11,
       kidHeadline: 'Two countries are still arguing over their border',
       summary: 'Talks between two countries have paused, and the disagreement continues.',
       whatHappened:
@@ -361,6 +361,8 @@ export function seedArticles(path: string = DATABASE_PATH): { rawArticles: numbe
         createdAt,
         // Schema CHECK: status 'published' requires publishedAt.
         publishedAt: sample.kid.status === 'published' ? createdAt : null,
+        // Hand-written placeholders, not LLM output — no spoken version to ship.
+        audioScript: null,
       });
     }
   });

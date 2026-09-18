@@ -23,6 +23,7 @@ const BASE: KidArticle = {
   whyItMatters: 'Lots of sea animals live in coral.',
   vocab: [{ word: 'coral', definition: 'A tiny sea animal that builds rocky homes.' }],
   thinkAbout: 'Where would you send a robot?',
+  audioScript: null,
   feelingNote: null,
   safety: 'calm',
   contentWarnings: null,

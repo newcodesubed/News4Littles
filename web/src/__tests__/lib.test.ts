@@ -2,6 +2,16 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { API_BASE_URL, ApiError, fetchArticle, fetchPublishedArticles } from '../lib/api';
+import {
+  AGE_BANDS,
+  AGE_BAND_ANCHORS,
+  MAX_AGE,
+  MIN_AGE,
+  ageBandLabel,
+  bandForAge,
+  formatAgeBand,
+  isAgeBandAnchor,
+} from '../lib/ageBands';
 import { useAsync } from '../lib/useAsync';
 import { needsFeelingNote } from '../lib/types';
 
@@ -114,5 +124,31 @@ describe('needsFeelingNote', () => {
     ['skip-young', true],
   ])('%s -> %s', (safety, expected) => {
     expect(needsFeelingNote({ safety: safety as 'calm' })).toBe(expected);
+  });
+});
+
+describe('reading bands (mirror of server/src/core/article.ts)', () => {
+  it('covers the slider range contiguously', () => {
+    expect(AGE_BANDS[0]!.minAge).toBe(MIN_AGE);
+    expect(AGE_BANDS[AGE_BANDS.length - 1]!.maxAge).toBe(MAX_AGE);
+    for (let i = 1; i < AGE_BANDS.length; i += 1) {
+      expect(AGE_BANDS[i]!.minAge).toBe(AGE_BANDS[i - 1]!.maxAge + 1);
+    }
+  });
+
+  it.each([[5, 5], [7, 5], [8, 8], [10, 8], [11, 11], [14, 11]])(
+    'age %i belongs to the band anchored at %i',
+    (age, anchor) => expect(bandForAge(age).minAge).toBe(anchor),
+  );
+
+  it('recognises exactly the anchors as storable ageTargets', () => {
+    expect(AGE_BAND_ANCHORS).toEqual([5, 8, 11]);
+    expect(isAgeBandAnchor(8)).toBe(true);
+    expect(isAgeBandAnchor(6)).toBe(false);
+  });
+
+  it('labels a stored ageTarget by its whole band', () => {
+    expect(ageBandLabel(8)).toBe('Ages 8–10');
+    expect(formatAgeBand(bandForAge(14))).toBe('11–14');
   });
 });

@@ -82,7 +82,7 @@ HEADLINE: {{kidHeadline}}
 SUMMARY: {{summary}}
 WHAT HAPPENED: {{whatHappened}}
 WHY IT MATTERS: {{whyItMatters}}
-THINK ABOUT: {{thinkAbout}}
+THINK ABOUT: {{thinkAbout}}{{audioScriptLine}}
 ${FENCE_CLOSE}
 
 Refuse the story if ANY of these is true:
@@ -102,18 +102,33 @@ Return ONLY a JSON object — no markdown fences, no commentary:
   "reason": "One short sentence explaining the decision."
 }`;
 
-/** The kid-facing fields the judge is shown. */
+/**
+ * The kid-facing fields the judge is shown.
+ *
+ * `audioScript` belongs here for the same reason the rest do: it is published
+ * with the story and spoken to the child. It is not a rewording of the fields
+ * above it — the prompt has the model write it from the ARTICLE — so judging
+ * those would leave a separately generated piece of text unread.
+ */
 type Judged = Pick<
   KidArticle,
-  'kidHeadline' | 'summary' | 'whatHappened' | 'whyItMatters' | 'thinkAbout'
+  'kidHeadline' | 'summary' | 'whatHappened' | 'whyItMatters' | 'thinkAbout' | 'audioScript'
 >;
 
 function render(article: Judged): string {
+  // A version with no script has nothing to judge there. The whole line goes
+  // rather than an empty one, so the judge never sees a story that looks as
+  // though a part of it went missing.
+  const audioScriptLine = article.audioScript
+    ? `\nREAD ALOUD: ${clamp(article.audioScript)}`
+    : '';
+
   return APPROVAL_PROMPT.replaceAll('{{kidHeadline}}', clamp(article.kidHeadline))
     .replaceAll('{{summary}}', clamp(article.summary))
     .replaceAll('{{whatHappened}}', clamp(article.whatHappened))
     .replaceAll('{{whyItMatters}}', clamp(article.whyItMatters))
-    .replaceAll('{{thinkAbout}}', clamp(article.thinkAbout));
+    .replaceAll('{{thinkAbout}}', clamp(article.thinkAbout))
+    .replaceAll('{{audioScriptLine}}', audioScriptLine);
 }
 
 export async function judgeStory(
@@ -125,6 +140,8 @@ export async function judgeStory(
   const fields = [
     article.kidHeadline, article.summary, article.whatHappened,
     article.whyItMatters, article.thinkAbout,
+    // Null means the version is simply not spoken, which is not suspicious.
+    article.audioScript ?? '',
   ];
   for (const field of fields) {
     const tripped = detectInjection(field);

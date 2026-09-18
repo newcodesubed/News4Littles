@@ -1,6 +1,7 @@
 /** Admin settings — PRD §4.4, §5.1, §6, §8.5, §8.7. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestContext, insertRawArticle, type TestContext } from './helpers.js';
+import { loadLocalPipelineConfig } from '../src/pipeline/localPipeline.js';
 
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
@@ -116,11 +117,11 @@ describe('translation prompts (§8.5)', () => {
     expect(config.inertUntilLlm).toBe(true);
   });
 
-  it('saves the generic prompt and age overrides', async () => {
-    await put('/api/admin/prompt-config', { genericPrompt: 'New prompt', ageOverrides: { '6': 'Age six' } });
+  it('saves the generic prompt and band overrides', async () => {
+    await put('/api/admin/prompt-config', { genericPrompt: 'New prompt', ageOverrides: { '8': 'Ages 8 to 10' } });
     const config = await json('/api/admin/prompt-config');
     expect(config.genericPrompt).toBe('New prompt');
-    expect(config.ageOverrides['6']).toBe('Age six');
+    expect(config.ageOverrides['8']).toBe('Ages 8 to 10');
   });
 
   it('does not let the version counter be written by hand (§7.5)', async () => {
@@ -131,6 +132,9 @@ describe('translation prompts (§8.5)', () => {
 
   it.each([
     ['an out-of-range override age', { genericPrompt: 'x', ageOverrides: { '99': 'y' } }],
+    // An override at 6 is one selectPrompt would never look up: a version is
+    // written for a band anchor, so only an anchor can carry an override.
+    ['an override age that is not a band anchor', { genericPrompt: 'x', ageOverrides: { '6': 'y' } }],
     ['a non-string prompt', { genericPrompt: 5, ageOverrides: {} }],
     ['an array instead of a map', { genericPrompt: 'x', ageOverrides: [] }],
   ])('rejects %s with 400', async (_label, body) => {
@@ -141,7 +145,7 @@ describe('translation prompts (§8.5)', () => {
 describe('app settings (§8.7)', () => {
   it('returns the seeded defaults', async () => {
     expect(await json('/api/admin/app-settings')).toMatchObject({
-      defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null,
+      defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null,
     });
   });
 
@@ -152,22 +156,24 @@ describe('app settings (§8.7)', () => {
   });
 
   it('normalises and de-duplicates scrape times', async () => {
-    await put('/api/admin/app-settings', { defaultAge: 9, scrapeTimes: ['6:00', '07:30', '06:00'], llmProvider: 'anthropic' });
+    await put('/api/admin/app-settings', { defaultAge: 8, scrapeTimes: ['6:00', '07:30', '06:00'], llmProvider: 'anthropic' });
     expect(await json('/api/admin/app-settings')).toMatchObject({
-      defaultAge: 9, scrapeTimes: ['06:00', '07:30'], llmProvider: 'anthropic',
+      defaultAge: 8, scrapeTimes: ['06:00', '07:30'], llmProvider: 'anthropic',
     });
   });
 
   it('treats a blank provider as none', async () => {
-    await put('/api/admin/app-settings', { defaultAge: 6, scrapeTimes: [], llmProvider: '  ' });
+    await put('/api/admin/app-settings', { defaultAge: 5, scrapeTimes: [], llmProvider: '  ' });
     expect((await json('/api/admin/app-settings')).llmProvider).toBeNull();
   });
 
   it.each([
-    ['an impossible time', { defaultAge: 6, scrapeTimes: ['25:00'] }],
-    ['a non-time', { defaultAge: 6, scrapeTimes: ['morning'] }],
+    ['an impossible time', { defaultAge: 5, scrapeTimes: ['25:00'] }],
+    ['a non-time', { defaultAge: 5, scrapeTimes: ['morning'] }],
     ['an out-of-range age', { defaultAge: 99, scrapeTimes: [] }],
-    ['a non-array of times', { defaultAge: 6, scrapeTimes: '06:00' }],
+    // The default names a reading group, so a plain age is not one.
+    ['a default age that is not a band anchor', { defaultAge: 6, scrapeTimes: [] }],
+    ['a non-array of times', { defaultAge: 5, scrapeTimes: '06:00' }],
   ])('rejects %s with 400', async (_label, body) => {
     expect((await put('/api/admin/app-settings', body)).status).toBe(400);
   });
@@ -176,7 +182,7 @@ describe('app settings (§8.7)', () => {
     expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(10);
 
     const res = await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 4,
+      defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 4,
     });
     expect(res.status).toBe(200);
     expect((await res.json()).simplifyBudget).toBe(4);
@@ -185,7 +191,7 @@ describe('app settings (§8.7)', () => {
 
   it('accepts a budget of 0 — simplify nothing automatically', async () => {
     const res = await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: 0,
+      defaultAge: 5, scrapeTimes: [], llmProvider: null, simplifyBudget: 0,
     });
     expect(res.status).toBe(200);
     expect((await res.json()).simplifyBudget).toBe(0);
@@ -193,7 +199,7 @@ describe('app settings (§8.7)', () => {
 
   it.each([[-1], [101], ['ten'], [2.5]])('rejects a simplifyBudget of %p', async (value) => {
     const res = await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: value,
+      defaultAge: 5, scrapeTimes: [], llmProvider: null, simplifyBudget: value,
     });
     expect(res.status).toBe(400);
   });
@@ -201,18 +207,15 @@ describe('app settings (§8.7)', () => {
   it('leaves the budget alone when the field is absent', async () => {
     // An older client PUTting the pre-budget body must not silently reset it.
     await put('/api/admin/app-settings', {
-      defaultAge: 6, scrapeTimes: [], llmProvider: null, simplifyBudget: 3,
+      defaultAge: 5, scrapeTimes: [], llmProvider: null, simplifyBudget: 3,
     });
-    await put('/api/admin/app-settings', { defaultAge: 7, scrapeTimes: [], llmProvider: null });
+    await put('/api/admin/app-settings', { defaultAge: 5, scrapeTimes: [], llmProvider: null });
     expect((await json('/api/admin/app-settings')).simplifyBudget).toBe(3);
   });
 
-  it('a saved defaultAge is used by the pipeline', async () => {
-    await put('/api/admin/app-settings', { defaultAge: 12, scrapeTimes: ['06:00'] });
-    const { article } = await (await post('/api/admin/simplify', {
-      headline: 'X', sourceName: 'X', sourceUrl: 'https://x', category: 'World', ageTarget: 12,
-      body: 'A calm story about the sea.',
-    })).json();
-    expect(article.ageTarget).toBe(12);
+  it('a saved defaultAge is the band the pipeline writes for', async () => {
+    await put('/api/admin/app-settings', { defaultAge: 11, scrapeTimes: ['06:00'] });
+    const config = loadLocalPipelineConfig(ctx.db);
+    expect(config.ageTarget).toBe(11);
   });
 });

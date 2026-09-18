@@ -1,6 +1,7 @@
 /** Editor portal — PRD §4.3. No LLM: "Simplify with AI" is the local pipeline. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { countRows, createTestContext, type TestContext } from './helpers.js';
+import { AGE_BANDS, AGE_BAND_ANCHORS } from '../src/core/article.js';
 
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
@@ -63,37 +64,37 @@ describe('POST /articles (§4.3 save)', () => {
     expect(kid.publishedAt).toBeNull();
   });
 
-  it('appears in the review queue as ONE story with every age version', async () => {
+  it('appears in the review queue as ONE story with every band version', async () => {
     await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' });
 
-    // Ten versions, but one row in the grouped queue an editor actually reads.
+    // Three versions, but one row in the grouped queue an editor actually reads.
     const { total } = await (await ctx.api('/api/admin/articles?source=manual')).json();
-    expect(total).toBe(10);
+    expect(total).toBe(AGE_BANDS.length);
     const { stories } = await (await ctx.api('/api/admin/stories?source=manual')).json();
     expect(stories).toHaveLength(1);
-    expect(stories[0].versions).toHaveLength(10);
+    expect(stories[0].versions).toHaveLength(AGE_BANDS.length);
   });
 
-  it('creates one version per reading age, so Regenerate can rebuild them all', async () => {
+  it('creates one version per reading band, so Regenerate can rebuild them all', async () => {
     const created = await (await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' })).json();
 
     const rows = ctx.db
       .prepare('SELECT ageTarget, originalId FROM kid_articles ORDER BY ageTarget')
       .all() as { ageTarget: number; originalId: string }[];
 
-    expect(rows.map((r) => r.ageTarget)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(rows.map((r) => r.ageTarget)).toEqual([...AGE_BAND_ANCHORS]);
     // One story: every version shares the submitted raw article.
     expect(new Set(rows.map((r) => r.originalId)).size).toBe(1);
-    // The response is the age the editor reviewed on the form.
+    // The response is the band the editor reviewed on the form.
     expect(
       (ctx.db.prepare('SELECT ageTarget FROM kid_articles WHERE id = ?').get(created.id) as { ageTarget: number })
         .ageTarget,
     ).toBe(SUBMISSION.ageTarget);
   });
 
-  it("applies the editor's text to the age they reviewed and no other", async () => {
-    // §4.3's form reviews ONE age, so their wording belongs to that age alone —
-    // and editedByHuman stays a per-version flag (§5).
+  it("applies the editor's text to the band they reviewed and no other", async () => {
+    // §4.3's form reviews ONE band, so their wording belongs to that band alone
+    // — and editedByHuman stays a per-version flag (§5).
     await post('/api/admin/articles', {
       ...SUBMISSION, status: 'pending_review', kidHeadline: 'A friendlier headline',
     });
@@ -106,7 +107,7 @@ describe('POST /articles (§4.3 save)', () => {
     const others = ctx.db
       .prepare('SELECT kidHeadline, editedByHuman FROM kid_articles WHERE ageTarget != ?')
       .all(SUBMISSION.ageTarget) as { kidHeadline: string; editedByHuman: number }[];
-    expect(others).toHaveLength(9);
+    expect(others).toHaveLength(AGE_BANDS.length - 1);
     expect(others.every((r) => r.kidHeadline !== 'A friendlier headline')).toBe(true);
     expect(others.every((r) => r.editedByHuman === 0)).toBe(true);
   });
@@ -139,6 +140,18 @@ describe('POST /articles (§4.3 save)', () => {
     expect(row.editedByHuman).toBe(0);
   });
 
+  it('stores a null audioScript when the local pipeline wrote the version', async () => {
+    await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' });
+
+    const rows = ctx.db
+      .prepare('SELECT audioScript FROM kid_articles')
+      .all() as { audioScript: string | null }[];
+
+    // No LLM in this test, so §9.2 ran: a story, but nothing to speak.
+    expect(rows).toHaveLength(AGE_BANDS.length);
+    expect(rows.every((r) => r.audioScript === null)).toBe(true);
+  });
+
   it.each([
     ['a draft status (§8.3 has no such status)', { status: 'draft' }],
     ['a missing headline', { headline: '' }],
@@ -146,6 +159,8 @@ describe('POST /articles (§4.3 save)', () => {
     ['a missing source name', { sourceName: '' }],
     ['an age above the range', { ageTarget: 99 }],
     ['an age below the range', { ageTarget: 4 }],
+    // A version is stored under its band anchor; age 6 would be unreachable.
+    ['an age that is not a band anchor', { ageTarget: 6 }],
     ['malformed vocab', { vocab: ['nope'] }],
   ])('rejects %s with 400', async (_label, patch) => {
     expect((await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review', ...patch })).status).toBe(400);

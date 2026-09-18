@@ -6,7 +6,9 @@
  * two kid articles for one raw article.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AGE_BANDS, AGE_BAND_ANCHORS } from '../src/core/article.js';
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
+import { OpenRouterClient } from '../src/llm/openRouterClient.js';
 import { acquireJob, activeJob, releaseJob } from '../src/services/jobLock.js';
 import {
   getSimplifyJob, resetSimplifyJob, simplifyRawArticles, startSimplifyJob,
@@ -74,10 +76,10 @@ describe('simplifyRawArticles', () => {
 
     const report = await simplifyRawArticles(ctx.db, ['r1'], { now: () => '2026-09-09T10:00:00.000Z' });
 
-    // One report row per story, ten kid_articles rows: one per reading age.
+    // One report row per story, three kid_articles rows: one per reading band.
     expect(report.simplified).toHaveLength(1);
     expect(report.failures).toEqual([]);
-    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(3);
 
     const article = ctx.db
       .prepare(`SELECT status, publishedAt, originalId FROM kid_articles LIMIT 1`)
@@ -98,7 +100,7 @@ describe('simplifyRawArticles', () => {
 
     await simplifyRawArticles(ctx.db, ['r1']);
 
-    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(3);
     expect(createRawArticleRepository(ctx.db).countWaiting()).toBe(1);
   });
 
@@ -110,8 +112,8 @@ describe('simplifyRawArticles', () => {
 
     expect(again.skipped).toEqual(['r1']);
     expect(again.simplified).toEqual([]);
-    // Still ten, not twenty: the claim stops a second set being written.
-    expect(countRows(ctx.db, 'kid_articles')).toBe(10);
+    // Still three, not six: the claim stops a second set being written.
+    expect(countRows(ctx.db, 'kid_articles')).toBe(3);
   });
 
   it('reports an unknown id as a failure without stopping the batch', async () => {
@@ -151,7 +153,7 @@ describe('simplifyRawArticles', () => {
     expect(link).not.toMatch(/rss\.xml$/);
   });
 
-  it('creates one version per reading age', async () => {
+  it('creates one version per reading band, stored under the band anchor', async () => {
     seedWaiting('r1');
 
     await simplifyRawArticles(ctx.db, ['r1']);
@@ -159,7 +161,7 @@ describe('simplifyRawArticles', () => {
     const ages = ctx.db
       .prepare(`SELECT ageTarget FROM kid_articles WHERE originalId = 'r1' ORDER BY ageTarget`)
       .pluck().all();
-    expect(ages).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(ages).toEqual([...AGE_BAND_ANCHORS]);
   });
 
   it('reports how many versions a story produced', async () => {
@@ -167,9 +169,9 @@ describe('simplifyRawArticles', () => {
 
     const report = await simplifyRawArticles(ctx.db, ['r1']);
 
-    // One row per STORY, carrying the version count — not ten rows.
+    // One row per STORY, carrying the version count — not one row per band.
     expect(report.simplified).toHaveLength(1);
-    expect(report.simplified[0].versions).toBe(10);
+    expect(report.simplified[0].versions).toBe(AGE_BANDS.length);
   });
 
   it('never auto-publishes any version', async () => {
@@ -185,8 +187,8 @@ describe('simplifyRawArticles', () => {
   });
 
   it('raises every version when the deny-list fires', async () => {
-    // §6: the deny-list judges the source article, so a hit must apply to all
-    // ten ages. A story that is skip-young at 5 cannot be calm at 14.
+    // §6: the deny-list judges the source article, so a hit must apply to
+    // every band. A story that is skip-young at 5-7 cannot be calm at 11-14.
     seedWaiting('r1', {
       headline: 'A disaster and an earthquake struck',
       body: 'A disaster struck. An earthquake killed people. There was violence.',
@@ -207,14 +209,14 @@ describe('simplifyRawArticles', () => {
     expect(links).toEqual(['https://www.bbc.co.uk/news/articles/the-story']);
   });
 
-  it('writes all ten versions or none', async () => {
+  it('writes every band or none', async () => {
     seedWaiting('r1');
-    // A trigger that aborts the age-14 insert. The versions are written in
-    // ascending age order, so this fails on the LAST one — the case that proves
-    // the earlier nine are rolled back rather than left behind.
+    // A trigger that aborts the 11-14 insert. The versions are written in
+    // ascending band order, so this fails on the LAST one — the case that
+    // proves the earlier two are rolled back rather than left behind.
     ctx.db.exec(`
-      CREATE TRIGGER fail_on_age_14 BEFORE INSERT ON kid_articles
-      WHEN NEW.ageTarget = 14
+      CREATE TRIGGER fail_on_last_band BEFORE INSERT ON kid_articles
+      WHEN NEW.ageTarget = 11
       BEGIN SELECT RAISE(ABORT, 'simulated failure on the last version'); END;
     `);
 
@@ -227,7 +229,7 @@ describe('simplifyRawArticles', () => {
     expect(createRawArticleRepository(ctx.db).findById('r1')?.simplifiedAt).toBeNull();
     expect(createRawArticleRepository(ctx.db).countWaiting()).toBe(1);
 
-    ctx.db.exec('DROP TRIGGER fail_on_age_14');
+    ctx.db.exec('DROP TRIGGER fail_on_last_band');
   });
 
   it('carries the source id, so a run can attribute the spend', async () => {
@@ -236,6 +238,80 @@ describe('simplifyRawArticles', () => {
     const report = await simplifyRawArticles(ctx.db, ['r1']);
 
     expect(report.simplified[0].sourceId).toBe('npr');
+  });
+
+  describe('the spoken script the model wrote', () => {
+    const SCRIPT = 'Hello! A robot went down to the reef today. It found the coral is doing well.';
+
+    /** A model that answers every band with the same well-formed version. */
+    const modelWriting = (audioScript: string | null) =>
+      new OpenRouterClient({
+        apiKey: 'test-key',
+        maxRetries: 0,
+        fetchImpl: (async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  kidHeadline: 'A robot went to look at a reef',
+                  summary: 'A robot explored a reef under the sea.',
+                  whatHappened: 'A robot with lights went down to the reef.',
+                  whyItMatters: 'Reefs are home to lots of sea animals.',
+                  vocab: [{ word: 'reef', definition: 'A ridge of rock under the sea.' }],
+                  thinkAbout: 'What would you look for down there?',
+                  audioScript,
+                  feelingNote: null,
+                  safety: 'calm',
+                  contentWarnings: [],
+                  readingMinutes: 3,
+                }),
+              },
+            }],
+            usage: { total_tokens: 800, cost: 0.00017 },
+          }),
+        })) as unknown as typeof fetch,
+      });
+
+    it('round-trips from the model onto the row and back out of the API', async () => {
+      seedWaiting('r1');
+
+      const report = await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(SCRIPT) });
+
+      expect(report.simplified[0].engine).toBe('llm');
+      // Stored on every band: one call per band, each writing its own script.
+      expect(ctx.db.prepare(`SELECT audioScript FROM kid_articles`).pluck().all())
+        .toEqual(Array(AGE_BANDS.length).fill(SCRIPT));
+
+      // And read back by the queue an editor reviews from — the whole point of
+      // storing it is that a person sees the same words the child hears.
+      const { stories } = await (await ctx.api('/api/admin/stories')).json();
+      expect(stories[0].versions.map((v: { audioScript: string | null }) => v.audioScript))
+        .toEqual(Array(AGE_BANDS.length).fill(SCRIPT));
+    });
+
+    it('serves it to the podcast page once the story is published', async () => {
+      seedWaiting('r1');
+      await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(SCRIPT) });
+      const id = ctx.db.prepare(`SELECT id FROM kid_articles WHERE ageTarget = 8`).pluck().get() as string;
+      await ctx.api(`/api/admin/articles/${id}/publish`, { method: 'PATCH' });
+
+      const published = await (await ctx.anon('/api/articles?age=9')).json();
+
+      expect(published[0].audioScript).toBe(SCRIPT);
+    });
+
+    it('stores null when the model omitted it, rather than failing the story', async () => {
+      seedWaiting('r1');
+
+      const report = await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(null) });
+
+      // §9.1: a missing script is a much smaller loss than a lost story.
+      expect(report.simplified[0].engine).toBe('llm');
+      expect(ctx.db.prepare(`SELECT DISTINCT audioScript FROM kid_articles`).pluck().all())
+        .toEqual([null]);
+    });
   });
 });
 
@@ -269,8 +345,8 @@ describe('startSimplifyJob', () => {
     expect(state.finishedAt).toBeTruthy();
     expect(state.done).toBe(2);
     expect(state.report.simplified).toHaveLength(2);
-    // Two stories, ten reading ages each.
-    expect(countRows(ctx.db, 'kid_articles')).toBe(20);
+    // Two stories, one version per reading band each.
+    expect(countRows(ctx.db, 'kid_articles')).toBe(2 * AGE_BANDS.length);
   });
 
   it('holds the lock while running and releases it at the end', async () => {

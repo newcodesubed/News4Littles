@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Headphones } from 'lucide-react';
 import { StoryPreview } from '../../../components/StoryPreview';
 import { Button } from '../../../ui/Button';
 import { Notice } from '../../../ui/Surface';
 import type { AdminStory } from '../../../admin/types';
 import { Modal } from './Modal';
+import { ageBandLabel } from '../../../lib/ageBands';
 
 const STATUS_LABEL: Record<string, string> = {
   pending_review: 'Waiting for review',
@@ -41,10 +42,11 @@ export function ViewArticleDialog({
   return (
     <Modal title="Read before deciding" onClose={onClose} wide>
       {/* §2.2 promises a human read every word a child sees. One Publish
-          button covers every age, so every age has to be readable here. */}
+          button covers every reading group, so every group has to be readable
+          here. */}
       {story.versions.length > 1 && (
         <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-xs font-semibold text-muted-foreground">Reading age</span>
+          <span className="mr-1 text-xs font-semibold text-muted-foreground">Reading group</span>
           {story.versions.map((candidate) => (
             <button
               key={candidate.id}
@@ -56,7 +58,7 @@ export function ViewArticleDialog({
                   : 'bg-muted text-foreground/70 hover:bg-muted/70'
               }`}
             >
-              Age {candidate.ageTarget}
+              {ageBandLabel(candidate.ageTarget)}
             </button>
           ))}
         </div>
@@ -78,6 +80,26 @@ export function ViewArticleDialog({
       {/* Exactly what a reader sees. */}
       <div className="rounded-3xl border border-border bg-background p-6">
         <StoryPreview article={version} showSource={false} headingLevel="h2" />
+      </div>
+
+      {/* §2.2's promise is about every word a child GETS, and the script is
+          words they hear. The model writes it from the article rather than from
+          the story above, so approving the story is not approving this — it has
+          to be read here or it reaches a child unread. StoryPreview is shared
+          with the public site, which never shows the script, so it lives here. */}
+      <div className="mt-5 rounded-3xl border border-border bg-background p-6">
+        <h3 className="font-display text-xl mb-2 inline-flex items-center gap-2">
+          <Headphones className="w-5 h-5 text-primary" />
+          Read aloud on the podcast page
+        </h3>
+        {version.audioScript ? (
+          <p className="text-foreground/80 leading-relaxed whitespace-pre-line">{version.audioScript}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No script for this version. The podcast page reads its summary, word and question
+            instead.
+          </p>
+        )}
       </div>
 
       <div className="mt-5 border-t border-border pt-4 text-xs text-muted-foreground">

@@ -9,7 +9,7 @@ export interface AdminArticle extends KidArticle {
 }
 
 /**
- * One story as the grouped review queue shows it (§5): every age version, plus
+ * One story as the grouped review queue shows it (§5): every band version, plus
  * the story-level facts an editor decides on. `safety` is the strictest across
  * versions, because approving the row approves all of them.
  */
@@ -80,8 +80,9 @@ export interface RegeneratedVersion {
 /**
  * A story-scoped regeneration, as the status endpoint reports it (§4.2).
  *
- * `ages` is the story's EXISTING versions, so a pre-per-age story previews one
- * tab rather than pretending to have ten.
+ * `ages` holds the anchors of the reading groups the story has a version in,
+ * so a single-version story previews one tab rather than pretending to have
+ * three.
  */
 export interface RegenerateJob {
   id: string;
@@ -90,7 +91,7 @@ export interface RegenerateJob {
   startedAt: string;
   finishedAt?: string;
   ages: number[];
-  /** Ages attempted so far, for the row's progress label. */
+  /** Groups attempted so far, for the row's progress label. */
   done: number;
   running: boolean;
   versions: RegeneratedVersion[];

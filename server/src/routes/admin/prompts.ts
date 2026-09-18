@@ -8,12 +8,10 @@ import {
 import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
 import { LLM_ENABLED, LLM_MODEL } from '../../env.js';
 import { optionalString, parseBool, requireOneOf, requireString } from '../../http/validation.js';
+import { TEMPLATE_VARIABLES } from '../../llm/llmSimplifier.js';
 import {
   productionPrompt, promotePrompt, requireAge, runSandboxTest,
 } from '../../services/sandbox.js';
-
-/** §7.3: the variables a prompt may reference, listed for the editor. */
-const TEMPLATE_VARIABLES = ['{{headline}}', '{{body}}', '{{category}}', '{{sourceName}}', '{{age}}'];
 
 export function createPromptsRouter(db: Database): Router {
   const router = Router();

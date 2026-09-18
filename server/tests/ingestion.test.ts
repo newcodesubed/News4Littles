@@ -267,11 +267,11 @@ describe('the simplification budget', () => {
     const state = await runToCompletion(10);
 
     expect(countRows(ctx.db, 'raw_articles')).toBe(25);
-    // Ten stories, ten reading ages each.
-    expect(countRows(ctx.db, 'kid_articles')).toBe(100);
+    // Ten stories, three reading bands each.
+    expect(countRows(ctx.db, 'kid_articles')).toBe(30);
     expect(waitingCount()).toBe(15);
     expect(summarise(state).simplified).toBe(10);
-    expect(summarise(state).versions).toBe(100);
+    expect(summarise(state).versions).toBe(30);
   });
 
   it('advances the cursor past every stored item, not just the simplified ones', async () => {
@@ -300,7 +300,7 @@ describe('the simplification budget', () => {
     // Nothing new in the feed, so phase 1 inserts nothing and phase 2 spends
     // the budget on what was left waiting.
     expect(summarise(state).inserted).toBe(0);
-    expect(countRows(ctx.db, 'kid_articles')).toBe(200);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(60);
     expect(waitingCount()).toBe(5);
   });
 
@@ -316,7 +316,8 @@ describe('the simplification budget', () => {
 
     await runToCompletion();
 
-    expect(countRows(ctx.db, 'kid_articles')).toBe(20);
+    // Two stories, three bands each.
+    expect(countRows(ctx.db, 'kid_articles')).toBe(6);
   });
 
   it('still never auto-publishes what it simplifies (§5.2 step 7)', async () => {

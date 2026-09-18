@@ -1,14 +1,15 @@
 /**
  * Story-scoped regeneration — §4.2 "Regenerate", under §5's story scope.
  *
- * Re-runs the pipeline over the ORIGINAL raw article for every age version a
- * story has, holds the result in memory, and writes only the ages an editor
- * ticks. Preview and apply are separate because §2.2 promises a person reads
- * what a child will: nothing here writes a row the editor has not seen.
+ * Re-runs the pipeline over the ORIGINAL raw article for every reading band a
+ * story has a version in, holds the result in memory, and writes only the
+ * bands an editor ticks. Preview and apply are separate because §2.2 promises
+ * a person reads what a child will: nothing here writes a row the editor has
+ * not seen.
  *
- * Job-shaped for the same reason the manual simplify batch is: ten versions is
- * ten sequential model calls, which is minutes — far too long to hold an HTTP
- * request open. The client polls instead.
+ * Job-shaped for the same reason the manual simplify batch is: one sequential
+ * model call per band is tens of seconds — too long to hold an HTTP request
+ * open. The client polls instead.
  *
  * Apply reuses the HELD preview rather than re-running the pipeline. Re-running
  * would bill a second set of calls and, the model being non-deterministic,
@@ -17,22 +18,28 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
 import { BadRequestError, ConflictError, NotFoundError } from '../core/errors.js';
+import { bandForAge, type AgeBand } from '../core/article.js';
 import {
   createArticleRepository, type AdminArticle, type AdminStory,
 } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
-import { simplifyArticleForAllAges } from '../pipeline/simplifyArticle.js';
+import { simplifyStory } from '../pipeline/simplifyArticle.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 
 export interface RegeneratedVersion {
+  /** The band's anchor — what the generated row carries as ageTarget. */
   ageTarget: number;
-  /** The stored row this age would replace. */
+  /**
+   * The stored row this band would replace. Its own ageTarget may be a
+   * pre-band value (a story written one-version-per-age); applying moves it
+   * onto the anchor.
+   */
   current: AdminArticle;
   generated: AdminArticle;
   engine: string;
   model?: string;
-  /** Set when THIS age fell back to the rule-based pipeline (§9.2). */
+  /** Set when THIS band fell back to the rule-based pipeline (§9.2). */
   fallbackReason?: string;
 }
 
@@ -43,9 +50,12 @@ export interface RegenerateJobState {
   kidHeadline: string;
   startedAt: string;
   finishedAt?: string;
-  /** The story's existing versions, ascending. Never ALL_AGES by assumption. */
+  /**
+   * The anchors of the bands being rebuilt, ascending: one per band the story
+   * already has a version in. Never AGE_BANDS by assumption.
+   */
   ages: number[];
-  /** Ages attempted so far, for "Regenerating… 4/10". */
+  /** Bands attempted so far, for "Regenerating… 2/3". */
   done: number;
   running: boolean;
   versions: RegeneratedVersion[];
@@ -114,10 +124,31 @@ export function resetRegenerateJob(force = false): void {
 }
 
 /**
+ * Which stored row each band's rewrite replaces, in ascending band order.
+ *
+ * A story written since bands existed has exactly one row per band, at the
+ * band's anchor. A story from before — one row per age, or a single row at
+ * whatever the default age was — may hold several rows in one band, or a row
+ * at a non-anchor age. Either way the rewrite goes to the row already AT the
+ * anchor, else the youngest row in the band, so applying it moves that row
+ * onto the anchor and leaves any surplus rows for scripts/migrate-age-bands.
+ */
+function rowsToReplace(versions: readonly AdminArticle[]): Map<AgeBand, AdminArticle> {
+  const targets = new Map<AgeBand, AdminArticle>();
+  // Ascending by ageTarget already, so the first row seen per band is the
+  // youngest; an anchor row, being the youngest possible, is always first.
+  for (const version of versions) {
+    const band = bandForAge(version.ageTarget);
+    if (!targets.has(band)) targets.set(band, version);
+  }
+  return targets;
+}
+
+/**
  * Begin a preview for the story `id` belongs to and return immediately.
  *
  * `id` may be ANY version's id, as it may for publish and reject (§5): an
- * editor acts on a story, and the queue happens to hold ten rows for it.
+ * editor acts on a story, and the queue happens to hold several rows for it.
  */
 export function startRegenerateJob(
   db: Database,
@@ -143,13 +174,13 @@ export function startRegenerateJob(
   // After every 404, so a bad request cannot take the lock and block a scrape.
   acquireJob('regenerate');
 
-  const byAge = new Map(story.versions.map((version) => [version.ageTarget, version]));
+  const targets = rowsToReplace(story.versions);
   const job: RegenerateJobState = {
     id: randomUUID(),
     originalId: story.originalId,
     kidHeadline: story.kidHeadline,
     startedAt: clock(),
-    ages: story.versions.map((version) => version.ageTarget),
+    ages: [...targets.keys()].map((band) => band.minAge),
     done: 0,
     running: true,
     versions: [],
@@ -161,7 +192,7 @@ export function startRegenerateJob(
   // Deliberately not awaited: the caller gets the state back straight away.
   void (async () => {
     try {
-      const outcome = await simplifyArticleForAllAges(
+      const outcome = await simplifyStory(
         db,
         {
           id: raw.id,
@@ -174,12 +205,12 @@ export function startRegenerateJob(
         },
         {
           client: options.client,
-          ages: job.ages,
-          // Each age is built as the row it will replace, so the diff and the
+          bands: [...targets.keys()],
+          // Each band is built as the row it will replace, so the diff and the
           // update both address the version the editor is looking at.
-          perAge: (age) => {
-            const stored = byAge.get(age);
-            return stored ? { id: stored.id, now: stored.createdAt } : undefined;
+          perBand: (band) => {
+            const stored = targets.get(band)!;
+            return { id: stored.id, now: stored.createdAt };
           },
           onProgress: (done) => { job.done = done; },
         },
@@ -187,10 +218,10 @@ export function startRegenerateJob(
 
       job.costUsd = outcome.costUsd;
       job.versions = outcome.versions.map((version) => {
-        // Non-null: perAge built this age from exactly this map.
-        const stored = byAge.get(version.article.ageTarget)!;
+        // Non-null: perBand built this band from exactly this map.
+        const stored = targets.get(bandForAge(version.article.ageTarget))!;
         return {
-          ageTarget: stored.ageTarget,
+          ageTarget: version.article.ageTarget,
           current: stored,
           engine: version.engine,
           model: version.model,
@@ -232,9 +263,9 @@ export function startRegenerateJob(
 }
 
 /**
- * Write the ticked ages from the held preview.
+ * Write the ticked bands (by anchor) from the held preview.
  *
- * One transaction for every age: a story left holding a mix of chosen and
+ * One transaction for every band: a story left holding a mix of chosen and
  * unchosen rewrites is not something an editor could reason about.
  */
 export function applyRegeneratedVersions(
@@ -249,7 +280,7 @@ export function applyRegeneratedVersions(
   if (job.running) {
     throw new ConflictError('That regeneration is still running. Wait for it to finish.');
   }
-  // §3.1's safety property: an age a person hand-edited after a first apply
+  // §3.1's safety property: a version a person hand-edited after a first apply
   // must not be silently overwritten by a second apply of the same preview.
   if (job.appliedAges) {
     throw new ConflictError('This preview has already been applied. Regenerate the story again to apply it a second time.');

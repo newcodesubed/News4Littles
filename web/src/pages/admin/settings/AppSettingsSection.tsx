@@ -3,11 +3,11 @@ import { X } from 'lucide-react';
 import { Button } from '../../../ui/Button';
 import { FIELD_CLASS_COMPACT, Select, TextInput } from '../../../ui/Field';
 import { Section } from '../../../ui/Surface';
-import { MAX_AGE, MIN_AGE } from '../../../settings/SettingsContext';
+import { AGE_BANDS, ageBandLabel, formatAgeBand } from '../../../lib/ageBands';
 import type { AppSettings, Save } from './types';
 
-/** One model call per reading age, so this is the multiplier on the budget. */
-const AGE_COUNT = MAX_AGE - MIN_AGE + 1;
+/** One model call per reading group, so this is the multiplier on the budget. */
+const GROUP_COUNT = AGE_BANDS.length;
 
 /** §8.7 app settings: reading age, scrape times, LLM provider. */
 export function AppSettingsSection({ settings, save }: { settings: AppSettings; save: Save }) {
@@ -16,12 +16,19 @@ export function AppSettingsSection({ settings, save }: { settings: AppSettings; 
 
   return (
     <Section title="App settings">
+      {/* The group assumed when nothing names a reader — a scrape with no
+          explicit target, or a feed request with no ?age=. Stored as the
+          group's youngest age, which is all any consumer reads. */}
       <label className="block max-w-xs">
-        <span className="text-sm font-bold">Default reading age</span>
-        <TextInput
-          type="number" min={5} max={14} value={draft.defaultAge}
+        <span className="text-sm font-bold">Default reading group</span>
+        <Select
+          value={draft.defaultAge} aria-label="Default reading group"
           onChange={(e) => setDraft({ ...draft, defaultAge: Number(e.target.value) })}
-        />
+        >
+          {AGE_BANDS.map((band) => (
+            <option key={band.minAge} value={band.minAge}>{ageBandLabel(band.minAge)}</option>
+          ))}
+        </Select>
       </label>
 
       <label className="mt-5 block max-w-xs">
@@ -33,9 +40,9 @@ export function AppSettingsSection({ settings, save }: { settings: AppSettings; 
       </label>
       <p className="mt-1 max-w-prose text-xs text-muted-foreground">
         How many stored stories a run may send to the model. Each story is rewritten once for
-        every reading age from {MIN_AGE} to {MAX_AGE}, so{' '}
+        every reading group (ages {AGE_BANDS.map(formatAgeBand).join(', ')}), so{' '}
         <strong>
-          {draft.simplifyBudget} stories is {draft.simplifyBudget * AGE_COUNT} model calls
+          {draft.simplifyBudget} stories is {draft.simplifyBudget * GROUP_COUNT} model calls
         </strong>
         . The rest are kept as they came in, costing nothing, and wait in the review queue’s
         “Not yet simplified” tab until you ask for them. 0 means simplify nothing

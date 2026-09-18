@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAdminAuth } from '../../../admin/AdminAuthContext';
 import type { RegenerateJob } from '../../../admin/types';
+import { ageBandLabel } from '../../../lib/ageBands';
 
 const POLL_MS = 2000;
 const OFFLINE = '⚠ Could not reach the server. Check it is running, then try again.';
@@ -42,7 +43,7 @@ export function useRegenerateJob({
    * The job lives on the server; only this hook's state knew about it, and that
    * state dies when AdminReview unmounts. So leaving the queue and coming back
    * used to strand a running job — invisible here, while a second Regenerate
-   * got a 409 — and strand a finished preview whose ten model calls were
+   * got a 409 — and strand a finished preview whose model calls were
    * already paid for. Asking once costs one request and hands both back.
    */
   useEffect(() => {
@@ -61,7 +62,7 @@ export function useRegenerateJob({
     })();
   }, [adminFetch]);
 
-  /** Polls while it runs: ten ages is minutes, so the row cannot just wait. */
+  /** Polls while it runs: three model calls is tens of seconds, so the row cannot just wait. */
   useEffect(() => {
     if (!job?.running) return;
 
@@ -127,7 +128,7 @@ export function useRegenerateJob({
           return;
         }
         setJob(null);
-        setNotice(`Applied to ${ages.length} version(s): age ${ages.join(', ')}.`);
+        setNotice(`Applied to ${ages.length} version(s): ${ages.map((age) => ageBandLabel(age).toLowerCase()).join(', ')}.`);
         await onApplied();
       } catch {
         setNotice(OFFLINE);

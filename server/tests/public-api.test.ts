@@ -127,16 +127,16 @@ describe('central error handling', () => {
   });
 });
 
-describe('one version per reading age (§6)', () => {
-  /** A published story with one version per given age. */
-  const seedStory = (rawId: string, ages: number[]) => {
+describe('one version per reading band (§6)', () => {
+  /** A published story with one version per given band anchor. */
+  const seedStory = (rawId: string, anchors: number[]) => {
     const raw = insertRawArticle(ctx.db, {
       id: rawId, headline: `Adult headline ${rawId}`, simplifiedAt: '2026-09-06T09:00:00.000Z',
     });
-    for (const age of ages) {
+    for (const anchor of anchors) {
       insertKidArticle(ctx.db, {
-        id: `${rawId}-v${age}`, originalId: raw, ageTarget: age, status: 'published',
-        kidHeadline: `Written for age ${age}`, createdAt: '2026-09-07T10:00:00.000Z',
+        id: `${rawId}-v${anchor}`, originalId: raw, ageTarget: anchor, status: 'published',
+        kidHeadline: `Written for ages ${anchor}+`, createdAt: '2026-09-07T10:00:00.000Z',
       });
     }
     return raw;
@@ -144,46 +144,58 @@ describe('one version per reading age (§6)', () => {
 
   const storyFrom = (rows: any[], rawId: string) => rows.filter((a) => a.originalId === rawId);
 
-  it('serves the version written for the requested age', async () => {
-    const raw = seedStory('ages-all', [5, 6, 7, 8]);
+  it('serves the version written for the band the requested age falls in', async () => {
+    const raw = seedStory('bands-all', [5, 8, 11]);
 
     const rows = await (await ctx.anon('/api/articles?age=7')).json();
     const mine = storyFrom(rows, raw);
 
-    // One entry for the story, not four.
+    // One entry for the story, not three — and age 7 reads the 5-7 version.
     expect(mine).toHaveLength(1);
-    expect(mine[0].kidHeadline).toBe('Written for age 7');
-    expect(mine[0].ageTarget).toBe(7);
+    expect(mine[0].kidHeadline).toBe('Written for ages 5+');
+    expect(mine[0].ageTarget).toBe(5);
   });
 
-  it('serves a different version for every age', async () => {
-    const raw = seedStory('ages-each', [5, 9, 14]);
+  it.each([[5, 5], [6, 5], [7, 5], [8, 8], [9, 8], [10, 8], [11, 11], [12, 11], [13, 11], [14, 11]])(
+    'age %i reads the version stored under anchor %i',
+    async (age, anchor) => {
+      const raw = seedStory(`bands-${age}`, [5, 8, 11]);
 
-    for (const age of [5, 9, 14]) {
       const rows = await (await ctx.anon(`/api/articles?age=${age}`)).json();
-      expect(storyFrom(rows, raw)[0].kidHeadline).toBe(`Written for age ${age}`);
-    }
+
+      expect(storyFrom(rows, raw)[0].ageTarget).toBe(anchor);
+    },
+  );
+
+  it('omits a story that has no version for the requested band', async () => {
+    // Exact match only: a story exists in one version per band, so a missing
+    // band means the story was never simplified for that reader. No
+    // nearest-band guessing — showing the 11-14 rewrite to a five-year-old is
+    // worse than showing nothing.
+    const raw = seedStory('bands-gap', [5, 11]);
+
+    const rows = await (await ctx.anon('/api/articles?age=9')).json();
+
+    expect(storyFrom(rows, raw)).toHaveLength(0);
   });
 
-  it('omits a story that has no version for the requested age', async () => {
-    // Exact match only: a story exists in one version per age, so a missing age
-    // means the story was never simplified for that reader. No nearest-age
-    // guessing — showing an age-12 rewrite to a five-year-old is worse than
-    // showing nothing.
-    const raw = seedStory('ages-gap', [5, 12]);
+  it('cannot reach a pre-band row stored at a non-anchor age', async () => {
+    // A row at age 9 belongs to no reader any more — scripts/migrate-age-bands
+    // moves such rows onto their anchor. Until then it is simply absent.
+    const raw = seedStory('bands-legacy', [9]);
 
-    const rows = await (await ctx.anon('/api/articles?age=8')).json();
+    const rows = await (await ctx.anon('/api/articles?age=9')).json();
 
     expect(storyFrom(rows, raw)).toHaveLength(0);
   });
 
   it('never serves an unpublished version', async () => {
     const raw = insertRawArticle(ctx.db, {
-      id: 'ages-unpub', simplifiedAt: '2026-09-06T09:00:00.000Z',
+      id: 'bands-unpub', simplifiedAt: '2026-09-06T09:00:00.000Z',
     });
     insertKidArticle(ctx.db, {
-      id: 'ages-unpub-v9', originalId: raw, ageTarget: 9, status: 'pending_review',
-      kidHeadline: 'Unreviewed age 9',
+      id: 'bands-unpub-v8', originalId: raw, ageTarget: 8, status: 'pending_review',
+      kidHeadline: 'Unreviewed ages 8-10',
     });
 
     const rows = await (await ctx.anon('/api/articles?age=9')).json();
@@ -213,19 +225,19 @@ describe('GET /api/articles/:id?age= (§6)', () => {
     });
     insertKidArticle(ctx.db, {
       id: 'detail-v5', originalId: raw, ageTarget: 5, status: 'published',
-      kidHeadline: 'Written for age 5',
+      kidHeadline: 'Written for ages 5-7',
     });
     insertKidArticle(ctx.db, {
-      id: 'detail-v14', originalId: raw, ageTarget: 14, status: 'published',
-      kidHeadline: 'Written for age 14',
+      id: 'detail-v11', originalId: raw, ageTarget: 11, status: 'published',
+      kidHeadline: 'Written for ages 11-14',
     });
 
-    const article = await (await ctx.anon('/api/articles/detail-v5?age=14')).json();
+    const article = await (await ctx.anon('/api/articles/detail-v5?age=13')).json();
 
-    expect(article.kidHeadline).toBe('Written for age 14');
+    expect(article.kidHeadline).toBe('Written for ages 11-14');
   });
 
-  it('404s when the story has no version for that age', async () => {
+  it('404s when the story has no version for that band', async () => {
     // Consistent with the feed, which omits it: a reader cannot reach a page
     // the feed would not have offered them.
     expect((await ctx.anon('/api/articles/detail-v5?age=9')).status).toBe(404);

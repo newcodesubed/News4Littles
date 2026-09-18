@@ -77,8 +77,8 @@ describe('starting a run', () => {
     startScrapeRun(ctx.db);
     await waitForRun();
     expect(getRunState()!.results.map((r) => r.sourceId)).toEqual(['bbc']);
-    // Two stories, ten reading ages each (§3.6).
-    expect(countRows(ctx.db, 'kid_articles')).toBe(20);
+    // Two stories, three reading bands each (§3.6).
+    expect(countRows(ctx.db, 'kid_articles')).toBe(6);
   });
 
   it('scrapes one named source', async () => {
@@ -260,14 +260,14 @@ describe('the simplification budget in a run', () => {
     });
   });
 
-  it('records the version count, so a budget of 10 does not look like 10 articles', () => {
+  it('records the version count, so a budget of 2 does not look like 2 rows', () => {
     itemCount = 3;
 
     startScrapeRun(ctx.db, { budget: 2 });
     return waitForRun().then(() => {
       const run = createScrapeRunRepository(ctx.db).latestPerSource().bbc;
       expect(run.simplified).toBe(2);
-      expect(run.versions).toBe(20);
+      expect(run.versions).toBe(6);
     });
   });
 

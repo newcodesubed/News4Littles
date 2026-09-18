@@ -7,6 +7,7 @@ import { Notice } from '../../ui/Surface';
 import { Modal } from './dialogs';
 import { Button } from '../../ui/Button';
 import { TextArea } from '../../ui/Field';
+import { ageBandLabel } from '../../lib/ageBands';
 import { InputPanel } from './sandbox/InputPanel';
 import { PromptEditor } from './sandbox/PromptEditor';
 import { ResultsPanel } from './sandbox/ResultsPanel';
@@ -235,7 +236,7 @@ export function AdminSandbox() {
           <p className="text-sm">This will make the edited prompt live for:</p>
           <ul className="mt-2 mb-4 text-sm font-bold">
             <li>• {target === 'guard' ? 'The safety guard' : 'Simplification'}</li>
-            <li>• {age === null ? 'All ages (the generic prompt)' : `Age ${age} only`}</li>
+            <li>• {age === null ? 'All ages (the generic prompt)' : `${ageBandLabel(age)} only`}</li>
             <li>• Version {currentVersion ? currentVersion + 1 : 1}</li>
           </ul>
           <p className="mb-4 text-sm text-muted-foreground">

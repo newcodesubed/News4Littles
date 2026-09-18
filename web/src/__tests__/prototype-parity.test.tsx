@@ -20,7 +20,7 @@ const ARTICLE: KidArticle = {
   summary: 'Scientists found a huge coral garden far below the waves.',
   whatHappened: 'A robot went deep underwater.', whyItMatters: 'Sea animals live in coral.',
   vocab: [{ word: 'coral', definition: 'A tiny sea animal.' }],
-  thinkAbout: 'Where would you send a robot?', feelingNote: null,
+  thinkAbout: 'Where would you send a robot?', audioScript: null, feelingNote: null,
   safety: 'calm', contentWarnings: null, category: 'Environment', readingMinutes: 3,
   sourceName: 'BBC News', sourceUrl: 'https://example.com/original',
   status: 'published', rejectReason: null, editedByHuman: false,
@@ -115,7 +115,8 @@ describe('story detail', () => {
     expect(container.querySelector('article')!.className).toBe('container max-w-3xl py-10');
     expect(container.querySelector('h1')!.className).toBe('font-display text-4xl md:text-5xl leading-tight mb-5');
     expect(screen.getByText('Back to today')).toBeInTheDocument();
-    expect(screen.getByText('For age 8+')).toBeInTheDocument();
+    // ageTarget 8 is the 8-10 reading group's anchor.
+    expect(screen.getByText('For ages 8–10')).toBeInTheDocument();
   });
 
   it('tints Words to know mint and Think about sun, as the prototype', async () => {

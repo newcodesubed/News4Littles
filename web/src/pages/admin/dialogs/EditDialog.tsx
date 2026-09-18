@@ -3,6 +3,7 @@ import type { AdminArticle } from '../../../admin/types';
 import { FIELD_CLASS, FIELD_CLASS_COMPACT } from '../../../ui/Field';
 import { Button } from '../../../ui/Button';
 import { Modal } from './Modal';
+import { AGE_BANDS, ageBandLabel, bandForAge } from '../../../lib/ageBands';
 
 /** §4.2 Edit — every kid-facing field. Saving sets editedByHuman. */
 export function EditDialog({
@@ -20,6 +21,7 @@ export function EditDialog({
     whatHappened: article.whatHappened,
     whyItMatters: article.whyItMatters,
     thinkAbout: article.thinkAbout,
+    audioScript: article.audioScript ?? '',
     feelingNote: article.feelingNote ?? '',
     safety: article.safety,
     category: article.category,
@@ -60,6 +62,20 @@ export function EditDialog({
           <textarea value={draft.thinkAbout} onChange={(e) => set('thinkAbout', e.target.value)} rows={3} className={`mt-1 ${FIELD_CLASS}`} />
         </label>
 
+        <label className="md:col-span-2 block">
+          <span className="text-sm font-bold">Audio script</span>
+          <p className="text-xs text-muted-foreground">
+            What a child hears on the podcast page. Empty means the story is not spoken.
+          </p>
+          <textarea
+            aria-label="Audio script"
+            value={draft.audioScript}
+            onChange={(e) => set('audioScript', e.target.value)}
+            rows={5}
+            className={`mt-1 ${FIELD_CLASS}`}
+          />
+        </label>
+
         <label className="block">
           <span className="text-sm font-bold">Feeling note</span>
           <p className="text-xs text-muted-foreground">Shown to readers only when safety is not “calm”.</p>
@@ -87,9 +103,15 @@ export function EditDialog({
         </label>
 
         <label className="block">
-          <span className="text-sm font-bold">Age target</span>
-          <input type="number" min={5} max={14} value={draft.ageTarget}
-            onChange={(e) => set('ageTarget', Number(e.target.value))} className={`mt-1 ${FIELD_CLASS}`} />
+          <span className="text-sm font-bold">Reading group</span>
+          {/* A version is stored under its band's youngest age; the server
+              rejects anything else, so only bands are offered. */}
+          <select value={bandForAge(draft.ageTarget).minAge}
+            onChange={(e) => set('ageTarget', Number(e.target.value))} className={`mt-1 ${FIELD_CLASS}`}>
+            {AGE_BANDS.map((band) => (
+              <option key={band.minAge} value={band.minAge}>{ageBandLabel(band.minAge)}</option>
+            ))}
+          </select>
         </label>
 
         <div className="md:col-span-2">

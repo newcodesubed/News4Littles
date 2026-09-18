@@ -3,6 +3,9 @@
  * Pure logic; no HTTP, no network.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  AGE_BANDS, AGE_BAND_ANCHORS, bandForAge, formatAgeBand, isAgeBandAnchor,
+} from '../src/core/article.js';
 import { denyListGuard, strictest } from '../src/pipeline/guard.js';
 import {
   buildVocab, capitalize, maxWordsForAge, simplifyHeadline, simplifySentences,
@@ -77,23 +80,53 @@ describe('strictest-wins combinator (§6)', () => {
   });
 });
 
+describe('reading bands (§3.6, §9.2)', () => {
+  it('cover 5-14 contiguously, ascending, with no overlap', () => {
+    expect(AGE_BANDS[0]!.minAge).toBe(5);
+    expect(AGE_BANDS[AGE_BANDS.length - 1]!.maxAge).toBe(14);
+    for (let i = 1; i < AGE_BANDS.length; i += 1) {
+      expect(AGE_BANDS[i]!.minAge).toBe(AGE_BANDS[i - 1]!.maxAge + 1);
+    }
+  });
+
+  it.each([[5, 5], [6, 5], [7, 5], [8, 8], [9, 8], [10, 8], [11, 11], [12, 11], [13, 11], [14, 11]])(
+    'age %i is written for the band anchored at %i',
+    (age, anchor) => expect(bandForAge(age).minAge).toBe(anchor),
+  );
+
+  it('clamps an out-of-range age to the nearest band rather than throwing', () => {
+    expect(bandForAge(3).minAge).toBe(5);
+    expect(bandForAge(40).minAge).toBe(11);
+  });
+
+  it('recognises exactly the anchors as storable ageTargets', () => {
+    expect(AGE_BAND_ANCHORS).toEqual([5, 8, 11]);
+    expect(isAgeBandAnchor(8)).toBe(true);
+    expect(isAgeBandAnchor(6)).toBe(false);
+  });
+
+  it('formats a band as a range', () => {
+    expect(formatAgeBand(bandForAge(9))).toBe('8–10');
+  });
+});
+
 describe('sentence simplification (§9.2)', () => {
-  it.each([[5, 10], [6, 12], [7, 14], [8, 16], [9, 18], [10, 20], [11, 22], [12, 24], [13, 26], [14, 28]])(
+  it.each([[5, 14], [6, 14], [7, 14], [8, 20], [9, 20], [10, 20], [11, 28], [12, 28], [13, 28], [14, 28]])(
     'age %i allows %i words per sentence',
     (age, limit) => expect(maxWordsForAge(age)).toBe(limit),
   );
 
-  it('keeps §9.2’s three stated anchors exactly', () => {
-    // The PRD gives "<=7 -> 14; <=10 -> 20; else 28". age * 2 reproduces all
-    // three at the boundary ages, which is why it is a safe generalisation.
+  it('keeps §9.2’s three stated bands exactly', () => {
+    // The PRD gives "<=7 -> 14; <=10 -> 20; else 28", and those are the three
+    // reading bands a story is written in (AGE_BANDS).
     expect(maxWordsForAge(7)).toBe(14);
     expect(maxWordsForAge(10)).toBe(20);
     expect(maxWordsForAge(14)).toBe(28);
   });
 
-  it('gives every age its own limit, so ten versions really differ', () => {
-    const limits = Array.from({ length: 10 }, (_, i) => maxWordsForAge(5 + i));
-    expect(new Set(limits).size).toBe(10);
+  it('gives every band its own limit, so the three versions really differ', () => {
+    const limits = AGE_BANDS.map((band) => maxWordsForAge(band.minAge));
+    expect(new Set(limits).size).toBe(AGE_BANDS.length);
   });
 
   it('leaves a sentence at exactly the limit untouched', () => {

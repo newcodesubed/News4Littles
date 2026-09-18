@@ -2,7 +2,7 @@
  * Story-scoped regeneration — §4.2 Regenerate, §5 story scope.
  *
  * The rules worth proving are the ones an editor is trusting: a preview writes
- * nothing, apply writes ONLY the ticked ages, and apply never spends another
+ * nothing, apply writes ONLY the ticked bands, and apply never spends another
  * model call — the text applied is the text that was shown.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -48,8 +48,11 @@ function countingClient(reply = KID_REPLY) {
   };
 }
 
-/** A story with `ages` versions, all pending_review, ids `<rawId>-v<age>`. */
-function seedStory(rawId: string, ages = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
+/**
+ * A story with a version at each of `ages`, all pending_review, ids
+ * `<rawId>-v<age>`. Defaults to one per band anchor, as the pipeline writes.
+ */
+function seedStory(rawId: string, ages = [5, 8, 11]) {
   insertRawArticle(ctx.db, {
     id: rawId,
     headline: 'Council approves reef plan',
@@ -79,15 +82,15 @@ const rowsOf = (rawId: string) =>
     .all(rawId) as Record<string, unknown>[];
 
 describe('startRegenerateJob', () => {
-  it('previews every age of the story and writes nothing', async () => {
+  it('previews every band of the story and writes nothing', async () => {
     const anyVersion = seedStory('r1');
     const before = JSON.stringify(rowsOf('r1'));
     const { client } = countingClient();
 
     const job = await runJob(anyVersion, { client });
 
-    expect(job.ages).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
-    expect(job.versions).toHaveLength(10);
+    expect(job.ages).toEqual([5, 8, 11]);
+    expect(job.versions).toHaveLength(3);
     expect(job.running).toBe(false);
     expect(job.error).toBeUndefined();
     expect(JSON.stringify(rowsOf('r1'))).toBe(before);
@@ -100,7 +103,7 @@ describe('startRegenerateJob', () => {
     const job = await runJob('r1-v11', { client });
 
     expect(job.originalId).toBe('r1');
-    expect(job.versions).toHaveLength(10);
+    expect(job.versions).toHaveLength(3);
   });
 
   it('pins each generated version to its stored row id and createdAt', async () => {
@@ -115,7 +118,7 @@ describe('startRegenerateJob', () => {
     }
   });
 
-  it('runs the §6.2 prompt guard once for the story, not once per age', async () => {
+  it('runs the §6.2 prompt guard once for the story, not once per band', async () => {
     ctx.db.prepare(
       `UPDATE guard_config SET promptGuardEnabled = 1, promptGuardText = 'Classify: {{body}}'
        WHERE id = 'default'`,
@@ -125,11 +128,11 @@ describe('startRegenerateJob', () => {
 
     await runJob('r1-v5', { client });
 
-    // One guard call + ten simplifications. Eleven, not twenty.
-    expect(calls()).toBe(11);
+    // One guard call + three simplifications. Four, not six.
+    expect(calls()).toBe(4);
   });
 
-  it('regenerates exactly the ages a one-version story has', async () => {
+  it('regenerates exactly the band a one-version story has', async () => {
     const only = seedStory('r1', [8]);
     const { client } = countingClient();
 
@@ -137,6 +140,33 @@ describe('startRegenerateJob', () => {
 
     expect(job.ages).toEqual([8]);
     expect(job.versions.map((v) => v.ageTarget)).toEqual([8]);
+  });
+
+  it('collapses a pre-band ten-version story to one rewrite per band', async () => {
+    // Written before bands existed: one row per age. Three calls, not ten,
+    // and each band's rewrite targets the row already at its anchor.
+    seedStory('r1', [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    const { client, calls } = countingClient();
+
+    const job = await runJob('r1-v9', { client });
+
+    expect(calls()).toBe(3);
+    expect(job.ages).toEqual([5, 8, 11]);
+    expect(job.versions.map((v) => v.current.id)).toEqual(['r1-v5', 'r1-v8', 'r1-v11']);
+  });
+
+  it('targets the youngest row in a band that has no row at the anchor', async () => {
+    // A single pre-band row at age 9 is the 8-10 band's version. Its rewrite
+    // is stored under the anchor, so a reader of 8, 9 or 10 can reach it.
+    seedStory('r1', [9]);
+    const { client } = countingClient();
+
+    const job = await runJob('r1-v9', { client });
+
+    expect(job.ages).toEqual([8]);
+    expect(job.versions[0].current.id).toBe('r1-v9');
+    expect(job.versions[0].generated.id).toBe('r1-v9');
+    expect(job.versions[0].generated.ageTarget).toBe(8);
   });
 
   it('carries lifecycle fields over so the diff shows only content', async () => {
@@ -305,20 +335,47 @@ describe('resetRegenerateJob', () => {
 });
 
 describe('applyRegeneratedVersions', () => {
-  it('writes only the ticked ages and leaves the rest alone', async () => {
-    seedStory('r1', [5, 6, 7]);
+  it('writes only the ticked bands and leaves the rest alone', async () => {
+    seedStory('r1', [5, 8, 11]);
     const { client } = countingClient();
     const job = await runJob('r1-v5', { client });
 
-    applyRegeneratedVersions(ctx.db, job.id, [5, 7]);
+    applyRegeneratedVersions(ctx.db, job.id, [5, 11]);
 
     expect(getKidArticle(ctx.db, 'r1-v5')!.kidHeadline).toBe('A robot looked at a reef');
-    expect(getKidArticle(ctx.db, 'r1-v7')!.kidHeadline).toBe('A robot looked at a reef');
-    expect(getKidArticle(ctx.db, 'r1-v6')!.kidHeadline).toBe('Stored headline for age 6');
+    expect(getKidArticle(ctx.db, 'r1-v11')!.kidHeadline).toBe('A robot looked at a reef');
+    expect(getKidArticle(ctx.db, 'r1-v8')!.kidHeadline).toBe('Stored headline for age 8');
   });
 
-  it('clears editedByHuman only on the ages it writes', async () => {
-    seedStory('r1', [5, 6]);
+  it('writes the regenerated audio script onto the row it replaces', async () => {
+    seedStory('r1', [5, 8, 11]);
+    // KID_REPLY (top of this file) carries no audioScript; add one for this case.
+    const { client } = countingClient(
+      JSON.stringify({ ...JSON.parse(KID_REPLY), audioScript: 'A robot went down to the reef.' }),
+    );
+    const job = await runJob('r1-v5', { client });
+
+    applyRegeneratedVersions(ctx.db, job.id, [5]);
+
+    expect(getKidArticle(ctx.db, 'r1-v5')!.audioScript).toBe('A robot went down to the reef.');
+    // Not ticked, so untouched — seedStory writes no script.
+    expect(getKidArticle(ctx.db, 'r1-v8')!.audioScript).toBeNull();
+  });
+
+  it('moves a pre-band row onto its band anchor when applied', async () => {
+    seedStory('r1', [9]);
+    const { client } = countingClient();
+    const job = await runJob('r1-v9', { client });
+
+    applyRegeneratedVersions(ctx.db, job.id, [8]);
+
+    expect(getKidArticle(ctx.db, 'r1-v9')).toMatchObject({
+      ageTarget: 8, kidHeadline: 'A robot looked at a reef',
+    });
+  });
+
+  it('clears editedByHuman only on the bands it writes', async () => {
+    seedStory('r1', [5, 8]);
     ctx.db.prepare(`UPDATE kid_articles SET editedByHuman = 1 WHERE originalId = 'r1'`).run();
     const { client } = countingClient();
     const job = await runJob('r1-v5', { client });
@@ -326,7 +383,7 @@ describe('applyRegeneratedVersions', () => {
     applyRegeneratedVersions(ctx.db, job.id, [5]);
 
     expect(getKidArticle(ctx.db, 'r1-v5')!.editedByHuman).toBe(0);
-    expect(getKidArticle(ctx.db, 'r1-v6')!.editedByHuman).toBe(1);
+    expect(getKidArticle(ctx.db, 'r1-v8')!.editedByHuman).toBe(1);
   });
 
   it('preserves status, publishedAt and approvedBy', async () => {
@@ -346,18 +403,18 @@ describe('applyRegeneratedVersions', () => {
   });
 
   it('spends no further model calls — the applied text is the shown text', async () => {
-    seedStory('r1', [5, 6]);
+    seedStory('r1', [5, 8]);
     const { client, calls } = countingClient();
     const job = await runJob('r1-v5', { client });
     const spent = calls();
 
-    applyRegeneratedVersions(ctx.db, job.id, [5, 6]);
+    applyRegeneratedVersions(ctx.db, job.id, [5, 8]);
 
     expect(calls()).toBe(spent);
   });
 
   it('returns the refreshed story', async () => {
-    seedStory('r1', [5, 6]);
+    seedStory('r1', [5, 8]);
     const { client } = countingClient();
     const job = await runJob('r1-v5', { client });
 
@@ -434,12 +491,12 @@ describe('the regenerate endpoints (§4.2)', () => {
   };
 
   it('starts a preview for the whole story and writes nothing', async () => {
-    seedStory('r1', [5, 6, 7]);
+    seedStory('r1', [5, 8, 11]);
     const before = JSON.stringify(rowsOf('r1'));
 
-    const started = await ctx.api('/api/admin/articles/r1-v6/regenerate', { method: 'POST' });
+    const started = await ctx.api('/api/admin/articles/r1-v8/regenerate', { method: 'POST' });
     expect(started.status).toBe(202);
-    expect((await started.json()).job.ages).toEqual([5, 6, 7]);
+    expect((await started.json()).job.ages).toEqual([5, 8, 11]);
 
     const { job } = await awaitJob();
     expect(job?.versions).toHaveLength(3);
@@ -459,23 +516,23 @@ describe('the regenerate endpoints (§4.2)', () => {
     releaseJob();
   });
 
-  it('applies only the ticked ages and returns the refreshed story', async () => {
-    seedStory('r1', [5, 6]);
+  it('applies only the ticked bands and returns the refreshed story', async () => {
+    seedStory('r1', [5, 8]);
     await ctx.api('/api/admin/articles/r1-v5/regenerate', { method: 'POST' });
     const { job } = await awaitJob();
 
     const res = await ctx.api('/api/admin/articles/regenerate/apply', {
-      method: 'POST', body: JSON.stringify({ jobId: job!.id, ages: [6] }),
+      method: 'POST', body: JSON.stringify({ jobId: job!.id, ages: [8] }),
     });
 
     expect(res.status).toBe(200);
     const story = await res.json();
     expect(story.originalId).toBe('r1');
     expect(getKidArticle(ctx.db, 'r1-v5')!.kidHeadline).toBe('Stored headline for age 5');
-    expect(getKidArticle(ctx.db, 'r1-v6')!.kidHeadline).not.toBe('Stored headline for age 6');
+    expect(getKidArticle(ctx.db, 'r1-v8')!.kidHeadline).not.toBe('Stored headline for age 8');
   });
 
-  it('400s on a missing jobId, an empty tick list, or an unpreviewed age', async () => {
+  it('400s on a missing jobId, an empty tick list, or an unpreviewed band', async () => {
     seedStory('r1', [5]);
     await ctx.api('/api/admin/articles/r1-v5/regenerate', { method: 'POST' });
     const { job } = await awaitJob();

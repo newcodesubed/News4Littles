@@ -1,7 +1,10 @@
 # One version per reading age — design
 
 **Date:** 2026-09-09
-**Status:** approved, ready for an implementation plan
+**Status:** implemented; §2's "one call per age" decision is **superseded** by
+`2026-09-14-reading-bands-design.md` — a story is now written once per reading
+band (5–7, 8–10, 11–14), three versions rather than ten. The story-scoped
+actions, grouped queue and slider-driven feed described here are unchanged.
 **Depends on:** `2026-09-09-simplification-budget-design.md` (the budget and the
 raw-article backlog it introduced)
 

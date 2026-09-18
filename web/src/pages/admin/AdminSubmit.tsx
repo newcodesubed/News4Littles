@@ -7,6 +7,7 @@ import { Button } from '../../ui/Button';
 import { FIELD_CLASS, FIELD_CLASS_COMPACT } from '../../ui/Field';
 import { Card, Notice } from '../../ui/Surface';
 import type { KidArticle } from '../../lib/types';
+import { AGE_BANDS, DEFAULT_AGE, ageBandLabel, bandForAge, formatAgeBand } from '../../lib/ageBands';
 
 /**
  * Editor portal — PRD §4.3.
@@ -22,8 +23,6 @@ interface GuardInfo {
   engine: string;
 }
 
-const AGES = Array.from({ length: 10 }, (_, i) => i + 5); // 5–14 (§4.3)
-
 
 export function AdminSubmit() {
   const { adminFetch } = useAdminAuth();
@@ -34,7 +33,8 @@ export function AdminSubmit() {
     sourceUrl: '',
     body: '',
     category: 'World',
-    ageTarget: 6,
+    // The band to preview and edit; the save writes every band (§4.3).
+    ageTarget: bandForAge(DEFAULT_AGE).minAge,
   });
 
   const [preview, setPreview] = useState<KidArticle | null>(null);
@@ -161,9 +161,11 @@ export function AdminSubmit() {
             </select>
           </label>
           <label className="block">
-            <span className="text-sm font-bold">Age target</span>
+            <span className="text-sm font-bold">Reading group to preview</span>
             <select value={form.ageTarget} onChange={(e) => set('ageTarget', Number(e.target.value))} className={`mt-1 ${FIELD_CLASS}`}>
-              {AGES.map((a) => <option key={a} value={a}>{a}</option>)}
+              {AGE_BANDS.map((band) => (
+                <option key={band.minAge} value={band.minAge}>{ageBandLabel(band.minAge)}</option>
+              ))}
             </select>
           </label>
         </div>
@@ -194,7 +196,7 @@ export function AdminSubmit() {
             <CategoryBadge category={preview.category} />
             <SafetyBadge safety={preview.safety} />
             <span className="text-xs font-semibold text-muted-foreground">
-              Age {preview.ageTarget} · {preview.readingMinutes} min
+              {ageBandLabel(preview.ageTarget)} · {preview.readingMinutes} min
             </span>
           </div>
 
@@ -268,12 +270,12 @@ export function AdminSubmit() {
 
       {/* §4.3 actions. "Save draft" is deliberately absent — see the notes. */}
       <div className="mt-6 flex flex-wrap gap-3 border-t border-border pt-6">
-        {/* Saving writes one version per reading age, so with an LLM configured
-            it is ten model calls — a minute or more. The label has to say so,
-            or a working button looks like a dead one. */}
+        {/* Saving writes one version per reading group, so with an LLM
+            configured it is three model calls — tens of seconds. The label has
+            to say so, or a working button looks like a dead one. */}
         <Button size="xl" onClick={() => save('pending_review')} disabled={!complete || busy}>
           {saving === 'pending_review' && <Loader2 className="w-4 h-4 animate-spin" />}
-          {saving === 'pending_review' ? 'Writing every age version…' : 'Send for review'}
+          {saving === 'pending_review' ? 'Writing every reading group…' : 'Send for review'}
         </Button>
         <Button
           variant="outline" size="xl" disabled={!complete || busy}
@@ -285,11 +287,11 @@ export function AdminSubmit() {
           })}
         >
           {saving === 'published' && <Loader2 className="w-4 h-4 animate-spin" />}
-          {saving === 'published' ? 'Publishing every age version…' : 'Publish now'}
+          {saving === 'published' ? 'Publishing every reading group…' : 'Publish now'}
         </Button>
         <p className="w-full text-xs text-muted-foreground">
           You can save without simplifying — the pipeline runs on the server either way, once
-          per reading age (5-14), so saving takes a moment.
+          per reading group ({AGE_BANDS.map(formatAgeBand).join(', ')}), so saving takes a moment.
         </p>
       </div>
 

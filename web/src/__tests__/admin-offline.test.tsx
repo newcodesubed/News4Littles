@@ -62,7 +62,7 @@ function serveThenGoOffline() {
     if (path.includes('/sources')) return body(SOURCES);
       if (path.includes('/guard-config')) return body({ denyList: ['war'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '' });
       if (path.includes('/prompt-config')) return body({ genericPrompt: 'p', ageOverrides: {}, versions: {}, inertUntilLlm: true });
-      if (path.includes('/app-settings')) return body({ defaultAge: 6, scrapeTimes: ['06:00'], llmProvider: null, apiKeyLocation: 'env' });
+      if (path.includes('/app-settings')) return body({ defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, apiKeyLocation: 'env' });
       // §5: the queue reads stories, not versions.
       if (path.includes('/stories')) return body({ stories: [storyOf(ARTICLE)], total: 1 });
       return body({ articles: [ARTICLE], total: 1 });
@@ -144,7 +144,7 @@ describe('settings, server unreachable', () => {
 
   it('saving app settings reports the failure', async () => {
     renderIn(<AdminSettings />);
-    await screen.findByLabelText('Default reading age');
+    await screen.findByLabelText('Default reading group');
     await userEvent.click(screen.getByRole('button', { name: 'Save app settings' }));
     expect(await screen.findByText(OFFLINE)).toBeInTheDocument();
   });
@@ -204,13 +204,12 @@ describe('a failed save must not leave the form lying', () => {
 
   it('reverts app settings', async () => {
     renderIn(<AdminSettings />);
-    const age = await screen.findByLabelText('Default reading age');
+    const group = await screen.findByLabelText('Default reading group');
 
-    await userEvent.clear(age);
-    await userEvent.type(age, '11');
+    await userEvent.selectOptions(group, '11');
     await userEvent.click(screen.getByRole('button', { name: 'Save app settings' }));
 
     expect(await screen.findByText(OFFLINE)).toBeInTheDocument();
-    expect(age).toHaveValue(6);
+    expect(group).toHaveValue('5');
   });
 });

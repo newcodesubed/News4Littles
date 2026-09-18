@@ -66,6 +66,41 @@ describe('edit (§4.2)', () => {
     expect(JSON.parse(row.vocab as string)[0].word).toBe('reef');
   });
 
+  it('saves an edited audio script and marks the version human-edited', async () => {
+    // The words a child HEARS are editable like the words they read: the model
+    // writes the script from the article, so it is the field most likely to
+    // need a person's hand.
+    const id = insertKidArticle(ctx.db, { audioScript: 'The script the model wrote.' });
+
+    const res = await patch(`/api/admin/articles/${id}`, {
+      audioScript: 'Hello! Here is the story, the way an editor wants it said.',
+    });
+
+    expect(res.status).toBe(200);
+    const row = getKidArticle(ctx.db, id)!;
+    expect(row.audioScript).toBe('Hello! Here is the story, the way an editor wants it said.');
+    expect(row.editedByHuman).toBe(1);
+    // Back out in the same response, so the dialog it came from shows the edit.
+    expect((await res.json()).audioScript).toBe(row.audioScript);
+  });
+
+  it('clears the script when an editor empties the box', async () => {
+    // Optional like feelingNote: not wanting a story spoken is a real edit.
+    const id = insertKidArticle(ctx.db, { audioScript: 'Spoken on the podcast page.' });
+
+    await patch(`/api/admin/articles/${id}`, { audioScript: '   ' });
+
+    expect(getKidArticle(ctx.db, id)!.audioScript).toBeNull();
+  });
+
+  it('leaves the script alone when an edit does not mention it', async () => {
+    const id = insertKidArticle(ctx.db, { audioScript: 'Spoken on the podcast page.' });
+
+    await patch(`/api/admin/articles/${id}`, { summary: 'A new summary.' });
+
+    expect(getKidArticle(ctx.db, id)!.audioScript).toBe('Spoken on the podcast page.');
+  });
+
   it('returns the article with vocab already parsed', async () => {
     const id = insertKidArticle(ctx.db);
     const body = await (await patch(`/api/admin/articles/${id}`, { summary: 'New summary.' })).json();

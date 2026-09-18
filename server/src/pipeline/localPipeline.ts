@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
-import type { KidArticle, Safety } from '../core/article.js';
+import { DEFAULT_AGE, bandForAge, type KidArticle, type Safety } from '../core/article.js';
 import { denyListGuard, strictest, type GuardResult } from './guard.js';
 import {
   buildVocab,
@@ -39,7 +39,10 @@ export interface LocalPipelineConfig {
   denyList: string[];
   /** From guard_config.denyListEnabled. A disabled guard does not run (§6). */
   denyListEnabled: boolean;
-  /** 5-14; from app_settings.defaultAge unless a caller overrides it (§3.6). */
+  /**
+   * The band anchor written to kid_articles.ageTarget. From the band
+   * app_settings.defaultAge falls in unless a caller overrides it (§3.6).
+   */
   ageTarget: number;
 }
 
@@ -105,6 +108,9 @@ export function simplifyLocally(
     whyItMatters: WHY_IT_MATTERS_FALLBACK,
     vocab: buildVocab(raw.body),
     thinkAbout: THINK_ABOUT_FALLBACK,
+    // §9.2 rewrites sentences; it does not write broadcast copy. A story that
+    // fell back has no spoken version rather than a mechanical one.
+    audioScript: null,
     // §3.4 / §11.1: a feeling note belongs only to a non-calm story.
     feelingNote: safety === 'calm' ? null : FEELING_NOTE_FALLBACK[safety],
     safety,
@@ -146,6 +152,8 @@ export function loadLocalPipelineConfig(db: Database, ageTarget?: number): Local
   return {
     denyList: guardRow ? (JSON.parse(guardRow.denyList) as string[]) : [],
     denyListEnabled: guardRow ? guardRow.denyListEnabled === 1 : true,
-    ageTarget: ageTarget ?? settingsRow?.defaultAge ?? 6,
+    // The default age is a READER age (any of 5-14); a version is written for
+    // the band it falls in.
+    ageTarget: ageTarget ?? bandForAge(settingsRow?.defaultAge ?? DEFAULT_AGE).minAge,
   };
 }

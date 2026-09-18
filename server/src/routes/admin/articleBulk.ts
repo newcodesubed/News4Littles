@@ -34,8 +34,8 @@ export function createArticleBulkRouter(db: Database): Router {
 
     db.transaction(() => {
       // §5: actions are story-scoped, so several selected versions of one story
-      // are one action. Deduplicated by originalId, or a story with ten
-      // versions selected would be reported as ten approvals.
+      // are one action. Deduplicated by originalId, or a story with three
+      // versions selected would be reported as three approvals.
       const done = new Set<string>();
 
       for (const id of ids) {
@@ -49,7 +49,7 @@ export function createArticleBulkRouter(db: Database): Router {
         if (action === 'approve') {
           // §4.2: bulk approve must leave skip-young out unless the editor
           // explicitly opted in — judged on the story's STRICTEST version, so
-          // selecting a calm age-14 row cannot publish a skip-young age-5 one.
+          // selecting a calm 11-14 row cannot publish a skip-young 5-7 one.
           if (state.safety === 'skip-young' && !includeFlagged) {
             outcome.skipped.push({ id, reason: 'flagged skip-young' });
             continue;

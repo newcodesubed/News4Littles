@@ -10,7 +10,9 @@
  *
  * Nothing is written to the database. Fixtures are invented placeholders.
  */
+import { bandForAge, formatAgeBand } from '../src/core/article.js';
 import { openDatabase } from '../src/db/connection.js';
+import { maxWordsForAge } from '../src/pipeline/simplify.js';
 import {
   loadLocalPipelineConfig,
   simplifyLocally,
@@ -76,14 +78,16 @@ function main(): void {
   const db = openDatabase();
 
   try {
-    const config = loadLocalPipelineConfig(db, parseAge(process.argv.slice(2)));
+    // A reader's age is written for the band it falls in, as production does.
+    const age = parseAge(process.argv.slice(2));
+    const config = loadLocalPipelineConfig(db, age === undefined ? undefined : bandForAge(age).minAge);
 
     console.log(RULE);
     console.log('LOCAL PIPELINE — deny-list guard (§6) + rule-based simplification (§9.2)');
     console.log(RULE);
-    console.log(`age target        ${config.ageTarget}  ->  max ${
-      config.ageTarget <= 7 ? 14 : config.ageTarget <= 10 ? 20 : 28
-    } words per sentence`);
+    const band = bandForAge(config.ageTarget);
+    const limit = maxWordsForAge(config.ageTarget);
+    console.log(`age target        ${config.ageTarget}  (ages ${formatAgeBand(band)})  ->  max ${limit} words per sentence`);
     console.log(`deny-list guard   ${config.denyListEnabled ? 'enabled' : 'DISABLED'}  (${config.denyList.length} terms, loaded from guard_config)`);
     console.log(`deny-list         ${config.denyList.join(', ')}`);
 
@@ -130,7 +134,6 @@ function main(): void {
       const longest = article.whatHappened
         .split(/(?<=[.!?])\s+/)
         .reduce((max, s) => Math.max(max, s.split(/\s+/).filter(Boolean).length), 0);
-      const limit = config.ageTarget <= 7 ? 14 : config.ageTarget <= 10 ? 20 : 28;
       console.log(
         `\n[check] longest sentence in whatHappened: ${longest} words (limit ${limit}) ${
           longest <= limit ? 'OK' : 'OVER LIMIT'

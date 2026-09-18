@@ -7,9 +7,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenRouterClient, stripCodeFence } from '../src/llm/openRouterClient.js';
-import { parseLlmContent, renderPrompt, selectPrompt, LlmResponseError } from '../src/llm/llmSimplifier.js';
-import { simplifyArticle, simplifyArticleForAllAges } from '../src/pipeline/simplifyArticle.js';
-import { AGE_6_SIMPLIFICATION_PROMPT, GENERIC_SIMPLIFICATION_PROMPT } from '../src/db/seed-prompts.js';
+import {
+  parseLlmContent, renderPrompt, selectPrompt, LlmResponseError, TEMPLATE_VARIABLES,
+} from '../src/llm/llmSimplifier.js';
+import { simplifyArticle, simplifyStory } from '../src/pipeline/simplifyArticle.js';
+import { AGE_BANDS, AGE_BAND_ANCHORS, bandForAge } from '../src/core/article.js';
+import {
+  GENERIC_SIMPLIFICATION_PROMPT, YOUNG_READERS_SIMPLIFICATION_PROMPT,
+} from '../src/db/seed-prompts.js';
 import { createTestContext, type TestContext } from './helpers.js';
 
 const RAW = {
@@ -88,6 +93,18 @@ describe('prompt rendering (§7.3 variables)', () => {
     expect(renderPrompt('{{age}} and {{age}}', context)).toBe('8 and 8');
   });
 
+  it('renders {{ageRange}} as the whole band the age falls in', () => {
+    expect(renderPrompt('{{ageRange}}', context)).toBe('8 to 10');
+    expect(renderPrompt('{{ageRange}}', { ...context, age: 5 })).toBe('5 to 7');
+    expect(renderPrompt('{{ageRange}}', { ...context, age: 14 })).toBe('11 to 14');
+  });
+
+  it('lists every variable it renders, so the editor sees the full set', () => {
+    const rendered = renderPrompt(TEMPLATE_VARIABLES.join('|'), context);
+    expect(rendered).not.toContain('{{');
+    expect(TEMPLATE_VARIABLES).toContain('{{ageRange}}');
+  });
+
   it('truncates the body, so one huge paste cannot run up a bill', () => {
     const out = renderPrompt('{{body}}', { ...context, body: 'x'.repeat(10_000) }, 100);
     expect(out).toHaveLength(100 + '…[truncated]'.length);
@@ -133,6 +150,34 @@ describe('response validation', () => {
 
   it('normalises empty contentWarnings to null', () => {
     expect(parseLlmContent(JSON.stringify({ ...GOOD, contentWarnings: [] })).contentWarnings).toBeNull();
+  });
+});
+
+describe('audioScript is optional (§9.1)', () => {
+  const withScript = (value: unknown) =>
+    JSON.stringify({ ...GOOD, audioScript: value });
+
+  it('keeps a well-formed script', () => {
+    expect(parseLlmContent(withScript('  A robot went down to the reef.  ')).audioScript)
+      .toBe('A robot went down to the reef.');
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['empty', '   '],
+    ['not a string', 42],
+    ['null', null],
+  ])('nulls a %s script rather than failing', (_label, value) => {
+    expect(parseLlmContent(withScript(value)).audioScript).toBeNull();
+  });
+
+  // The one that matters: a bad script must not cost the story. parseLlmContent
+  // throwing sends the WHOLE version to the rule-based fallback.
+  it('still returns the story when the script is unusable', () => {
+    const content = parseLlmContent(withScript({ nested: 'object' }));
+    expect(content.audioScript).toBeNull();
+    expect(content.kidHeadline).toBe(GOOD.kidHeadline);
+    expect(content.whatHappened).toBe(GOOD.whatHappened);
   });
 });
 
@@ -309,10 +354,10 @@ describe('simplifyArticle orchestration', () => {
 
   it('reports which prompt was used', async () => {
     const out = await simplifyArticle(ctx.db, RAW, {
-      client: withClient(completion(JSON.stringify(GOOD))), ageTarget: 6,
+      client: withClient(completion(JSON.stringify(GOOD))), ageTarget: 5,
     });
-    // The seed ships an age-6 override.
-    expect(out.promptSource).toBe('age-6');
+    // The seed ships an override for the 5-7 band, keyed by its anchor.
+    expect(out.promptSource).toBe('age-5');
   });
 });
 
@@ -324,14 +369,14 @@ describe('the seeded prompts must keep their safety criteria', () => {
    */
   it.each([
     ['generic', GENERIC_SIMPLIFICATION_PROMPT],
-    ['age-6', AGE_6_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
   ])('%s prompt tells the model to judge the subject, not its own rewrite', (_label, prompt) => {
     expect(prompt).toContain('Judge the SUBJECT of the story');
   });
 
   it.each([
     ['generic', GENERIC_SIMPLIFICATION_PROMPT],
-    ['age-6', AGE_6_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
   ])('%s prompt names the skip-young triggers from §6.1', (_label, prompt) => {
     for (const trigger of ['war', 'killing', 'attack', 'violence']) {
       expect(prompt.toLowerCase()).toContain(trigger);
@@ -340,7 +385,7 @@ describe('the seeded prompts must keep their safety criteria', () => {
 
   it.each([
     ['generic', GENERIC_SIMPLIFICATION_PROMPT],
-    ['age-6', AGE_6_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
   ])('%s prompt biases towards the stricter level when unsure', (_label, prompt) => {
     expect(prompt).toContain('choose the STRICTER one');
   });
@@ -349,9 +394,32 @@ describe('the seeded prompts must keep their safety criteria', () => {
     // It picked "Volkswagen, Audi, Porsche, Skoda" as words to know.
     expect(GENERIC_SIMPLIFICATION_PROMPT).toContain('Never proper');
   });
+
+  it('generic prompt frames the story for the whole band, not one age', () => {
+    // One version serves three or four ages, so the model must be told so.
+    expect(GENERIC_SIMPLIFICATION_PROMPT).toContain('{{ageRange}}');
+  });
+
+  // An override REPLACES the generic prompt (§9.1), so a field taught only to
+  // the generic one leaves ages 5-7 — the youngest readers, who need listening
+  // most — as the single band with no spoken version.
+  it.each([
+    ['generic', GENERIC_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
+  ])('%s prompt asks for an audioScript', (_label, prompt) => {
+    expect(prompt).toContain('"audioScript"');
+  });
+
+  it.each([
+    ['generic', GENERIC_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
+  ])('%s prompt tells the model to write the script from the article', (_label, prompt) => {
+    // Otherwise it summarises its own summary and the spoken version is flat.
+    expect(prompt).toContain('from the article');
+  });
 });
 
-describe('sharing one prompt-guard verdict across ages', () => {
+describe('sharing one prompt-guard verdict across bands', () => {
   let ctx: TestContext;
   beforeEach(() => { ctx = createTestContext(); });
   afterEach(() => ctx.close());
@@ -417,14 +485,14 @@ describe('sharing one prompt-guard verdict across ages', () => {
       },
     });
 
-    // Only the simplification call. Ten ages sharing one verdict is the point.
+    // Only the simplification call. Every band sharing one verdict is the point.
     expect(calls()).toBe(1);
     // And the supplied verdict still counts as a guard: strictest wins (§6).
     expect(outcome.article.safety).toBe('skip-young');
   });
 });
 
-describe('simplifyArticleForAllAges', () => {
+describe('simplifyStory', () => {
   let ctx: TestContext;
   beforeEach(() => { ctx = createTestContext(); });
   afterEach(() => ctx.close());
@@ -445,7 +513,7 @@ describe('simplifyArticleForAllAges', () => {
    * A client whose reply is decided by the PROMPT it receives, not by the call
    * index: a 500 is transient, so the client retries it and a call-index rule
    * would see the retry succeed. Keying on the prompt fails every attempt for
-   * that age, which is what "this age fell back" actually means.
+   * that band, which is what "this band fell back" actually means.
    *
    * `usage.cost` is set because that is the only field costUsd is read from.
    */
@@ -474,73 +542,81 @@ describe('simplifyArticleForAllAges', () => {
     };
   }
 
-  it('returns one version per age, in ascending age order', async () => {
+  it('returns one version per reading band, in ascending band order', async () => {
     const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
 
-    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
 
-    expect(outcome.versions).toHaveLength(10);
-    expect(outcome.versions.map((v) => v.article.ageTarget)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(outcome.versions).toHaveLength(AGE_BANDS.length);
+    expect(outcome.versions.map((v) => v.article.ageTarget)).toEqual([...AGE_BAND_ANCHORS]);
     expect(outcome.versions.every((v) => v.article.status === 'pending_review')).toBe(true);
     expect(outcome.versions.every((v) => v.article.publishedAt === null)).toBe(true);
+  });
+
+  it('makes exactly one model call per band — three, not ten', async () => {
+    const { client, calls } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
+
+    await simplifyStory(ctx.db, RAW_INPUT, { client });
+
+    expect(calls()).toBe(3);
   });
 
   it('gives every version its own id but the same originalId source', async () => {
     const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
 
-    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
 
     const ids = outcome.versions.map((v) => v.article.id);
-    expect(new Set(ids).size).toBe(10);
+    expect(new Set(ids).size).toBe(AGE_BANDS.length);
     expect(outcome.versions.every((v) => v.article.originalId === 'r1')).toBe(true);
   });
 
-  it('runs the prompt guard once, not once per age', async () => {
+  it('runs the prompt guard once, not once per band', async () => {
     ctx.db.prepare(
       `UPDATE guard_config SET promptGuardEnabled = 1, promptGuardText = 'Classify: {{body}}'
        WHERE id = 'default'`,
     ).run();
     const { client, calls } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
 
-    await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+    await simplifyStory(ctx.db, RAW_INPUT, { client });
 
-    // One guard call + ten simplification calls. Eleven, not twenty.
-    expect(calls()).toBe(11);
+    // One guard call + one simplification call per band. Four, not six.
+    expect(calls()).toBe(1 + AGE_BANDS.length);
   });
 
-  it('falls back only for the age whose call failed', async () => {
-    // Every attempt for age 7 fails; the other nine ages succeed. The seeded
-    // generic prompt renders "{{age}}-year-old", so the age is in the prompt.
+  it('falls back only for the band whose call failed', async () => {
+    // Every attempt for the 8-10 band fails; the other two succeed. The seeded
+    // generic prompt renders "{{ageRange}}", so the band is in the prompt.
     const { client } = scriptedClient((prompt) =>
-      prompt.includes('7-year-old')
+      prompt.includes('aged 8 to 10')
         ? { ok: false, body: 'upstream exploded' }
         : { ok: true, body: reply('A kid headline') },
     );
 
-    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
 
     const engines = new Map(outcome.versions.map((v) => [v.article.ageTarget, v.engine]));
-    expect(engines.get(7)).toBe('local-fallback');
-    expect(engines.get(6)).toBe('llm');
-    expect(engines.get(8)).toBe('llm');
-    // The reason names the age, so a reviewer knows which version is weaker.
-    expect(outcome.fallbacks.some((reason) => reason.includes('age 7'))).toBe(true);
+    expect(engines.get(8)).toBe('local-fallback');
+    expect(engines.get(5)).toBe('llm');
+    expect(engines.get(11)).toBe('llm');
+    // The reason names the band, so a reviewer knows which version is weaker.
+    expect(outcome.fallbacks.some((reason) => reason.includes('ages 8–10'))).toBe(true);
     expect(outcome.fallbacks).toHaveLength(1);
   });
 
   it('sums the cost across every version', async () => {
     const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
 
-    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client });
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
 
     expect(outcome.costUsd).toBeGreaterThan(0);
   });
 
-  it('uses each age’s own prompt when one is configured', async () => {
+  it('uses each band’s own prompt when one is configured', async () => {
     ctx.db.prepare(
       `UPDATE translation_prompt_config
          SET genericPrompt = 'GENERIC for {{age}}: {{body}}',
-             ageOverrides = '{"9":"AGE NINE ONLY: {{body}}"}'
+             ageOverrides = '{"8":"MIDDLE BAND ONLY: {{body}}"}'
        WHERE id = 'default'`,
     ).run();
 
@@ -557,50 +633,48 @@ describe('simplifyArticleForAllAges', () => {
       };
     }) as unknown as typeof fetch;
 
-    await simplifyArticleForAllAges(ctx.db, RAW_INPUT, {
+    await simplifyStory(ctx.db, RAW_INPUT, {
       client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
     });
 
-    expect(prompts.filter((p) => p.includes('AGE NINE ONLY'))).toHaveLength(1);
-    expect(prompts.filter((p) => p.includes('GENERIC for'))).toHaveLength(9);
-    // The generic prompt is rendered with each age, not a single default.
+    expect(prompts.filter((p) => p.includes('MIDDLE BAND ONLY'))).toHaveLength(1);
+    expect(prompts.filter((p) => p.includes('GENERIC for'))).toHaveLength(2);
+    // The generic prompt is rendered with each band's anchor, not one default.
     expect(prompts.some((p) => p.includes('GENERIC for 5'))).toBe(true);
-    expect(prompts.some((p) => p.includes('GENERIC for 14'))).toBe(true);
+    expect(prompts.some((p) => p.includes('GENERIC for 11'))).toBe(true);
   });
 
-  it('builds only the ages it is given', async () => {
+  it('builds only the bands it is given', async () => {
     const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
 
-    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, { client, ages: [8] });
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client, bands: [bandForAge(8)] });
 
     expect(outcome.versions).toHaveLength(1);
     expect(outcome.versions[0].article.ageTarget).toBe(8);
   });
 
-  it('pins each age to the id and createdAt its caller supplies', async () => {
+  it('pins each band to the id and createdAt its caller supplies', async () => {
     // A regeneration rewrites STORED rows, so the generated version has to
     // carry the row's identity rather than a fresh uuid.
     const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
 
-    const outcome = await simplifyArticleForAllAges(ctx.db, RAW_INPUT, {
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, {
       client,
-      ages: [5, 6],
-      perAge: (age) => ({ id: `v${age}`, now: `2026-09-0${age}T09:00:00.000Z` }),
+      bands: [bandForAge(5), bandForAge(8)],
+      perBand: (band) => ({ id: `v${band.minAge}`, now: `2026-09-0${band.minAge}T09:00:00.000Z` }),
     });
 
-    expect(outcome.versions.map((v) => v.article.id)).toEqual(['v5', 'v6']);
+    expect(outcome.versions.map((v) => v.article.id)).toEqual(['v5', 'v8']);
     expect(outcome.versions.map((v) => v.article.createdAt)).toEqual([
-      '2026-09-05T09:00:00.000Z', '2026-09-06T09:00:00.000Z',
+      '2026-09-05T09:00:00.000Z', '2026-09-08T09:00:00.000Z',
     ]);
   });
 
-  it('reports progress once per age, counting up', async () => {
+  it('reports progress once per band, counting up', async () => {
     const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
     const seen: number[] = [];
 
-    await simplifyArticleForAllAges(ctx.db, RAW_INPUT, {
-      client, ages: [5, 6, 7], onProgress: (done) => seen.push(done),
-    });
+    await simplifyStory(ctx.db, RAW_INPUT, { client, onProgress: (done) => seen.push(done) });
 
     expect(seen).toEqual([1, 2, 3]);
   });

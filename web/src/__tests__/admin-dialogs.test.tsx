@@ -9,7 +9,7 @@ const BASE: AdminArticle = {
   id: 'a1', originalId: 'r1', ageTarget: 8, kidHeadline: 'A story headline',
   summary: 'A summary.', whatHappened: 'What happened.', whyItMatters: 'Why it matters.',
   vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
-  thinkAbout: 'Think?', feelingNote: null, safety: 'calm', contentWarnings: null,
+  thinkAbout: 'Think?', audioScript: null, feelingNote: null, safety: 'calm', contentWarnings: null,
   category: 'World', readingMinutes: 3, sourceName: 'BBC News', sourceUrl: 'https://x',
   status: 'pending_review', rejectReason: null, editedByHuman: false,
   createdAt: '2026-09-04T10:00:00.000Z', publishedAt: null,
@@ -116,6 +116,19 @@ describe('EditDialog (§4.2)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ vocab: [] }));
   });
+
+  it('sends an edited audio script', async () => {
+    const onSave = open({ audioScript: 'Old script.' });
+
+    const box = screen.getByLabelText('Audio script');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'New spoken version.');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ audioScript: 'New spoken version.' }),
+    );
+  });
 });
 
 describe('RegenerateDialog (§4.2, story-scoped)', () => {
@@ -140,80 +153,80 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
     return { onApply, onDiscard };
   };
 
-  it('offers one tab per age and opens on the youngest', () => {
-    open(job([version(5), version(9), version(14)]));
+  it('offers one tab per reading group and opens on the youngest', () => {
+    open(job([version(5), version(8), version(11)]));
 
-    for (const age of [5, 9, 14]) {
-      expect(screen.getByRole('tab', { name: new RegExp(`Age ${age}`) })).toBeInTheDocument();
+    for (const label of ['Ages 5–7', 'Ages 8–10', 'Ages 11–14']) {
+      expect(screen.getByRole('tab', { name: new RegExp(label) })).toBeInTheDocument();
     }
     expect(screen.getByText('Fresh age 5')).toBeInTheDocument();
-    expect(screen.queryByText('Fresh age 14')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fresh age 11')).not.toBeInTheDocument();
   });
 
-  it('switches the diff when another age is picked', async () => {
-    open(job([version(5), version(14)]));
+  it('switches the diff when another group is picked', async () => {
+    open(job([version(5), version(11)]));
 
-    await userEvent.click(screen.getByRole('tab', { name: /Age 14/ }));
+    await userEvent.click(screen.getByRole('tab', { name: /Ages 11–14/ }));
 
-    expect(screen.getByText('Fresh age 14')).toBeInTheDocument();
+    expect(screen.getByText('Fresh age 11')).toBeInTheDocument();
     expect(screen.queryByText('Fresh age 5')).not.toBeInTheDocument();
   });
 
-  it('says how many fields would change for the age on screen', () => {
+  it('says how many fields would change for the version on screen', () => {
     open(job([version(5, { kidHeadline: 'Fresh age 5', summary: 'New summary.' })]));
     expect(screen.getByText(/2 field\(s\) would change/)).toBeInTheDocument();
   });
 
-  it('says so when an age would not change at all', () => {
+  it('says so when a version would not change at all', () => {
     open(job([version(5, { kidHeadline: 'Stored age 5' })]));
     expect(screen.getByText(/no differences/i)).toBeInTheDocument();
   });
 
-  it('ticks every age a person has not edited', () => {
-    open(job([version(5), version(6)]));
+  it('ticks every version a person has not edited', () => {
+    open(job([version(5), version(8)]));
 
-    expect(screen.getByRole('checkbox', { name: 'Apply age 5' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Apply ages 5–7' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'Apply 2 of 2 versions' })).toBeEnabled();
   });
 
-  it('leaves a human-edited age unticked and warns about it', async () => {
-    open(job([version(5), version(6, {}, { editedByHuman: true })]));
+  it('leaves a human-edited version unticked and warns about it', async () => {
+    open(job([version(5), version(8, {}, { editedByHuman: true })]));
 
-    expect(screen.getByRole('checkbox', { name: 'Apply age 6' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Apply ages 8–10' })).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Apply 1 of 2 versions' })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('tab', { name: /Age 6/ }));
-    // The header names the age on screen — the moment the warning matters.
-    expect(screen.getByText(/Age 6 · edited by a person/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: /Ages 8–10/ }));
+    // The header names the group on screen — the moment the warning matters.
+    expect(screen.getByText(/Ages 8–10 · edited by a person/)).toBeInTheDocument();
     // …and the warning box says what ticking it would cost.
     expect(screen.getByText(/Tick it only if you want that wording replaced/i)).toBeInTheDocument();
   });
 
-  it('applies exactly the ticked ages, ascending', async () => {
-    const { onApply } = open(job([version(5), version(6), version(7)]));
+  it('applies exactly the ticked versions, ascending', async () => {
+    const { onApply } = open(job([version(5), version(8), version(11)]));
 
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Apply age 6' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Apply ages 8–10' }));
     await userEvent.click(screen.getByRole('button', { name: 'Apply 2 of 3 versions' }));
 
-    expect(onApply).toHaveBeenCalledWith([5, 7]);
+    expect(onApply).toHaveBeenCalledWith([5, 11]);
   });
 
   it('cannot apply nothing', async () => {
     open(job([version(5)]));
 
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Apply age 5' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Apply ages 5–7' }));
 
     expect(screen.getByRole('button', { name: /Apply 0 of 1/ })).toBeDisabled();
   });
 
-  it('unticks and re-ticks every age at once', async () => {
-    open(job([version(5), version(6)]));
+  it('unticks and re-ticks every version at once', async () => {
+    open(job([version(5), version(8)]));
 
     await userEvent.click(screen.getByRole('button', { name: 'Untick all' }));
-    expect(screen.getByRole('checkbox', { name: 'Apply age 5' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Apply ages 5–7' })).not.toBeChecked();
 
     await userEvent.click(screen.getByRole('button', { name: 'Tick all' }));
-    expect(screen.getByRole('checkbox', { name: 'Apply age 5' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Apply ages 5–7' })).toBeChecked();
   });
 
   it('names the preview cost, because it is spent either way', () => {
@@ -221,7 +234,7 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
     expect(screen.getByText(/\$0\.0043/)).toBeInTheDocument();
   });
 
-  it('says which ages fell back to the rule-based pipeline', () => {
+  it('says which versions fell back to the rule-based pipeline', () => {
     const fell = { ...version(5), fallbackReason: 'upstream exploded' };
     open(job([fell]));
     expect(screen.getByText(/rule-based pipeline: upstream exploded/)).toBeInTheDocument();
@@ -237,13 +250,13 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
   });
 });
 
-describe('reading every age version before approving (§5)', () => {
+describe('reading every reading-group version before approving (§5)', () => {
   const story: AdminStory = {
     originalId: 'raw-1',
     versions: [
       article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, kidHeadline: 'Headline for fives', summary: 'Summary for fives.' }),
-      article({ id: 'v9', originalId: 'raw-1', ageTarget: 9, kidHeadline: 'Headline for nines', summary: 'Summary for nines.' }),
-      article({ id: 'v14', originalId: 'raw-1', ageTarget: 14, kidHeadline: 'Headline for fourteens', summary: 'Summary for fourteens.' }),
+      article({ id: 'v8', originalId: 'raw-1', ageTarget: 8, kidHeadline: 'Headline for nines', summary: 'Summary for nines.' }),
+      article({ id: 'v11', originalId: 'raw-1', ageTarget: 11, kidHeadline: 'Headline for fourteens', summary: 'Summary for fourteens.' }),
     ],
     safety: 'calm',
     status: 'pending_review',
@@ -255,10 +268,10 @@ describe('reading every age version before approving (§5)', () => {
     createdAt: '2026-09-04T10:00:00.000Z',
   };
 
-  const open = () =>
+  const open = (subject: AdminStory = story) =>
     render(
       <ViewArticleDialog
-        story={story}
+        story={subject}
         onClose={() => {}}
         onEdit={() => {}}
         onPublish={() => {}}
@@ -271,15 +284,15 @@ describe('reading every age version before approving (§5)', () => {
     expect(screen.getByText('Headline for fives')).toBeInTheDocument();
   });
 
-  it('offers every age and switches the text', async () => {
+  it('offers every reading group and switches the text', async () => {
     const user = userEvent.setup();
     open();
 
-    for (const age of [5, 9, 14]) {
-      expect(screen.getByRole('button', { name: `Age ${age}` })).toBeInTheDocument();
+    for (const label of ['Ages 5–7', 'Ages 8–10', 'Ages 11–14']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
 
-    await user.click(screen.getByRole('button', { name: 'Age 14' }));
+    await user.click(screen.getByRole('button', { name: 'Ages 11–14' }));
 
     expect(screen.getByText('Headline for fourteens')).toBeInTheDocument();
     expect(screen.getByText('Summary for fourteens.')).toBeInTheDocument();
@@ -289,5 +302,31 @@ describe('reading every age version before approving (§5)', () => {
   it('says how many versions Publish will approve', () => {
     open();
     expect(screen.getByRole('button', { name: /publish all 3/i })).toBeInTheDocument();
+  });
+
+  /** A story whose versions carry the scripts given, youngest first. */
+  const spoken = (scripts: (string | null)[]): AdminStory => ({
+    ...story,
+    versions: story.versions.map((version, i) => ({ ...version, audioScript: scripts[i] })),
+  });
+
+  it('shows the script a child will hear, per reading group', async () => {
+    // §2.2: the model writes the script from the article, not from the story
+    // above it, so reading the story is not reading the script.
+    const user = userEvent.setup();
+    open(spoken(['Spoken to the fives.', 'Spoken to the nines.', 'Spoken to the fourteens.']));
+
+    expect(screen.getByText('Spoken to the fives.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ages 11–14' }));
+
+    expect(screen.getByText('Spoken to the fourteens.')).toBeInTheDocument();
+    expect(screen.queryByText('Spoken to the fives.')).not.toBeInTheDocument();
+  });
+
+  it('says so when a version has no script, rather than showing an empty box', () => {
+    // Every story published before the field existed reads this way.
+    open(spoken([null, null, null]));
+    expect(screen.getByText(/No script for this version/i)).toBeInTheDocument();
   });
 });
