@@ -12,8 +12,6 @@ import { TTS_ENABLED, TTS_PROVIDER } from '../env.js';
 import { OpenRouterSpeechProvider } from './openRouterSpeech.js';
 import type { SpeechProvider } from './types.js';
 
-export * from './types.js';
-
 /**
  * Each entry takes no arguments because a provider reads its OWN config from
  * env.ts — that is what keeps one provider's key and voice vocabulary out of a
