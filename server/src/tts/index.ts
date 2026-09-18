@@ -13,7 +13,6 @@ import { OpenRouterSpeechProvider } from './openRouterSpeech.js';
 import type { SpeechProvider } from './types.js';
 
 export * from './types.js';
-export { OpenRouterSpeechProvider } from './openRouterSpeech.js';
 
 /**
  * Each entry takes no arguments because a provider reads its OWN config from
