@@ -1,16 +1,3 @@
-/**
- * The text-to-speech contract — the seam this folder exists to create.
- *
- * Everything outside src/tts talks to a `SpeechProvider` and nothing else, so
- * it holds no provider's key, endpoint, model id or voice name.
- *
- * SWAPPING PROVIDER: write one file here implementing `SpeechProvider`,
- * register it in ./index.ts, set TTS_PROVIDER. Nothing else changes.
- *
- * Expected failures are returned, not thrown — a provider being down is a
- * story without audio, not a 500 for the whole page.
- */
-
 export type SpeechFormat = 'mp3' | 'wav' | 'opus';
 
 export const SPEECH_CONTENT_TYPES: Record<SpeechFormat, string> = {

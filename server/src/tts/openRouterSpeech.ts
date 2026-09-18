@@ -1,18 +1,3 @@
-/**
- * OpenRouter's /audio/speech endpoint, behind the SpeechProvider contract.
- * One implementation of ./types.ts — delete this file, write another, and the
- * rest of the server is unaffected.
- *
- * Two traps, both paid for once already:
- *  * Success is raw audio bytes; only a FAILURE comes back as JSON.
- *  * `voice` ids are per-model and not interchangeable — mai-voice-2 wants
- *    Azure names ('en-US-AvaNeural'), voxtral wants 'en_paul_neutral'. The
- *    wrong one is a 400, not a fallback voice.
- *
- * OpenRouter does NOT serve OpenAI's TTS models: openai/gpt-4o-mini-tts
- * answers 400 "Model ... does not exist", and openai/gpt-audio-mini is a
- * streaming chat model rather than a speech endpoint.
- */
 import {
   OPENROUTER_KEY, TTS_MAX_RETRIES, TTS_MODEL, TTS_TIMEOUT_MS, TTS_VOICE,
 } from '../env.js';
