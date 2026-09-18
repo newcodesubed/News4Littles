@@ -59,7 +59,8 @@ export function createAudioRouter(db: Database, options: AudioRouterOptions = {}
     res.setHeader('ETag', `"${result.key}"`);
     res.setHeader('Content-Type', result.contentType);
     res.setHeader('Content-Length', String(result.body.size));
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    // Revalidate every time, or a regenerated story keeps playing the old audio.
+    res.setHeader('Cache-Control', 'public, no-cache');
 
     if (req.headers['if-none-match'] === `"${result.key}"`) {
       res.status(304).end();
