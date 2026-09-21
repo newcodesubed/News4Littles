@@ -529,17 +529,52 @@ it instead); and JSON columns are checked with `json_valid`.
 ## Tests
 
 ```bash
-cd server && npm test    # 676 tests
+cd server && npm test    # 683 tests
 cd web    && npm test    # 288 tests
 ```
 
 Both suites are offline and free. Each server suite gets its own temporary
 database and port, RSS tests serve a feed from a local HTTP server, and
 `vitest.config.ts` hard-sets `LLM_ENABLED=false` so **no test can call a paid
-API** — the LLM path is driven by a stub instead.
+API** — the LLM path is driven by a stub instead. It also sets
+`LOG_LEVEL=silent`; the one suite that asserts on log lines passes its own
+in-memory logger to `createApp`.
 
 `npm run typecheck` in either package. Note that `tsconfig.json` currently
 covers `src` only, so files under `server/scripts/` are not typechecked.
+
+---
+
+## Logging
+
+The server logs with [pino](https://github.com/pinojs/pino), from one logger
+in `src/logger.ts`. Every line goes to a JSON file and, in development, to the
+terminal as well:
+
+- **File** — `data/logs/server.N.log`. A new file starts when the current one
+  reaches 5 MB, and the newest ten are kept, so the directory never grows
+  past ~50 MB.
+- **Terminal** — coloured and readable with `LOG_PRETTY=true` (the default);
+  raw JSON with `LOG_PRETTY=false` for a process manager to capture.
+
+Every request writes two lines — `request started` and `request completed` —
+rather than one, so a request that hangs still shows up: it is a `started`
+with no `completed`. Both carry the same `reqId`, which is also returned as
+the `X-Request-Id` response header, so a failure someone reports can be
+found in the file. A client that disconnects before the response finishes
+gets `request aborted` instead.
+
+Errors are logged in `errorHandler`, the one place they all pass through:
+
+| what                          | level   | carries                     |
+| ----------------------------- | ------- | --------------------------- |
+| `AppError` (400/401/404/409)  | `warn`  | status and the message      |
+| anything else (500)           | `error` | type, message, full stack   |
+
+Routes log nothing themselves. Background work — scrape runs, the scheduler,
+auto mode, speech synthesis — logs through `logger.child({ area })`, so
+`area: "scrape"` filters a whole job. The `Authorization` header is redacted
+and request bodies are never logged.
 
 ---
 
@@ -555,6 +590,9 @@ covers `src` only, so files under `server/scripts/` are not typechecked.
 | `SCRAPE_ENABLED`  | `true` — `false` stops cron registering        |
 | `AUTO_APPROVE_ENABLED` | **`false`** — `true` lets an LLM publish without an editor |
 | `SCRAPE_TIMEZONE` | the server's own zone                          |
+| `LOG_LEVEL`       | `info` — `silent` turns logging off            |
+| `LOG_DIR`         | `data/logs` (relative to `/server`)            |
+| `LOG_PRETTY`      | `true` — `false` for raw JSON on stdout        |
 
 `web/.env`:
 
@@ -573,9 +611,10 @@ adding that origin to the server's `CORS_ORIGIN`.
 server/src/
   app.ts              Express wiring (no listen, no scheduler — tests build this)
   server.ts           process bootstrap
+  logger.ts           the pino logger: rolling file plus pretty terminal
   core/               domain types and errors — no express, no sqlite
   db/                 schema.sql, connection, seeds, repositories (all SQL lives here)
-  http/               middleware and shared request validation
+  http/               middleware (auth, request logging, errors) and validation
   pipeline/           the safety guard and rule-based simplification
   llm/                the OpenRouter client and response parsing
   ingestion/          RSS fetching, parsing, scheduling
