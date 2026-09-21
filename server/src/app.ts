@@ -12,6 +12,8 @@ import { SCHEMA_VERSION } from './db/init.js';
 import { CORS_ORIGINS, DATABASE_PATH } from './env.js';
 import { createAdminAuth } from './http/middleware/adminAuth.js';
 import { errorHandler, notFoundHandler } from './http/middleware/errorHandler.js';
+import { createRequestLogger } from './http/middleware/requestLogger.js';
+import { logger as defaultLogger, type Logger } from './logger.js';
 import { createArticleActionsRouter } from './routes/admin/articleActions.js';
 import { createArticleBulkRouter } from './routes/admin/articleBulk.js';
 import { createArticleQueueRouter } from './routes/admin/articleQueue.js';
@@ -57,12 +59,19 @@ function requireCurrentSchema(db: Database): void {
   );
 }
 
-export function createApp(db: Database = openDatabase()) {
+export interface AppOptions {
+  /** Tests pass one that writes to memory, so they can read the lines back. */
+  logger?: Logger;
+}
+
+export function createApp(db: Database = openDatabase(), { logger = defaultLogger }: AppOptions = {}) {
   requireCurrentSchema(db);
 
   const app = express();
 
   app.use(cors({ origin: CORS_ORIGINS }));
+  // Before the body parser, so a request rejected as bad JSON is still logged.
+  app.use(createRequestLogger(logger));
   app.use(express.json());
 
   app.get('/api/health', (_req, res) => {
