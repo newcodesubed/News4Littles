@@ -60,7 +60,6 @@ function requireCurrentSchema(db: Database): void {
 }
 
 export interface AppOptions {
-  /** Tests pass one that writes to memory, so they can read the lines back. */
   logger?: Logger;
 }
 

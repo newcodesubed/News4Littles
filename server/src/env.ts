@@ -57,13 +57,13 @@ export const CORS_ORIGINS = readList('CORS_ORIGIN', [
 /** SQLite file. A relative value resolves against /server, not the shell's cwd. */
 export const DATABASE_PATH = resolve(SERVER_ROOT, readString('DATABASE_PATH', 'data/news4littles.db'));
 
-/** pino level; `silent` turns logging off, which is what the tests do. */
+/** pino level; `silent` turns logging off. */
 export const LOG_LEVEL = readString('LOG_LEVEL', 'info');
 
-/** Rolling log files live here, relative to /server like DATABASE_PATH. */
+/** Rolling log files, relative to /server. */
 export const LOG_DIR = resolve(SERVER_ROOT, readString('LOG_DIR', 'data/logs'));
 
-/** Pretty terminal output for development; set false for raw JSON in production. */
+/** Pretty terminal output; false gives raw JSON. */
 export const LOG_PRETTY = readString('LOG_PRETTY', 'true').toLowerCase() !== 'false';
 
 /**

@@ -30,7 +30,7 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
     return;
   }
 
-  // A client mistake, not a bug: the message is worth keeping, a stack is not.
+  // A client mistake, not a bug: no stack.
   if (error instanceof AppError) {
     req.log.warn({ status: error.status, reason: error.message }, 'request failed');
     res.status(error.status).json({ error: error.message });

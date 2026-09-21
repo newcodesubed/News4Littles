@@ -1,8 +1,4 @@
-/**
- * What the server writes to its log for a request that succeeds, one the
- * client got wrong, and one that blew up. The logger writes to memory here,
- * so the lines can be read back as JSON.
- */
+/** The logger writes to memory here, so the lines can be read back as JSON. */
 import { Writable } from 'node:stream';
 import pino from 'pino';
 import { createTestContext, type TestContext } from './helpers.js';
