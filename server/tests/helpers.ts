@@ -13,6 +13,7 @@ import { openDatabase } from '../src/db/connection.js';
 import { initialiseSchema } from '../src/db/init.js';
 import { seed } from '../src/db/seed.js';
 import { createApp } from '../src/server.js';
+import type { Logger } from '../src/logger.js';
 
 export const ADMIN_AUTH = `Basic ${Buffer.from('admin:admin123').toString('base64')}`;
 
@@ -30,7 +31,7 @@ export interface TestContext {
  * A seeded database plus a running app. `seedData` controls whether the
  * reference rows (sources, guard config, admin user) are inserted.
  */
-export function createTestContext(options: { seedData?: boolean } = {}): TestContext {
+export function createTestContext(options: { seedData?: boolean; logger?: Logger } = {}): TestContext {
   const dir = mkdtempSync(join(tmpdir(), 'n4l-test-'));
   const path = join(dir, 'test.db');
 
@@ -38,7 +39,7 @@ export function createTestContext(options: { seedData?: boolean } = {}): TestCon
   if (options.seedData !== false) seed(path);
 
   const db = openDatabase(path);
-  const server: Server = createApp(db).listen(0);
+  const server: Server = createApp(db, { logger: options.logger }).listen(0);
   const { port } = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${port}`;
 
