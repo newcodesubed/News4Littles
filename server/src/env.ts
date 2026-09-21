@@ -57,6 +57,15 @@ export const CORS_ORIGINS = readList('CORS_ORIGIN', [
 /** SQLite file. A relative value resolves against /server, not the shell's cwd. */
 export const DATABASE_PATH = resolve(SERVER_ROOT, readString('DATABASE_PATH', 'data/news4littles.db'));
 
+/** pino level; `silent` turns logging off, which is what the tests do. */
+export const LOG_LEVEL = readString('LOG_LEVEL', 'info');
+
+/** Rolling log files live here, relative to /server like DATABASE_PATH. */
+export const LOG_DIR = resolve(SERVER_ROOT, readString('LOG_DIR', 'data/logs'));
+
+/** Pretty terminal output for development; set false for raw JSON in production. */
+export const LOG_PRETTY = readString('LOG_PRETTY', 'true').toLowerCase() !== 'false';
+
 /**
  * Scheduled scraping (§5.3). The TIMES come from app_settings.scrapeTimes so an
  * editor can change them; these two control whether the scheduler runs at all
