@@ -10,7 +10,8 @@ import express from 'express';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
+import pino from 'pino';
 import { createTestContext, insertKidArticle, type TestContext } from './helpers.js';
 import {
   audioKey, createFileAudioCache, createMemoryAudioCache, type CachedAudio,
@@ -22,6 +23,7 @@ import {
   assembleScript, createAudioService, scriptFor, type AudioService,
 } from '../src/services/audioService.js';
 import { createAudioRouter } from '../src/routes/public/audio.js';
+import { createRequestLogger } from '../src/http/middleware/requestLogger.js';
 import type { KidArticle } from '../src/core/article.js';
 
 const MP3 = Buffer.from('ID3-pretend-audio');
@@ -400,28 +402,30 @@ describe('audio service', () => {
     expect((await service.forArticle('pub-a', 8)).ok).toBe(true);
   });
 
-  it('says on the terminal why a story could not be spoken', async () => {
+  it('logs why a story could not be spoken', async () => {
     // The reader only ever sees "could not be read aloud". Without this line a
     // wrong voice id, an expired key and a provider outage are indistinguishable
     // and silent.
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const lines: string[] = [];
+    const logger = pino(new Writable({ write(chunk, _enc, cb) { lines.push(String(chunk)); cb(); } }));
     const { provider } = stubProvider({
       speak: async () => ({
         ok: false, reason: 'OpenRouter returned 400: no such voice', transient: false, elapsedMs: 1,
       }),
     });
-    const service = createAudioService(ctx.db, { provider, cache: createMemoryAudioCache() });
+    const service = createAudioService(ctx.db, { provider, cache: createMemoryAudioCache(), logger });
 
     await service.forArticle('pub-a', 8);
 
-    expect(logged).toHaveBeenCalledOnce();
-    const line = logged.mock.calls[0]![0] as string;
-    expect(line).toContain('[tts]');
-    expect(line).toContain('pub-a');
-    expect(line).toContain('stub-model/stub-voice');
-    expect(line).toContain('no such voice');
-
-    logged.mockRestore();
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      level: 50,
+      msg: 'story could not be spoken',
+      articleId: 'pub-a',
+      model: 'stub-model',
+      voice: 'stub-voice',
+      reason: 'OpenRouter returned 400: no such voice',
+    });
   });
 
   it('never caches a failure, so a blip is not permanent', async () => {
@@ -476,6 +480,8 @@ describe('GET /api/articles/:id/audio', () => {
     const { provider } = stubProvider();
     const service = createAudioService(ctx.db, { provider, cache: createMemoryAudioCache() });
     const app = express();
+    // The router logs through req.log, which the real app's first middleware provides.
+    app.use(createRequestLogger(pino({ level: 'silent' })));
     app.use('/api', createAudioRouter(ctx.db, { service }));
     const server = app.listen(0);
     const { port } = server.address() as { port: number };
@@ -542,6 +548,8 @@ describe('streaming a story that goes wrong', () => {
       },
     };
     const app = express();
+    // The router logs through req.log, which the real app's first middleware provides.
+    app.use(createRequestLogger(pino({ level: 'silent' })));
     app.use('/api', createAudioRouter(ctx.db, { service }));
     const server = app.listen(0);
     const { port } = server.address() as { port: number };

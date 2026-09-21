@@ -12,7 +12,10 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import type { Database } from 'better-sqlite3';
 import { SCRAPE_ENABLED, SCRAPE_TIMEZONE } from '../env.js';
+import { logger } from '../logger.js';
 import { startScrapeRun, type RunState } from '../services/scrapeService.js';
+
+const log = logger.child({ area: 'scrape' });
 
 /** "06:00" -> "0 6 * * *" (every day at 06:00). */
 export function timeToCron(time: string): string {
@@ -42,8 +45,7 @@ export function readScrapeTimes(db: Database): string[] {
 
 /** Run one scheduled pass. Never throws — a bad run must not kill the process. */
 export async function runScheduledScrape(db: Database): Promise<void> {
-  const startedAt = new Date().toISOString();
-  console.log(`[scrape] scheduled run starting at ${startedAt}`);
+  log.info('scheduled run starting');
 
   try {
     // Shares the manual path, so a scheduled run is recorded in scrape_runs and
@@ -55,22 +57,29 @@ export async function runScheduledScrape(db: Database): Promise<void> {
 
     for (const result of results) {
       if (result.ok) {
-        console.log(
-          `[scrape] ${result.sourceId}: ${result.inserted} stored, ` +
-            `${result.simplified.length} simplified into ${result.versionsCreated} versions, ` +
-            `${result.leftWaiting} waiting, ` +
-            `${result.skippedNotNew} already seen, ${result.skippedAlreadyStored} duplicate, ` +
-            `${result.skippedUnusable} unusable (of ${result.itemsInFeed} in feed)`,
+        log.info(
+          {
+            sourceId: result.sourceId,
+            stored: result.inserted,
+            simplified: result.simplified.length,
+            versions: result.versionsCreated,
+            waiting: result.leftWaiting,
+            alreadySeen: result.skippedNotNew,
+            duplicate: result.skippedAlreadyStored,
+            unusable: result.skippedUnusable,
+            inFeed: result.itemsInFeed,
+          },
+          'source scraped',
         );
       } else {
         // Logged, not thrown: one dead feed must not stop the others or the API.
-        console.error(`[scrape] ${result.sourceId} FAILED: ${result.error}`);
+        log.error({ sourceId: result.sourceId, reason: result.error }, 'source failed');
       }
     }
 
-    if (results.length === 0) console.log('[scrape] no enabled sources with a feed URL.');
+    if (results.length === 0) log.info('no enabled sources with a feed URL');
   } catch (error: unknown) {
-    console.error('[scrape] scheduled run failed:', error instanceof Error ? error.message : error);
+    log.error({ err: error }, 'scheduled run failed');
   }
 }
 
@@ -80,7 +89,7 @@ export async function runScheduledScrape(db: Database): Promise<void> {
  */
 export function startScrapeSchedule(db: Database): ScheduledTask[] {
   if (!SCRAPE_ENABLED) {
-    console.log('[scrape] scheduler disabled (SCRAPE_ENABLED=false).');
+    log.info('scheduler disabled (SCRAPE_ENABLED=false)');
     return [];
   }
 
@@ -91,16 +100,16 @@ export function startScrapeSchedule(db: Database): ScheduledTask[] {
     try {
       expression = timeToCron(time);
     } catch (error: unknown) {
-      console.error(`[scrape] ignoring bad scrape time: ${error instanceof Error ? error.message : error}`);
+      log.error({ err: error, time }, 'ignoring bad scrape time');
       continue;
     }
 
     tasks.push(
       cron.schedule(expression, () => void runScheduledScrape(db), { timezone: SCRAPE_TIMEZONE }),
     );
-    console.log(`[scrape] scheduled daily at ${time} (${expression}) — timezone ${SCRAPE_TIMEZONE}`);
+    log.info({ time, expression, timezone: SCRAPE_TIMEZONE }, 'scheduled daily');
   }
 
-  if (tasks.length === 0) console.log('[scrape] no valid scrape times configured.');
+  if (tasks.length === 0) log.info('no valid scrape times configured');
   return tasks;
 }

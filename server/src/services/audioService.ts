@@ -8,6 +8,7 @@ import type { Database } from 'better-sqlite3';
 import type { KidArticle } from '../core/article.js';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { TTS_MAX_CHARS } from '../env.js';
+import { logger, type Logger } from '../logger.js';
 import {
   audioFromBuffer, audioKey, type AudioCache, type CachedAudio,
 } from '../tts/audioCache.js';
@@ -64,12 +65,14 @@ export interface AudioServiceOptions {
   provider: SpeechProvider | null;
   cache: AudioCache;
   maxChars?: number;
+  logger?: Logger;
 }
 
 export function createAudioService(db: Database, options: AudioServiceOptions): AudioService {
   const articles = createArticleRepository(db);
   const { provider, cache } = options;
   const maxChars = options.maxChars ?? TTS_MAX_CHARS;
+  const log = options.logger ?? logger.child({ area: 'tts' });
 
   /**
    * Renderings being synthesised right now, so a crowd pays once. Without it,
@@ -84,8 +87,9 @@ export function createAudioService(db: Database, options: AudioServiceOptions): 
     if (!spoken.ok) {
       // The reader only ever sees "could not be read aloud", so without this
       // line a wrong voice, an expired key and an outage are indistinguishable.
-      console.error(
-        `[tts] ${id} could not be spoken by ${voice.model}/${voice.voice}: ${spoken.reason}`,
+      log.error(
+        { articleId: id, model: voice.model, voice: voice.voice, reason: spoken.reason },
+        'story could not be spoken',
       );
       // Not cached, so a blip does not become permanent.
       return { ok: false, status: 502, reason: spoken.reason };

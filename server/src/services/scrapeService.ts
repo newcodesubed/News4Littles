@@ -27,10 +27,14 @@ import { createSourceRepository } from '../db/repositories/sourceRepository.js';
 import { scrapeSource, type ScrapeResult, type SourceRow } from '../ingestion/rssScraper.js';
 import { OpenRouterClient } from '../llm/openRouterClient.js';
 import { AUTO_APPROVE_ENABLED } from '../env.js';
+import { logger } from '../logger.js';
 import { autoApproveStories } from './autoApprove.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 import { selectBudgetedBatch, type SourceQueue } from './simplifyBudget.js';
 import { simplifyRawArticles } from './simplifyService.js';
+
+const log = logger.child({ area: 'scrape' });
+const autoLog = logger.child({ area: 'auto' });
 
 export interface RunState {
   id: string;
@@ -225,12 +229,10 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
         state.autoPublished = judged.published.length;
 
         for (const held of judged.held) {
-          console.log(`[auto] held ${held.originalId.slice(0, 8)}: ${held.reason}`);
+          autoLog.info({ originalId: held.originalId, reason: held.reason }, 'held for review');
         }
         for (const done of judged.published) {
-          console.log(
-            `[auto] PUBLISHED ${done.originalId.slice(0, 8)} with no editor: ${done.reason}`,
-          );
+          autoLog.info({ originalId: done.originalId, reason: done.reason }, 'published with no editor');
         }
       }
 
@@ -248,13 +250,13 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
         try {
           runs.record(result, { ...timing, trigger: state.trigger });
         } catch (error: unknown) {
-          console.error('[scrape] could not record the run:', error);
+          log.error({ err: error, sourceId: result.sourceId }, 'could not record the run');
         }
       }
     } catch (error: unknown) {
       // Without this the run would stay `running: true` forever, which is the
       // bug the old un-caught IIFE had.
-      console.error('[scrape] run failed:', error instanceof Error ? error.message : error);
+      log.error({ err: error }, 'run failed');
     } finally {
       state.currentSourceId = undefined;
       state.finishedAt = new Date().toISOString();

@@ -73,7 +73,7 @@ export function createAudioRouter(db: Database, options: AudioRouterOptions = {}
     // error page to send; dropping the connection at least lets the browser
     // report a truncated file instead of treating half a story as complete.
     audio.on('error', (error: Error) => {
-      console.error(`[tts] stream failed for ${result.key}: ${error.message}`);
+      req.log.error({ err: error, key: result.key }, 'audio stream failed');
       res.destroy();
     });
     // A listener who navigates away would otherwise leave the file handle open.
