@@ -302,6 +302,25 @@ describe('run history (§7.3)', () => {
     expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT v1');
   });
 
+  it('reloads a run for another variant on the first click', async () => {
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.type(promptBox(), ' v1');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+    await screen.findByText('A robot looked at a reef');
+
+    // Moving to another variant clears the result, so the run must come back
+    // from history rather than still be on screen.
+    await userEvent.selectOptions(screen.getByLabelText('Prompt variant'), '5');
+    await screen.findByDisplayValue('YOUNG READERS PROMPT');
+    expect(screen.queryByText('A robot looked at a reef')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /simplification/ }));
+
+    expect(await screen.findByText('A robot looked at a reef')).toBeInTheDocument();
+    expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT v1');
+  });
+
   it('shows the session cost', async () => {
     renderSandbox();
     await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
