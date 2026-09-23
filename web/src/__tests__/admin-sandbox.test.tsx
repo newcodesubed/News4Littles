@@ -14,6 +14,8 @@ import { AdminSandbox } from '../pages/admin/AdminSandbox';
 let calls: { method: string; path: string; body: any }[] = [];
 let llmEnabled = true;
 let testResponse: any;
+/** Saved drafts the prompts endpoint returns; a DELETE removes one. */
+let drafts: { target: string; age: number | null; promptText: string; updatedAt: string }[] = [];
 
 const ARTICLE = {
   id: 'a1', originalId: 'r1', ageTarget: 8, kidHeadline: 'A robot looked at a reef',
@@ -43,6 +45,10 @@ function mockApi() {
 
     if (path.startsWith('/api/admin/prompts/test')) return json(testResponse);
     if (path.startsWith('/api/admin/prompts/promote')) return json({ id: 'v1', version: 1 }, 201);
+    if (path.startsWith('/api/admin/prompts/draft') && init.method === 'DELETE') {
+      drafts = [];
+      return json({ deleted: true });
+    }
     if (path.startsWith('/api/admin/prompts/draft')) return json({ saved: true });
     if (path.startsWith('/api/admin/prompts/versions')) return json([
       { id: 'v1', target: 'simplification', age: null, promptText: 'first text', version: 1, promotedBy: 'admin', promotedAt: '2026-09-08T10:00:00.000Z', note: 'initial' },
@@ -52,7 +58,7 @@ function mockApi() {
       simplification: { generic: 'PRODUCTION GENERIC PROMPT', ageOverrides: { '5': 'YOUNG READERS PROMPT' } },
       guard: { promptText: 'GUARD PROMPT', enabled: false },
       versions: { simplification: 2 },
-      drafts: [],
+      drafts,
       templateVariables: ['{{headline}}', '{{body}}', '{{age}}'],
       llm: { enabled: llmEnabled, model: 'google/gemini-2.5-flash-lite' },
       defaultAge: 6,
@@ -71,6 +77,7 @@ beforeEach(() => {
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
   calls = [];
   llmEnabled = true;
+  drafts = [];
   mockApi();
 });
 afterEach(() => { vi.unstubAllGlobals(); window.sessionStorage.clear(); });
@@ -137,6 +144,54 @@ describe('draft indicator (§7.3)', () => {
     await userEvent.type(promptBox(), ' extra');
     await userEvent.click(screen.getByRole('button', { name: 'Reset to production' }));
     expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT');
+  });
+});
+
+describe('a saved draft (§7.4)', () => {
+  const MY_DRAFT = { target: 'simplification', age: null, promptText: 'MY SAVED DRAFT', updatedAt: '2026-09-14T06:29:33.292Z' };
+
+  it('says when the prompt comes from a saved draft', async () => {
+    drafts = [MY_DRAFT];
+    renderSandbox();
+    expect(await screen.findByDisplayValue('MY SAVED DRAFT')).toBeInTheDocument();
+    expect(screen.getByText(/Saved draft from/)).toBeInTheDocument();
+  });
+
+  it('reset discards the saved draft once confirmed, so it does not come back', async () => {
+    drafts = [MY_DRAFT];
+    renderSandbox();
+    await screen.findByDisplayValue('MY SAVED DRAFT');
+    await userEvent.click(screen.getByRole('button', { name: 'Reset to production' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Discard draft' }));
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'DELETE' && c.path === '/api/admin/prompts/draft?target=simplification')).toBe(true));
+    expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT');
+    await waitFor(() => expect(screen.queryByText(/Saved draft from/)).not.toBeInTheDocument());
+  });
+
+  it('keeps the saved draft when the reset is cancelled', async () => {
+    drafts = [MY_DRAFT];
+    renderSandbox();
+    await screen.findByDisplayValue('MY SAVED DRAFT');
+    await userEvent.click(screen.getByRole('button', { name: 'Reset to production' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    expect(promptBox()).toHaveValue('MY SAVED DRAFT');
+  });
+
+  it('resets straight away when there is no saved draft', async () => {
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.type(promptBox(), ' extra');
+    await userEvent.click(screen.getByRole('button', { name: 'Reset to production' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT');
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
   });
 });
 
