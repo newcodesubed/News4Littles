@@ -4,22 +4,37 @@ import { Button } from '../../../ui/Button';
 import { FIELD_CLASS } from '../../../ui/Field';
 import { Modal } from './Modal';
 
-/** §4.2: reject requires an optional free-text reason before confirming. */
+/**
+ * §4.2: reject requires an optional free-text reason before confirming.
+ * One story names it; a bulk reject passes `count` and stores the same reason
+ * on each.
+ */
 export function RejectDialog({
   article,
+  count,
   onCancel,
   onConfirm,
 }: {
-  article: AdminArticle;
+  article?: AdminArticle;
+  count?: number;
   onCancel: () => void;
   onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState('');
+  const title = article ? 'Reject this story' : `Reject ${count} ${count === 1 ? 'story' : 'stories'}`;
 
   return (
-    <Modal title="Reject this story" onClose={onCancel}>
-      <p className="font-bold">{article.kidHeadline}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{article.summary}</p>
+    <Modal title={title} onClose={onCancel}>
+      {article ? (
+        <>
+          <p className="font-bold">{article.kidHeadline}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{article.summary}</p>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          The same reason is stored on each. Any published story in the selection is taken off the site.
+        </p>
+      )}
 
       <label className="mt-5 block">
         <span className="text-sm font-bold">Reason (optional)</span>

@@ -230,6 +230,34 @@ describe('bulk action feedback (§4.2)', () => {
     expect(await screen.findByText('1 story approved.')).toBeInTheDocument();
   });
 
+  it('asks for a reason before a bulk reject, and sends it', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    // Scoped to the bulk bar: every row has a Reject button too.
+    const bar = screen.getByText('2 selected').parentElement!;
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reject' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Reject 2 stories' });
+    await userEvent.type(within(dialog).getByLabelText(/Reason \(optional\)/), 'Not kid news');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() => expect(bulkBody).toMatchObject({ action: 'reject', reason: 'Not kid news' }));
+    expect(await screen.findByText('2 stories rejected.')).toBeInTheDocument();
+  });
+
+  it('rejects nothing when the bulk reason box is cancelled', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    // Scoped to the bulk bar: every row has a Reject button too.
+    const bar = screen.getByText('2 selected').parentElement!;
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reject' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+
+    expect(bulkBody).toBeNull();
+  });
+
   it("shows the server's reason when the bulk request fails", async () => {
     bulkError = 'A scrape is already running.';
     renderPage();

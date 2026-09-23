@@ -51,6 +51,7 @@ export function AdminReview() {
   const [includeFlagged, setIncludeFlagged] = useState(false);
 
   const [rejecting, setRejecting] = useState<AdminArticle | null>(null);
+  const [bulkRejecting, setBulkRejecting] = useState(false);
   const [editing, setEditing] = useState<AdminArticle | null>(null);
   const [viewing, setViewing] = useState<AdminStory | null>(null);
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
@@ -128,7 +129,7 @@ export function AdminReview() {
     [act],
   );
 
-  async function runBulk(action: BulkAction) {
+  async function runBulk(action: BulkAction, reason?: string) {
     const ids = [...selected];
     if (ids.length === 0) return;
 
@@ -136,7 +137,7 @@ export function AdminReview() {
     try {
       const res = await adminFetch('/api/admin/articles/bulk', {
         method: 'POST',
-        body: JSON.stringify({ ids, action, includeFlagged }),
+        body: JSON.stringify({ ids, action, includeFlagged, reason }),
       });
       if (!res.ok) {
         setNotice(`⚠ ${await readError(res, 'Bulk action failed.')}`);
@@ -218,7 +219,9 @@ export function AdminReview() {
         includeFlagged={includeFlagged}
         onIncludeFlaggedChange={setIncludeFlagged}
         onAction={(action) => {
-          if (action !== 'delete') { void runBulk(action); return; }
+          if (action === 'approve') { void runBulk(action); return; }
+          // §4.2: a reject takes an optional reason, bulk or not.
+          if (action === 'reject') { setBulkRejecting(true); return; }
           // §4.2 delete cannot be undone, so it is always confirmed.
           setConfirming({
             title: `Delete ${selected.size} article${selected.size === 1 ? '' : 's'}?`,
@@ -350,6 +353,17 @@ export function AdminReview() {
             setRejecting(null);
             void runRowAction(id, 'reject', `/api/admin/articles/${id}/reject`,
               { method: 'PATCH', body: JSON.stringify({ reason }) }, 'Rejected.');
+          }}
+        />
+      )}
+
+      {bulkRejecting && (
+        <RejectDialog
+          count={selected.size}
+          onCancel={() => setBulkRejecting(false)}
+          onConfirm={(reason) => {
+            setBulkRejecting(false);
+            void runBulk('reject', reason);
           }}
         />
       )}
