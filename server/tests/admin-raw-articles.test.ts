@@ -127,10 +127,61 @@ describe('POST /api/admin/raw-articles/simplify', () => {
   });
 });
 
+describe('POST /api/admin/raw-articles/dismiss', () => {
+  const dismiss = (body: unknown) =>
+    ctx.api('/api/admin/raw-articles/dismiss', { method: 'POST', body: JSON.stringify(body) });
+
+  it('needs admin auth', async () => {
+    const res = await ctx.anon('/api/admin/raw-articles/dismiss', {
+      method: 'POST',
+      body: JSON.stringify({ ids: ['r1'] }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('takes the given articles out of the backlog and says how many', async () => {
+    seedWaiting('r1');
+    seedWaiting('r2');
+    seedWaiting('r3');
+
+    const res = await dismiss({ ids: ['r1', 'r2'] });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ dismissed: 2 });
+    const waiting = await (await ctx.api('/api/admin/raw-articles/waiting')).json();
+    expect(waiting.total).toBe(1);
+    expect(waiting.articles.map((a: { id: string }) => a.id)).toEqual(['r3']);
+    // Kept, not deleted: the row is what stops a later scrape storing it again.
+    expect(countRows(ctx.db, 'raw_articles')).toBe(3);
+  });
+
+  it('does not count an article that was already simplified', async () => {
+    seedWaiting('r1', { simplifiedAt: '2026-09-09T00:00:00.000Z' });
+    expect(await (await dismiss({ ids: ['r1'] })).json()).toEqual({ dismissed: 0 });
+  });
+
+  it.each([
+    ['no ids', {}],
+    ['an empty list', { ids: [] }],
+    ['a non-string id', { ids: [1] }],
+  ])('rejects %s', async (_label, body) => {
+    expect((await dismiss(body)).status).toBe(400);
+  });
+});
+
 describe('GET /api/admin/raw-articles', () => {
   it('still serves the sandbox test-article dropdown after the move', async () => {
     seedWaiting('r1');
     const body = await (await ctx.api('/api/admin/raw-articles')).json();
     expect(body.map((a: { id: string }) => a.id)).toContain('r1');
+  });
+
+  it('leaves dismissed articles out of the dropdown', async () => {
+    seedWaiting('r1');
+    seedWaiting('r2');
+    createRawArticleRepository(ctx.db).dismiss(['r2'], '2026-09-09T10:00:00.000Z');
+
+    const body = await (await ctx.api('/api/admin/raw-articles')).json();
+    expect(body.map((a: { id: string }) => a.id)).toEqual(['r1']);
   });
 });

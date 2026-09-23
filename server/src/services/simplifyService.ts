@@ -85,7 +85,9 @@ export async function simplifyRawArticles(
         report.failures.push({ rawId, error: `Raw article '${rawId}' no longer exists.` });
         continue;
       }
-      if (raw.simplifiedAt !== null) {
+      // Checked before the model call, not left to the claim: a dismissed
+      // article must not be paid for only to be thrown away.
+      if (raw.simplifiedAt !== null || raw.dismissedAt !== null) {
         report.skipped.push(rawId);
         continue;
       }

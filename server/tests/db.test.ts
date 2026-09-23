@@ -373,6 +373,51 @@ describe('the waiting backlog (raw_articles.simplifiedAt)', () => {
     expect(repo.countWaiting()).toBe(0);
   });
 
+  it('dismiss takes rows out of every waiting view', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('keep'));
+    repo.insert(raw('gone1'));
+    repo.insert(raw('gone2'));
+
+    expect(repo.dismiss(['gone1', 'gone2'], '2026-09-09T10:00:00.000Z')).toBe(2);
+
+    expect(repo.listWaiting().map((a) => a.id)).toEqual(['keep']);
+    expect(repo.countWaiting()).toBe(1);
+    expect(repo.countWaitingForSource('bbc')).toBe(1);
+    // The scrape's budget draws from this, so a dismissed row is never paid for.
+    expect(repo.waitingIdsBySource()).toEqual([{ sourceId: 'bbc', rawIds: ['keep'] }]);
+    expect(repo.findById('gone1')?.dismissedAt).toBe('2026-09-09T10:00:00.000Z');
+  });
+
+  it('dismiss leaves simplified, already-dismissed and unknown ids alone', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('done', { simplifiedAt: '2026-09-08T01:00:00.000Z' }));
+    repo.insert(raw('old'));
+    repo.dismiss(['old'], '2026-09-08T02:00:00.000Z');
+
+    expect(repo.dismiss(['done', 'old', 'nope'], '2026-09-09T10:00:00.000Z')).toBe(0);
+    expect(repo.findById('done')?.dismissedAt).toBeNull();
+    // The first dismissal's time stands.
+    expect(repo.findById('old')?.dismissedAt).toBe('2026-09-08T02:00:00.000Z');
+  });
+
+  it('a dismissed row cannot be claimed for simplification', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('r1'));
+    repo.dismiss(['r1'], '2026-09-09T10:00:00.000Z');
+
+    expect(repo.markSimplified('r1', '2026-09-09T10:00:05.000Z')).toBe(false);
+    expect(repo.findById('r1')?.simplifiedAt).toBeNull();
+  });
+
+  it('a dismissed row still counts as stored, so a scrape will not store it again', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('r1'));
+    repo.dismiss(['r1'], '2026-09-09T10:00:00.000Z');
+
+    expect(repo.existsForSourceUrl('bbc', 'https://example.com/r1')).toBe(true);
+  });
+
   it('a manual submission is never in the backlog', async () => {
     // §4.3 submissions arrive already simplified, so they must not show up as
     // waiting for a simplification they have already had.
