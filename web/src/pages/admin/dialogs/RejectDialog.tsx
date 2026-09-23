@@ -14,13 +14,17 @@ export function RejectDialog({
   count,
   onCancel,
   onConfirm,
+  error = null,
 }: {
   article?: AdminArticle;
   count?: number;
   onCancel: () => void;
-  onConfirm: (reason: string) => void;
+  /** The dialog stays open, showing `error`, until the caller closes it. */
+  onConfirm: (reason: string) => void | Promise<unknown>;
+  error?: string | null;
 }) {
   const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
   const title = article ? 'Reject this story' : `Reject ${count} ${count === 1 ? 'story' : 'stories'}`;
 
   return (
@@ -51,13 +55,22 @@ export function RejectDialog({
         />
       </label>
 
+      {error && <p role="alert" className="mt-4 text-sm font-bold text-destructive">{error}</p>}
+
       <div className="mt-5 flex justify-end gap-2">
-        <Button variant="ghost" size="lg" onClick={onCancel}>
+        <Button variant="ghost" size="lg" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button size="lg" onClick={() => onConfirm(reason)}
-          className="bg-destructive text-white shadow-none hover:bg-destructive/90">
-          Reject
+        <Button
+          size="lg"
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            try { await onConfirm(reason); } finally { setSaving(false); }
+          }}
+          className="bg-destructive text-white shadow-none hover:bg-destructive/90"
+        >
+          {saving ? 'Rejecting…' : 'Reject'}
         </Button>
       </div>
     </Modal>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
-import { readError, useAdminAction } from '../../admin/useAdminAction';
+import { errorIn, readError, useAdminAction } from '../../admin/useAdminAction';
 import { Notice } from '../../ui/Surface';
 import {
   EMPTY_FILTERS, toQueryString,
@@ -121,7 +121,7 @@ export function AdminReview() {
     async (id: string, action: PendingAction, path: string, init: RequestInit, message: string) => {
       setPending({ id, action });
       try {
-        await act(path, init, message);
+        return await act(path, init, message);
       } finally {
         setPending(null);
       }
@@ -129,9 +129,10 @@ export function AdminReview() {
     [act],
   );
 
-  async function runBulk(action: BulkAction, reason?: string) {
+  /** Resolves true once the action has been applied. */
+  async function runBulk(action: BulkAction, reason?: string): Promise<boolean> {
     const ids = [...selected];
-    if (ids.length === 0) return;
+    if (ids.length === 0) return false;
 
     let result: BulkResult;
     try {
@@ -141,12 +142,12 @@ export function AdminReview() {
       });
       if (!res.ok) {
         setNotice(`⚠ ${await readError(res, 'Bulk action failed.')}`);
-        return;
+        return false;
       }
       result = (await res.json()) as BulkResult;
     } catch {
       setNotice('⚠ Could not reach the server. Check it is running, then try again.');
-      return;
+      return false;
     }
 
     setBulkSkipped(result.skipped);
@@ -154,7 +155,15 @@ export function AdminReview() {
     const count = result.appliedCount;
     setNotice(`${count} ${count === 1 ? 'story' : 'stories'} ${BULK_DONE[action]}.`);
     await load();
+    return true;
   }
+
+  /**
+   * Opens a dialog with the page notice cleared, so the error it shows is only
+   * ever about its own save, never an earlier action's.
+   */
+  const openDialog = (open: () => void) => { setNotice(null); open(); };
+  const dialogError = errorIn(notice);
 
   const toggleSelected = (id: string, isSelected: boolean) =>
     setSelected((current) => {
@@ -221,7 +230,7 @@ export function AdminReview() {
         onAction={(action) => {
           if (action === 'approve') { void runBulk(action); return; }
           // §4.2: a reject takes an optional reason, bulk or not.
-          if (action === 'reject') { setBulkRejecting(true); return; }
+          if (action === 'reject') { openDialog(() => setBulkRejecting(true)); return; }
           // §4.2 delete cannot be undone, so it is always confirmed.
           setConfirming({
             title: `Delete ${selected.size} article${selected.size === 1 ? '' : 's'}?`,
@@ -289,10 +298,10 @@ export function AdminReview() {
                         onView: () => setViewing(story),
                         onPublish: () => void runRowAction(id, 'publish',
                           `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published every reading group.'),
-                        onReject: () => setRejecting(story.versions[0]),
+                        onReject: () => openDialog(() => setRejecting(story.versions[0])),
                         onUnpublish: () => void runRowAction(id, 'unpublish',
                           `/api/admin/articles/${id}/unpublish`, { method: 'PATCH' }, 'Moved back to pending review.'),
-                        onEdit: () => setEditing(story.versions[0]),
+                        onEdit: () => openDialog(() => setEditing(story.versions[0])),
                         onRegenerate: () => void regen.start(id),
                         onDelete: () => setConfirming({
                           // Names the count only when there is more than one:
@@ -330,8 +339,8 @@ export function AdminReview() {
         <ViewArticleDialog
           story={viewing}
           onClose={() => setViewing(null)}
-          onEdit={() => { setEditing(viewing.versions[0]); setViewing(null); }}
-          onReject={() => { setRejecting(viewing.versions[0]); setViewing(null); }}
+          onEdit={() => openDialog(() => { setEditing(viewing.versions[0]); setViewing(null); })}
+          onReject={() => openDialog(() => { setRejecting(viewing.versions[0]); setViewing(null); })}
           onPublish={() => {
             const { id } = viewing.versions[0];
             setViewing(null);
@@ -347,12 +356,13 @@ export function AdminReview() {
       {rejecting && (
         <RejectDialog
           article={rejecting}
+          error={dialogError}
           onCancel={() => setRejecting(null)}
-          onConfirm={(reason) => {
+          onConfirm={async (reason) => {
             const { id } = rejecting;
-            setRejecting(null);
-            void runRowAction(id, 'reject', `/api/admin/articles/${id}/reject`,
+            const ok = await runRowAction(id, 'reject', `/api/admin/articles/${id}/reject`,
               { method: 'PATCH', body: JSON.stringify({ reason }) }, 'Rejected.');
+            if (ok) setRejecting(null);
           }}
         />
       )}
@@ -360,10 +370,10 @@ export function AdminReview() {
       {bulkRejecting && (
         <RejectDialog
           count={selected.size}
+          error={dialogError}
           onCancel={() => setBulkRejecting(false)}
-          onConfirm={(reason) => {
-            setBulkRejecting(false);
-            void runBulk('reject', reason);
+          onConfirm={async (reason) => {
+            if (await runBulk('reject', reason)) setBulkRejecting(false);
           }}
         />
       )}
@@ -371,11 +381,12 @@ export function AdminReview() {
       {editing && (
         <EditDialog
           article={editing}
+          error={dialogError}
           onCancel={() => setEditing(null)}
-          onSave={(patch) => {
+          onSave={async (patch) => {
             const { id } = editing;
-            setEditing(null);
-            void act(`/api/admin/articles/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }, 'Saved — marked as edited by a person.');
+            const ok = await act(`/api/admin/articles/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }, 'Saved — marked as edited by a person.');
+            if (ok) setEditing(null);
           }}
         />
       )}

@@ -22,6 +22,14 @@ export interface AdminActionState {
   run: (path: string, init: RequestInit, successMessage: string) => Promise<boolean>;
 }
 
+/**
+ * The message of a failure notice, or null for a confirmation. Every admin
+ * error notice is written as "⚠ <message>", here and in the pages.
+ */
+export function errorIn(notice: string | null): string | null {
+  return notice?.startsWith('⚠ ') ? notice.slice(2) : null;
+}
+
 /** The server's `{ error }` message, or the fallback when there is none. */
 export async function readError(response: Response, fallback: string): Promise<string> {
   try {

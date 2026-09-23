@@ -38,6 +38,8 @@ const article = (o: Partial<AdminArticle> = {}): AdminArticle => ({
 let articles: AdminArticle[] = [];
 let bulkBody: any = null;
 let bulkError: string | null = null;
+/** When set, single-story PATCHes (edit, reject) fail with this message. */
+let patchError: string | null = null;
 let calls: string[] = [];
 
 function mockApi() {
@@ -47,6 +49,7 @@ function mockApi() {
     const json = (body: unknown, status = 200) =>
       ({ ok: status < 400, status, json: async () => body, headers: new Headers() }) as unknown as Response;
 
+    if (patchError && init.method === 'PATCH') return json({ error: patchError }, 400);
     if (path.includes('/articles/counts')) return json({ pending_review: 3, published: 1, rejected: 1, total: 5, waiting: 0 });
     if (path.includes('/articles/filters')) return json({ categories: ['World', 'Science'], sources: [{ id: 'bbc', name: 'BBC News' }, { id: 'manual', name: 'Manual submission' }], ageTargets: [6, 8], safety: [], statuses: [], sortFields: [] });
     if (path.includes('/articles/bulk')) {
@@ -100,7 +103,7 @@ const renderPage = () => render(
 
 beforeEach(() => {
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
-  articles = [article()]; bulkBody = null; bulkError = null; calls = [];
+  articles = [article()]; bulkBody = null; bulkError = null; patchError = null; calls = [];
   mockApi();
 });
 afterEach(() => { vi.unstubAllGlobals(); window.sessionStorage.clear(); });
@@ -331,6 +334,64 @@ describe('edit form (requirement 11)', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(calls.some((c) => c === 'PATCH /api/admin/articles/a1')).toBe(true));
+  });
+});
+
+describe('a failed save keeps what the editor typed', () => {
+  it('leaves the edit dialog open with the edits and the error', async () => {
+    patchError = 'Headline is too long.';
+    renderPage();
+    await screen.findByText('A calm story');
+    await userEvent.click(screen.getByRole('button', { name: /Edit/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    const headline = within(dialog).getByDisplayValue('A calm story');
+    await userEvent.type(headline, ' with more');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await within(dialog).findByText(/Headline is too long\./)).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByDisplayValue('A calm story with more')).toBeInTheDocument();
+  });
+
+  it('closes the edit dialog once the save succeeds', async () => {
+    renderPage();
+    await screen.findByText('A calm story');
+    await userEvent.click(screen.getByRole('button', { name: /Edit/ }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText(/Saved — marked as edited by a person/)).toBeInTheDocument();
+  });
+
+  it('leaves the reject dialog open with the reason and the error', async () => {
+    patchError = 'That story was already rejected.';
+    renderPage();
+    await screen.findByText('A calm story');
+    await userEvent.click(screen.getByRole('button', { name: 'Reject' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/Reason \(optional\)/), 'Not kid news');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+
+    expect(await within(dialog).findByText(/That story was already rejected\./)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/Reason \(optional\)/)).toHaveValue('Not kid news');
+  });
+
+  it('leaves the bulk reject dialog open with the reason and the error', async () => {
+    articles = [article({ id: 's1', kidHeadline: 'Story one' }), article({ id: 's2', kidHeadline: 'Story two' })];
+    bulkError = 'A scrape is already running.';
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    const bar = screen.getByText('2 selected').parentElement!;
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reject' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/Reason \(optional\)/), 'Not kid news');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+
+    expect(await within(dialog).findByText(/A scrape is already running\./)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/Reason \(optional\)/)).toHaveValue('Not kid news');
   });
 });
 
