@@ -12,9 +12,10 @@ import { InputPanel } from './sandbox/InputPanel';
 import { PromptEditor } from './sandbox/PromptEditor';
 import { ResultsPanel } from './sandbox/ResultsPanel';
 import { RunHistory, VersionHistory } from './sandbox/HistoryPanel';
+import { useRunHistory } from './sandbox/useRunHistory';
 import {
   versionKey,
-  type HistoryEntry, type PromptsPayload, type PromptTarget,
+  type PromptsPayload, type PromptTarget,
   type PromptVersion, type RawArticleSummary, type TestResult,
 } from './sandbox/types';
 
@@ -47,7 +48,7 @@ export function AdminSandbox() {
 
   const [promptText, setPromptText] = useState('');
   const [result, setResult] = useState<TestResult | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [history, setHistory] = useRunHistory();
   const [busy, setBusy] = useState(false);
   const [promoting, setPromoting] = useState(false);
   const [note, setNote] = useState('');

@@ -310,6 +310,41 @@ describe('run history (§7.3)', () => {
     await waitFor(() => expect(screen.getAllByText(/\$0\.00017/).length).toBeGreaterThanOrEqual(2));
     expect(screen.getByText(/This session:/).textContent).toContain('$0.00017');
   });
+
+  it('survives leaving the page and coming back', async () => {
+    const { unmount } = renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+    await screen.findByRole('button', { name: /simplification/ });
+
+    // Navigating to another admin page unmounts the sandbox.
+    unmount();
+    renderSandbox();
+
+    expect(await screen.findByRole('button', { name: /simplification/ })).toBeInTheDocument();
+    expect(screen.getByText(/This session:/).textContent).toContain('$0.00017');
+  });
+
+  it('starts empty when the saved history is unreadable', async () => {
+    window.sessionStorage.setItem('news4littles.sandboxHistory', '{not json');
+    renderSandbox();
+    expect(await screen.findByText('No runs yet.')).toBeInTheDocument();
+  });
+
+  it('still records the run when the browser refuses to save it', async () => {
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'news4littles.sandboxHistory') throw new DOMException('full', 'QuotaExceededError');
+      setItem.call(this, key, value);
+    });
+
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+
+    expect(await screen.findByRole('button', { name: /simplification/ })).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
 });
 
 describe('version history (§7.5)', () => {
