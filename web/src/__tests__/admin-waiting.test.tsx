@@ -226,6 +226,18 @@ describe('the waiting tab', () => {
     expect(screen.getByRole('button', { name: /delete 0 selected/i })).toBeDisabled();
   });
 
+  it('picks up a batch that was already running when the tab opened', async () => {
+    // Started earlier, then the editor left the tab and came back.
+    simplifyBody = { ids: ['r1'] };
+    jobRunning = true;
+    const user = userEvent.setup();
+    view();
+    await openTab(user);
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/simplifying/i));
+    expect(screen.getByRole('button', { name: /^simplify$/i })).toBeDisabled();
+  });
+
   it('never sends status=waiting to the article query', async () => {
     // 'waiting' is not a kid_articles status; the API rejects it with a 400.
     const user = userEvent.setup();

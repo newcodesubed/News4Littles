@@ -68,6 +68,21 @@ export function WaitingPanel({
 
   useEffect(() => { void load(); }, [load]);
 
+  // A batch outlives this tab: pick up one started before the editor left, or
+  // its progress vanishes and every Simplify click meets "already running".
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await adminFetch('/api/admin/raw-articles/simplify/status');
+        if (!res.ok) return;
+        const body = (await res.json()) as { running: boolean; job: SimplifyJob | null };
+        if (body.running && body.job) setJob(body.job);
+      } catch {
+        // Only a progress display; the backlog still loads without it.
+      }
+    })();
+  }, [adminFetch]);
+
   /**
    * Polls while a batch runs. Fifteen articles is a minute of model calls, so
    * the request that starts it returns immediately and this watches instead.
