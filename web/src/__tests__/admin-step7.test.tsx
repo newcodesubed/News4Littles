@@ -391,6 +391,20 @@ describe('settings — §8.5 prompts are clearly inert', () => {
   });
 });
 
+describe('settings — saving one section', () => {
+  it('keeps unsaved edits in the other sections', async () => {
+    renderIn(<AdminSettings />);
+    const prompt = await screen.findByDisplayValue('The generic prompt');
+    await userEvent.type(prompt, ' still typing');
+
+    await userEvent.click(screen.getByLabelText('Remove war'));
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && c.path === '/api/admin/guard-config')).toBe(true));
+    await waitFor(() => expect(calls.filter((c) => c.path === '/api/admin/prompt-config').length).toBe(2));
+
+    expect(screen.getByDisplayValue('The generic prompt still typing')).toBeInTheDocument();
+  });
+});
+
 describe('settings — §8.7 app settings', () => {
   it('shows the default reading group, scrape times and provider', async () => {
     renderIn(<AdminSettings />);
