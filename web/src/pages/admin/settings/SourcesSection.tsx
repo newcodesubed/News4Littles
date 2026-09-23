@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '../../../ui/Button';
 import { ConfirmDialog, type Confirmation } from '../dialogs';
@@ -28,9 +28,6 @@ function SourceRow({
   onConfirm: (confirmation: Confirmation) => void;
 }) {
   const [draft, setDraft] = useState(source);
-
-  // Re-sync whenever the server's version of this row changes.
-  useEffect(() => setDraft(source), [source]);
 
   /** Save one field; on failure put the server's value back. */
   const commit = async (field: keyof Source, value: string | boolean) => {
@@ -171,7 +168,9 @@ export function SourcesSection({
 
       <div className="space-y-3">
         {sources.map((source) => (
-          <SourceRow key={source.id} source={source} save={save} status={status} onRun={onRun}
+          // Keyed by content: a refresh remounts only a row the server changed,
+          // so a half-typed field in another row survives.
+          <SourceRow key={JSON.stringify(source)} source={source} save={save} status={status} onRun={onRun}
             onConfirm={setConfirming} />
         ))}
       </div>

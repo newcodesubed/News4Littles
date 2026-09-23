@@ -78,7 +78,8 @@ export function AdminReview() {
       return;
     }
 
-    setLoading(true);
+    // No setLoading(true): only the first load shows the spinner. A refresh
+    // swaps the rows in place, so the editor keeps their scroll and selection.
     setError(null);
     try {
       // §5: one row per story. The flat /articles list still exists for the
@@ -87,9 +88,12 @@ export function AdminReview() {
       if (!listRes.ok) {
         throw new Error(((await listRes.json()) as { error?: string }).error ?? 'Could not load articles.');
       }
-      setStories(((await listRes.json()) as { stories: AdminStory[] }).stories);
+      const next = ((await listRes.json()) as { stories: AdminStory[] }).stories;
+      setStories(next);
       await loadCounts();
-      setSelected(new Set());
+      // Keep what is still on screen; a story that left this tab drops out.
+      const shown = new Set(next.map((story) => story.versions[0].id));
+      setSelected((current) => new Set([...current].filter((id) => shown.has(id))));
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : 'Could not load articles.');
     } finally {
@@ -220,7 +224,8 @@ export function AdminReview() {
       <>
       <FilterBar filters={filters} options={options} onChange={setFilters} />
 
-      {notice && <div className="mt-4"><Notice>{notice}</Notice></div>}
+      {/* Sticks under the header, so it is seen from a row far down the list. */}
+      {notice && <div className="sticky top-20 z-30 mt-4"><Notice>{notice}</Notice></div>}
 
       <BulkBar
         selectedCount={selected.size}

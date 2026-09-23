@@ -29,8 +29,9 @@ export function AdminSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // No setLoading(true): only the first load shows the spinner. Redrawing the
+  // whole page on every save would throw away unsaved edits in other sections.
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const responses = await Promise.all(
@@ -104,15 +105,19 @@ export function AdminSettings() {
   );
 
   if (loading) return <div className="container max-w-4xl py-10"><LoadingState label="Loading settings…" /></div>;
-  if (error) return <div className="container max-w-4xl py-10"><ErrorState message={error} /></div>;
-  if (!data) return null;
+  if (!data) {
+    return <div className="container max-w-4xl py-10"><ErrorState message={error ?? 'Could not load settings.'} /></div>;
+  }
+  // A failed refresh keeps the page and says so, rather than replacing it.
+  const shown = error ? `⚠ ${error}` : notice;
 
   return (
     <div className="container max-w-4xl py-10">
       <h1 className="font-display text-4xl mb-1">Settings</h1>
       <p className="text-muted-foreground mb-6">Sources, guardrails, prompts and app defaults.</p>
 
-      {notice && <div className="mb-5"><Notice>{notice}</Notice></div>}
+      {/* Sticks under the header, so a save far down the page is still confirmed. */}
+      {shown && <div className="sticky top-20 z-30 mb-5"><Notice>{shown}</Notice></div>}
 
       <SourcesSection
         sources={data.sources}
