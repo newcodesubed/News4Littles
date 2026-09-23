@@ -144,6 +144,13 @@ nothing. It is listed under **Not yet simplified** in `/admin/review`, where an
 editor can simplify one row or a selection on demand; the next scheduled run
 also works through the backlog before it runs out of budget.
 
+An editor can also **Delete** a waiting row, or a selection. That sets
+`dismissedAt` rather than removing the row: the row is what stops a later
+scrape storing the same item again, so a deleted article stays out of the
+backlog, the counts and the budget for good. This arrived in schema version 7,
+so an existing database needs `npm run db:init` once; the server refuses to
+start until it has run.
+
 Set the budget to `0` to simplify nothing automatically and do it all by hand.
 
 Deleting a kid article leaves `simplifiedAt` set, so a story an editor has
@@ -511,7 +518,7 @@ been edited since it was seeded (see `src/db/refreshSeededPrompts.ts`).
 | Table                               | Holds                                                     |
 | ----------------------------------- | --------------------------------------------------------- |
 | `sources`                           | Feeds to scrape, plus a `manual` row for hand submissions |
-| `raw_articles`                      | Original articles as fetched; `simplifiedAt` NULL means still waiting |
+| `raw_articles`                      | Original articles as fetched; waiting while `simplifiedAt` and `dismissedAt` are both NULL |
 | `kid_articles`                      | Rewritten stories, one row per reading age, and their review status |
 | `guard_config`                      | Deny-list and the safety-guard prompt                     |
 | `translation_prompt_config`         | Live simplification prompts                               |

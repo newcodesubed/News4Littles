@@ -23,6 +23,7 @@ const raw = (over: Partial<WaitingRawArticle> = {}): WaitingRawArticle => ({ ...
 
 let waiting: WaitingRawArticle[] = [];
 let simplifyBody: { ids: string[] } | null = null;
+let dismissBody: { ids: string[] } | null = null;
 let jobRunning = false;
 
 function mockApi() {
@@ -49,6 +50,12 @@ function mockApi() {
       simplifyBody = JSON.parse(String(init.body));
       jobRunning = true;
       return json({ running: true, job: job(true) }, 202);
+    }
+    if (path.includes('/raw-articles/dismiss')) {
+      dismissBody = JSON.parse(String(init.body));
+      const ids = dismissBody!.ids;
+      waiting = waiting.filter((row) => !ids.includes(row.id));
+      return json({ dismissed: ids.length });
     }
     if (path.includes('/raw-articles/waiting')) {
       return json({ articles: waiting, total: waiting.length });
@@ -86,6 +93,7 @@ async function openTab(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   waiting = [raw()];
   simplifyBody = null;
+  dismissBody = null;
   jobRunning = false;
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
   mockApi();
@@ -158,6 +166,64 @@ describe('the waiting tab', () => {
       () => expect(screen.getByText(/1 article\(s\) simplified/i)).toBeInTheDocument(),
       { timeout: 6000 },
     );
+  });
+
+  it('deletes one row after confirming, then reloads the backlog and the badge', async () => {
+    waiting = [raw(), raw({ id: 'r2', headline: 'Second adult headline' })];
+    const user = userEvent.setup();
+    view();
+    await openTab(user);
+
+    const row = screen.getByText(RAW.headline).closest('div.rounded-2xl') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: /^delete$/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/won't bring it back/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /^delete$/i }));
+
+    await waitFor(() => expect(dismissBody).toEqual({ ids: ['r1'] }));
+    await waitFor(() => expect(screen.queryByText(RAW.headline)).not.toBeInTheDocument());
+    expect(screen.getByText(/1 article\(s\) deleted/i)).toBeInTheDocument();
+    const tab = screen.getByRole('button', { name: /not yet simplified/i });
+    await waitFor(() => expect(within(tab).getByText('1')).toBeInTheDocument());
+  });
+
+  it('deletes nothing when the confirmation is cancelled', async () => {
+    const user = userEvent.setup();
+    view();
+    await openTab(user);
+
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /cancel/i }));
+
+    expect(dismissBody).toBeNull();
+    expect(screen.getByText(RAW.headline)).toBeInTheDocument();
+  });
+
+  it('posts every selected id for a bulk delete', async () => {
+    waiting = [raw(), raw({ id: 'r2', headline: 'Second adult headline' })];
+    const user = userEvent.setup();
+    view();
+    await openTab(user);
+
+    await user.click(screen.getByLabelText(/select all/i));
+    await user.click(screen.getByRole('button', { name: /delete 2 selected/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/delete 2 articles\?/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /^delete 2$/i }));
+
+    await waitFor(() => expect(dismissBody).toEqual({ ids: ['r1', 'r2'] }));
+  });
+
+  it('cannot delete while a simplify job is running', async () => {
+    const user = userEvent.setup();
+    view();
+    await openTab(user);
+
+    await user.click(screen.getByRole('button', { name: /^simplify$/i }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/simplifying/i));
+
+    expect(screen.getByRole('button', { name: /^delete$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /delete 0 selected/i })).toBeDisabled();
   });
 
   it('never sends status=waiting to the article query', async () => {

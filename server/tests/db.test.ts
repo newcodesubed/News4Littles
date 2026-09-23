@@ -130,6 +130,39 @@ describe('schema (§8)', () => {
     after.close();
   });
 
+  it('migrates a v6 database: adds raw_articles.dismissedAt, dismissing nothing', () => {
+    const old = openDatabase(path);
+    old.exec(`
+      CREATE TABLE sources (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1, trustLevel TEXT NOT NULL, parser TEXT,
+        lastFetchedAt TEXT, lastFetchedItemPublishedAt TEXT,
+        createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      CREATE TABLE raw_articles (
+        id TEXT PRIMARY KEY, sourceId TEXT NOT NULL REFERENCES sources (id),
+        sourceName TEXT NOT NULL, sourceUrl TEXT NOT NULL, url TEXT NOT NULL,
+        headline TEXT NOT NULL, body TEXT NOT NULL, topic TEXT NOT NULL,
+        publishedAt TEXT, fetchedAt TEXT NOT NULL, simplifiedAt TEXT);
+      INSERT INTO sources VALUES
+        ('bbc', 'BBC News', 'https://feed', 1, 'high', NULL, NULL, NULL,
+         '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO raw_articles VALUES
+        ('r1', 'bbc', 'BBC News', 'https://feed', 'https://example.com/1',
+         'Adult headline', 'Body text', 'World', NULL, '2026-09-01T00:00:00.000Z', NULL);
+    `);
+    old.pragma('user_version = 6');
+    old.close();
+
+    initialiseSchema(path);
+
+    const db = openDatabase(path);
+    expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+    expect(
+      db.prepare(`SELECT simplifiedAt, dismissedAt FROM raw_articles WHERE id = 'r1'`).get(),
+    ).toEqual({ simplifiedAt: null, dismissedAt: null });
+    db.close();
+  });
+
   it('adds the run version count when migrating from v3', () => {
     initialiseSchema(path);
     seed(path);
@@ -338,6 +371,51 @@ describe('the waiting backlog (raw_articles.simplifiedAt)', () => {
     expect(repo.markSimplified('r1', '2026-09-09T10:00:05.000Z')).toBe(false);
     expect(repo.findById('r1')?.simplifiedAt).toBe('2026-09-09T10:00:00.000Z');
     expect(repo.countWaiting()).toBe(0);
+  });
+
+  it('dismiss takes rows out of every waiting view', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('keep'));
+    repo.insert(raw('gone1'));
+    repo.insert(raw('gone2'));
+
+    expect(repo.dismiss(['gone1', 'gone2'], '2026-09-09T10:00:00.000Z')).toBe(2);
+
+    expect(repo.listWaiting().map((a) => a.id)).toEqual(['keep']);
+    expect(repo.countWaiting()).toBe(1);
+    expect(repo.countWaitingForSource('bbc')).toBe(1);
+    // The scrape's budget draws from this, so a dismissed row is never paid for.
+    expect(repo.waitingIdsBySource()).toEqual([{ sourceId: 'bbc', rawIds: ['keep'] }]);
+    expect(repo.findById('gone1')?.dismissedAt).toBe('2026-09-09T10:00:00.000Z');
+  });
+
+  it('dismiss leaves simplified, already-dismissed and unknown ids alone', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('done', { simplifiedAt: '2026-09-08T01:00:00.000Z' }));
+    repo.insert(raw('old'));
+    repo.dismiss(['old'], '2026-09-08T02:00:00.000Z');
+
+    expect(repo.dismiss(['done', 'old', 'nope'], '2026-09-09T10:00:00.000Z')).toBe(0);
+    expect(repo.findById('done')?.dismissedAt).toBeNull();
+    // The first dismissal's time stands.
+    expect(repo.findById('old')?.dismissedAt).toBe('2026-09-08T02:00:00.000Z');
+  });
+
+  it('a dismissed row cannot be claimed for simplification', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('r1'));
+    repo.dismiss(['r1'], '2026-09-09T10:00:00.000Z');
+
+    expect(repo.markSimplified('r1', '2026-09-09T10:00:05.000Z')).toBe(false);
+    expect(repo.findById('r1')?.simplifiedAt).toBeNull();
+  });
+
+  it('a dismissed row still counts as stored, so a scrape will not store it again', () => {
+    const repo = createRawArticleRepository(db);
+    repo.insert(raw('r1'));
+    repo.dismiss(['r1'], '2026-09-09T10:00:00.000Z');
+
+    expect(repo.existsForSourceUrl('bbc', 'https://example.com/r1')).toBe(true);
   });
 
   it('a manual submission is never in the backlog', async () => {

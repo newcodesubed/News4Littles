@@ -1,6 +1,6 @@
 /**
  * The raw-article backlog — articles a scrape stored but did not spend its
- * simplification budget on — and simplifying them on demand.
+ * simplification budget on — and simplifying or deleting them on demand.
  *
  * A single article is one model call, but an editor can select fifteen, which
  * is a minute or more of sequential calls. So POST starts a background job and
@@ -15,6 +15,14 @@ import { getSimplifyJob, startSimplifyJob } from '../../services/simplifyService
 /** A ceiling, so one request cannot ask for the entire table. */
 const MAX_LIST = 200;
 const DEFAULT_LIST = 50;
+
+function readIds(body: unknown): string[] {
+  const { ids } = (body ?? {}) as { ids?: unknown };
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string')) {
+    throw new BadRequestError('ids must be a non-empty array of raw article ids.');
+  }
+  return ids;
+}
 
 export function createRawArticlesRouter(db: Database): Router {
   const router = Router();
@@ -33,7 +41,8 @@ export function createRawArticlesRouter(db: Database): Router {
         .prepare(
           `SELECT r.id, r.headline, r.sourceName, r.topic, r.publishedAt, r.fetchedAt,
                   LENGTH(r.body) AS bodyLength
-           FROM raw_articles r ORDER BY r.fetchedAt DESC LIMIT ?`,
+           FROM raw_articles r WHERE r.dismissedAt IS NULL
+           ORDER BY r.fetchedAt DESC LIMIT ?`,
         )
         .all(limit),
     );
@@ -57,13 +66,16 @@ export function createRawArticlesRouter(db: Database): Router {
 
   /** Returns straight away; poll /raw-articles/simplify/status. */
   router.post('/raw-articles/simplify', (req, res) => {
-    const { ids } = (req.body ?? {}) as { ids?: unknown };
-    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string')) {
-      throw new BadRequestError('ids must be a non-empty array of raw article ids.');
-    }
-
-    startSimplifyJob(db, ids as string[]);
+    startSimplifyJob(db, readIds(req.body));
     res.status(202).json(jobResponse());
+  });
+
+  /**
+   * Deletes waiting articles from the backlog. A flag, not a DELETE: the row
+   * is what stops a later scrape storing the same item again.
+   */
+  router.post('/raw-articles/dismiss', (req, res) => {
+    res.json({ dismissed: raws.dismiss(readIds(req.body), new Date().toISOString()) });
   });
 
   return router;

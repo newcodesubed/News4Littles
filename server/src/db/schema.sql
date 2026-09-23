@@ -86,7 +86,12 @@ CREATE TABLE IF NOT EXISTS raw_articles (
   -- Deliberately NOT derived from "has no kid_articles row": §4.2 Delete
   -- removes the kid row and leaves this one, and a deleted article must not
   -- reappear in the backlog asking to be paid for again.
-  simplifiedAt TEXT
+  simplifiedAt TEXT,
+  -- ISO when an editor deleted this raw from the backlog; NULL otherwise.
+  -- A flag rather than a DELETE: the row is what stops a later scrape storing
+  -- an undated item again (existsForSourceUrl), so removing it would bring the
+  -- article straight back.
+  dismissedAt TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_raw_articles_sourceId  ON raw_articles (sourceId);

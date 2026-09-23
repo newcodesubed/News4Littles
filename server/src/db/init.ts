@@ -23,12 +23,13 @@ import { refreshSeededPrompts } from './refreshSeededPrompts.js';
  * 4 — added scrape_runs.versions (one story yields several versions).
  * 5 — added kid_articles.approvedBy (records an auto-approved publish).
  * 6 — added kid_articles.audioScript (the spoken version of a story).
+ * 7 — added raw_articles.dismissedAt (deleting from the waiting backlog).
  *
  * Seeded prompt TEXT is not versioned here: refreshSeededPrompts decides by
  * comparing the stored text with every seed ever shipped, so it is safe to run
  * on every init and needs no version guard.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 
@@ -64,6 +65,8 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   // spoken version, and NULL says exactly that. It is also what a failed or
   // rule-based generation stores, so the podcast page has one case to handle.
   { table: 'kid_articles', column: 'audioScript', definition: 'TEXT' },
+  // Nullable with no default: nothing was dismissed before the column existed.
+  { table: 'raw_articles', column: 'dismissedAt', definition: 'TEXT' },
 ];
 
 /**

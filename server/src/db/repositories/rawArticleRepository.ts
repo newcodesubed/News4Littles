@@ -20,6 +20,12 @@ export interface RawArticle {
   simplifiedAt: string | null;
 }
 
+/** A stored row. dismissedAt is set by dismiss, never by insert. */
+export interface StoredRawArticle extends RawArticle {
+  /** ISO when an editor deleted it from the backlog; NULL otherwise. */
+  dismissedAt: string | null;
+}
+
 const COLUMNS = [
   'id', 'sourceId', 'sourceName', 'sourceUrl', 'url',
   'headline', 'body', 'topic', 'publishedAt', 'fetchedAt', 'simplifiedAt',
@@ -41,11 +47,11 @@ export interface WaitingRawArticle {
 
 export interface RawArticleRepository {
   insert(article: RawArticle): void;
-  findById(id: string): RawArticle | undefined;
+  findById(id: string): StoredRawArticle | undefined;
   /** §5.2: an item already stored for this source must not be stored twice. */
   existsForSourceUrl(sourceId: string, url: string): boolean;
   countForSource(sourceId: string): number;
-  /** Unsimplified rows only. Newest publishedAt first; undated last. */
+  /** Unsimplified, undismissed rows only. Newest publishedAt first; undated last. */
   listWaiting(options?: { sourceId?: string; limit?: number }): WaitingRawArticle[];
   countWaiting(): number;
   countWaitingForSource(sourceId: string): number;
@@ -57,6 +63,11 @@ export interface RawArticleRepository {
    * article for it.
    */
   markSimplified(id: string, at: string): boolean;
+  /**
+   * Takes waiting rows out of the backlog for good. Simplified, already
+   * dismissed and unknown ids are left alone; returns how many were dismissed.
+   */
+  dismiss(ids: string[], at: string): number;
 }
 
 export function createRawArticleRepository(db: Database): RawArticleRepository {
@@ -74,27 +85,40 @@ export function createRawArticleRepository(db: Database): RawArticleRepository {
     `SELECT r.id, r.sourceId, r.sourceName, r.headline, r.url, r.topic,
             r.publishedAt, r.fetchedAt, LENGTH(r.body) AS bodyLength
      FROM raw_articles r
-     WHERE r.simplifiedAt IS NULL
+     WHERE r.simplifiedAt IS NULL AND r.dismissedAt IS NULL
        AND (@sourceId IS NULL OR r.sourceId = @sourceId)
      ORDER BY r.publishedAt DESC, r.fetchedAt DESC, r.id
      LIMIT @limit`,
   );
-  const countAllWaiting = db.prepare(`SELECT COUNT(*) FROM raw_articles WHERE simplifiedAt IS NULL`);
+  const countAllWaiting = db.prepare(
+    `SELECT COUNT(*) FROM raw_articles WHERE simplifiedAt IS NULL AND dismissedAt IS NULL`,
+  );
   const countSourceWaiting = db.prepare(
-    `SELECT COUNT(*) FROM raw_articles WHERE simplifiedAt IS NULL AND sourceId = ?`,
+    `SELECT COUNT(*) FROM raw_articles
+     WHERE simplifiedAt IS NULL AND dismissedAt IS NULL AND sourceId = ?`,
   );
   const waitingIds = db.prepare(
-    `SELECT id, sourceId FROM raw_articles WHERE simplifiedAt IS NULL
+    `SELECT id, sourceId FROM raw_articles WHERE simplifiedAt IS NULL AND dismissedAt IS NULL
      ORDER BY sourceId, publishedAt DESC, fetchedAt DESC, id`,
   );
-  // The WHERE clause is the claim: only an unclaimed row is updated.
+  // The WHERE clause is the claim: only an unclaimed row is updated. A
+  // dismissed row cannot be claimed, so a batch racing a dismissal loses.
   const claim = db.prepare(
-    `UPDATE raw_articles SET simplifiedAt = @at WHERE id = @id AND simplifiedAt IS NULL`,
+    `UPDATE raw_articles SET simplifiedAt = @at
+     WHERE id = @id AND simplifiedAt IS NULL AND dismissedAt IS NULL`,
+  );
+  // The same guard the other way: a claimed row cannot be dismissed.
+  const dismissOne = db.prepare(
+    `UPDATE raw_articles SET dismissedAt = @at
+     WHERE id = @id AND simplifiedAt IS NULL AND dismissedAt IS NULL`,
+  );
+  const dismissAll = db.transaction((ids: string[], at: string) =>
+    ids.reduce((total, id) => total + dismissOne.run({ id, at }).changes, 0),
   );
 
   return {
     insert: (article) => void insert.run(article),
-    findById: (id) => byId.get(id) as RawArticle | undefined,
+    findById: (id) => byId.get(id) as StoredRawArticle | undefined,
     existsForSourceUrl: (sourceId, url) => bySourceUrl.get(sourceId, url) !== undefined,
     countForSource: (sourceId) => countBySource.pluck().get(sourceId) as number,
 
@@ -115,5 +139,6 @@ export function createRawArticleRepository(db: Database): RawArticleRepository {
     },
 
     markSimplified: (id, at) => claim.run({ id, at }).changes === 1,
+    dismiss: (ids, at) => dismissAll(ids, at),
   };
 }

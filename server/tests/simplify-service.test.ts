@@ -116,6 +116,16 @@ describe('simplifyRawArticles', () => {
     expect(countRows(ctx.db, 'kid_articles')).toBe(3);
   });
 
+  it('skips a dismissed id instead of simplifying it', async () => {
+    seedWaiting('r1');
+    createRawArticleRepository(ctx.db).dismiss(['r1'], '2026-09-09T10:00:00.000Z');
+
+    const report = await simplifyRawArticles(ctx.db, ['r1']);
+
+    expect(report.skipped).toEqual(['r1']);
+    expect(countRows(ctx.db, 'kid_articles')).toBe(0);
+  });
+
   it('reports an unknown id as a failure without stopping the batch', async () => {
     seedWaiting('r1');
 
