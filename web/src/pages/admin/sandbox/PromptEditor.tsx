@@ -3,11 +3,13 @@ import { Card, Notice } from '../../../ui/Surface';
 
 /** §7.3 panel 2: the prompt itself, plus what can be done with it. */
 export function PromptEditor({
-  promptText, productionText, templateVariables, busy, promoteBlocker,
+  promptText, productionText, draftSavedAt, templateVariables, busy, promoteBlocker,
   onChange, onRun, onCompare, onReset, onSaveDraft, onPromote,
 }: {
   promptText: string;
   productionText: string;
+  /** When this prompt has a saved draft, which the editor opens instead of production. */
+  draftSavedAt: string | null;
   templateVariables: string[];
   busy: boolean;
   /** Why Promote is unavailable, or null when it is. */
@@ -37,6 +39,13 @@ export function PromptEditor({
           {matchesProduction ? 'Matches production' : 'Edited — not yet promoted'}
         </span>
       </div>
+
+      {/* A draft is loaded silently otherwise, and looks like an edit from nowhere. */}
+      {draftSavedAt && (
+        <p className="text-xs text-muted-foreground">
+          Saved draft from {new Date(draftSavedAt).toLocaleString()}. Reset to production discards it.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Insert</span>

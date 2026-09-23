@@ -4,7 +4,7 @@ import { ErrorState, LoadingState } from '../../components/States';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
 import { useAdminAction } from '../../admin/useAdminAction';
 import { Notice } from '../../ui/Surface';
-import { Modal } from './dialogs';
+import { ConfirmDialog, Modal, type Confirmation } from './dialogs';
 import { Button } from '../../ui/Button';
 import { TextArea } from '../../ui/Field';
 import { ageBandLabel } from '../../lib/ageBands';
@@ -66,6 +66,7 @@ export function AdminSandbox() {
   const [history, setHistory] = useRunHistory();
   const [busy, setBusy] = useState(false);
   const [promoting, setPromoting] = useState(false);
+  const [confirming, setConfirming] = useState<Confirmation | null>(null);
   const [note, setNote] = useState('');
   const [diffLeft, setDiffLeft] = useState('');
   const [diffRight, setDiffRight] = useState('');
@@ -99,6 +100,32 @@ export function AdminSandbox() {
     () => (config ? liveText(config, target, age) : ''),
     [config, target, age],
   );
+
+  /** The saved draft for this prompt, which the editor opens instead of production. */
+  const savedDraft = config?.drafts.find((d) => d.target === target && d.age === age) ?? null;
+
+  const showProduction = () => { setPromptText(productionText); setResult(null); };
+
+  /**
+   * Resetting only the editor would leave the draft on the server, and it would
+   * open again next visit. So a saved draft is deleted too, once confirmed.
+   */
+  function resetToProduction() {
+    if (!savedDraft) { showProduction(); return; }
+
+    const query = new URLSearchParams({ target });
+    if (age !== null) query.set('age', String(age));
+    setConfirming({
+      title: 'Discard your saved draft?',
+      body: `The draft saved ${new Date(savedDraft.updatedAt).toLocaleString()} is deleted, and the editor shows the production prompt.`,
+      confirmLabel: 'Discard draft',
+      tone: 'danger',
+      onConfirm: () => void (async () => {
+        if (await act(`/api/admin/prompts/draft?${query.toString()}`, { method: 'DELETE' },
+          'Draft discarded. The editor shows the production prompt.')) showProduction();
+      })(),
+    });
+  }
 
   // Only on the first config. Save draft and Promote reload it too, and
   // resetting then would throw away the text being worked on and the run
@@ -226,13 +253,14 @@ export function AdminSandbox() {
         <PromptEditor
           promptText={promptText}
           productionText={productionText}
+          draftSavedAt={savedDraft?.updatedAt ?? null}
           templateVariables={config.templateVariables}
           busy={busy}
           promoteBlocker={promoteBlocker}
           onChange={setPromptText}
           onRun={() => void runTest(false)}
           onCompare={() => void runTest(true)}
-          onReset={() => { setPromptText(productionText); setResult(null); }}
+          onReset={resetToProduction}
           onSaveDraft={() =>
             void act('/api/admin/prompts/draft',
               { method: 'PUT', body: JSON.stringify({ target, age, promptText }) },
@@ -261,6 +289,8 @@ export function AdminSandbox() {
           onSelect={(side, id) => (side === 'left' ? setDiffLeft(id) : setDiffRight(id))}
         />
       </div>
+
+      {confirming && <ConfirmDialog confirmation={confirming} onCancel={() => setConfirming(null)} />}
 
       {promoting && (
         <Modal title="Promote to production" onClose={() => setPromoting(false)}>
