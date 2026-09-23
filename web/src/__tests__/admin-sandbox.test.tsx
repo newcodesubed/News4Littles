@@ -244,6 +244,34 @@ describe('promotion (§7.4)', () => {
     expect(screen.getByRole('button', { name: 'Promote to production' })).toBeDisabled();
   });
 
+  it('keeps the test run, and Promote, after saving a draft', async () => {
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.type(promptBox(), ' edited');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+    await screen.findByText('A robot looked at a reef');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && c.path === '/api/admin/prompts/draft')).toBe(true));
+    await screen.findByText(/Draft saved/);
+
+    expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT edited');
+    expect(screen.getByText('A robot looked at a reef')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Promote to production' })).toBeEnabled();
+  });
+
+  it('asks for a new run when the prompt changes after a test', async () => {
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+    await screen.findByText('A robot looked at a reef');
+
+    await userEvent.type(promptBox(), ' untested');
+
+    expect(screen.getByRole('button', { name: 'Promote to production' })).toBeDisabled();
+    expect(screen.getByText(/changed since the last test/)).toBeInTheDocument();
+  });
+
   it('summarises what will change before confirming (§7.4)', async () => {
     renderSandbox();
     await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
