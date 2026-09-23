@@ -12,11 +12,25 @@ import { InputPanel } from './sandbox/InputPanel';
 import { PromptEditor } from './sandbox/PromptEditor';
 import { ResultsPanel } from './sandbox/ResultsPanel';
 import { RunHistory, VersionHistory } from './sandbox/HistoryPanel';
+import { useRunHistory } from './sandbox/useRunHistory';
 import {
   versionKey,
-  type HistoryEntry, type PromptsPayload, type PromptTarget,
+  type PromptsPayload, type PromptTarget,
   type PromptVersion, type RawArticleSummary, type TestResult,
 } from './sandbox/types';
+
+/** The prompt currently live for this target+age. */
+function liveText(config: PromptsPayload, target: PromptTarget, age: number | null): string {
+  if (target === 'guard') return config.guard.promptText;
+  if (age === null) return config.simplification.generic;
+  return config.simplification.ageOverrides[String(age)] ?? config.simplification.generic;
+}
+
+/** The draft if one exists, otherwise the live prompt (§7.3). */
+function startingText(config: PromptsPayload, target: PromptTarget, age: number | null): string {
+  const draft = config.drafts.find((d) => d.target === target && d.age === age);
+  return draft?.promptText ?? liveText(config, target, age);
+}
 
 /**
  * /admin/sandbox — PRD §7.
@@ -47,7 +61,7 @@ export function AdminSandbox() {
 
   const [promptText, setPromptText] = useState('');
   const [result, setResult] = useState<TestResult | null>(null);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [history, setHistory] = useRunHistory();
   const [busy, setBusy] = useState(false);
   const [promoting, setPromoting] = useState(false);
   const [note, setNote] = useState('');
@@ -79,21 +93,18 @@ export function AdminSandbox() {
 
   const { notice, setNotice, run: act } = useAdminAction(load);
 
-  /** The prompt currently live for this target+age. */
-  const productionText = useMemo(() => {
-    if (!config) return '';
-    if (target === 'guard') return config.guard.promptText;
-    if (age === null) return config.simplification.generic;
-    return config.simplification.ageOverrides[String(age)] ?? config.simplification.generic;
-  }, [config, target, age]);
+  const productionText = useMemo(
+    () => (config ? liveText(config, target, age) : ''),
+    [config, target, age],
+  );
 
-  /** Load the draft if one exists, otherwise the live prompt (§7.3). */
+  // Only on a fresh config: switching prompt is handled where the switch
+  // happens, so a run reloaded from history is not wiped straight after.
   useEffect(() => {
     if (!config) return;
-    const draft = config.drafts.find((d) => d.target === target && d.age === age);
-    setPromptText(draft?.promptText ?? productionText);
+    setPromptText(startingText(config, target, age));
     setResult(null);
-  }, [config, target, age, productionText]);
+  }, [config]);
 
   async function runTest(compareWithProduction: boolean) {
     setBusy(true);
@@ -184,8 +195,14 @@ export function AdminSandbox() {
           target={target} age={age} articleId={articleId} rawText={rawText} headline={headline}
           articles={articles} defaultAge={config.defaultAge}
           onChange={(patch) => {
-            if (patch.target !== undefined) setTarget(patch.target);
-            if (patch.age !== undefined) setAge(patch.age);
+            const nextTarget = patch.target ?? target;
+            const nextAge = patch.age !== undefined ? patch.age : age;
+            if (nextTarget !== target || nextAge !== age) {
+              setTarget(nextTarget);
+              setAge(nextAge);
+              setPromptText(startingText(config, nextTarget, nextAge));
+              setResult(null);
+            }
             if (patch.articleId !== undefined) setArticleId(patch.articleId);
             if (patch.rawText !== undefined) setRawText(patch.rawText);
             if (patch.headline !== undefined) setHeadline(patch.headline);

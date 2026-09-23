@@ -70,7 +70,7 @@ export interface TestResult {
   usingLocalFallback: boolean;
 }
 
-/** §7.3: session run history, kept in memory only. */
+/** §7.3: one run in the session history (see useRunHistory). */
 export interface HistoryEntry {
   at: string;
   target: PromptTarget;

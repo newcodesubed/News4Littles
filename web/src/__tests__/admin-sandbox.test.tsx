@@ -302,6 +302,25 @@ describe('run history (§7.3)', () => {
     expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT v1');
   });
 
+  it('reloads a run for another variant on the first click', async () => {
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.type(promptBox(), ' v1');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+    await screen.findByText('A robot looked at a reef');
+
+    // Moving to another variant clears the result, so the run must come back
+    // from history rather than still be on screen.
+    await userEvent.selectOptions(screen.getByLabelText('Prompt variant'), '5');
+    await screen.findByDisplayValue('YOUNG READERS PROMPT');
+    expect(screen.queryByText('A robot looked at a reef')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /simplification/ }));
+
+    expect(await screen.findByText('A robot looked at a reef')).toBeInTheDocument();
+    expect(promptBox()).toHaveValue('PRODUCTION GENERIC PROMPT v1');
+  });
+
   it('shows the session cost', async () => {
     renderSandbox();
     await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
@@ -309,6 +328,41 @@ describe('run history (§7.3)', () => {
     // Shown in the header total, the run meta and the history row.
     await waitFor(() => expect(screen.getAllByText(/\$0\.00017/).length).toBeGreaterThanOrEqual(2));
     expect(screen.getByText(/This session:/).textContent).toContain('$0.00017');
+  });
+
+  it('survives leaving the page and coming back', async () => {
+    const { unmount } = renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+    await screen.findByRole('button', { name: /simplification/ });
+
+    // Navigating to another admin page unmounts the sandbox.
+    unmount();
+    renderSandbox();
+
+    expect(await screen.findByRole('button', { name: /simplification/ })).toBeInTheDocument();
+    expect(screen.getByText(/This session:/).textContent).toContain('$0.00017');
+  });
+
+  it('starts empty when the saved history is unreadable', async () => {
+    window.sessionStorage.setItem('news4littles.sandboxHistory', '{not json');
+    renderSandbox();
+    expect(await screen.findByText('No runs yet.')).toBeInTheDocument();
+  });
+
+  it('still records the run when the browser refuses to save it', async () => {
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'news4littles.sandboxHistory') throw new DOMException('full', 'QuotaExceededError');
+      setItem.call(this, key, value);
+    });
+
+    renderSandbox();
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+    await userEvent.click(screen.getByRole('button', { name: 'Run test' }));
+
+    expect(await screen.findByRole('button', { name: /simplification/ })).toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 });
 
