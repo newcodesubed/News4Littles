@@ -40,6 +40,8 @@ let bulkBody: any = null;
 let bulkError: string | null = null;
 /** When set, single-story PATCHes (edit, reject) fail with this message. */
 let patchError: string | null = null;
+/** When set, the story list waits for it, so a refresh can be seen mid-flight. */
+let storiesGate: Promise<void> | null = null;
 let calls: string[] = [];
 
 function mockApi() {
@@ -66,6 +68,7 @@ function mockApi() {
       });
     }
     if (path.includes('/api/admin/stories')) {
+      if (storiesGate) await storiesGate;
       // Group the flat fixture the way the server does.
       const byStory = new Map<string, AdminArticle[]>();
       for (const a of articles) {
@@ -103,7 +106,7 @@ const renderPage = () => render(
 
 beforeEach(() => {
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
-  articles = [article()]; bulkBody = null; bulkError = null; patchError = null; calls = [];
+  articles = [article()]; bulkBody = null; bulkError = null; patchError = null; storiesGate = null; calls = [];
   mockApi();
 });
 afterEach(() => { vi.unstubAllGlobals(); window.sessionStorage.clear(); });
@@ -392,6 +395,38 @@ describe('a failed save keeps what the editor typed', () => {
 
     expect(await within(dialog).findByText(/A scrape is already running\./)).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/Reason \(optional\)/)).toHaveValue('Not kid news');
+  });
+});
+
+describe('refreshing after an action', () => {
+  it('keeps the list on screen instead of a loading spinner', async () => {
+    renderPage();
+    await screen.findByText('A calm story');
+
+    let release!: () => void;
+    storiesGate = new Promise((resolve) => { release = resolve; });
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await waitFor(() => expect(calls).toContain('PATCH /api/admin/articles/a1/publish'));
+
+    // The refresh is still in flight: the rows stay, so the editor keeps their place.
+    await waitFor(() => expect(calls.filter((c) => c.startsWith('GET /api/admin/stories')).length).toBe(2));
+    expect(screen.queryByText('Loading the queue…')).not.toBeInTheDocument();
+    expect(screen.getByText('A calm story')).toBeInTheDocument();
+    release();
+  });
+
+  it('keeps the selection of stories still in the list', async () => {
+    articles = [article({ id: 's1', kidHeadline: 'Story one' }), article({ id: 's2', kidHeadline: 'Story two' })];
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText('Select Story one'));
+
+    const rowTwo = screen.getByLabelText('Select Story two').closest('div.rounded-2xl') as HTMLElement;
+    await userEvent.click(within(rowTwo).getByRole('button', { name: 'Publish' }));
+    await waitFor(() => expect(calls).toContain('PATCH /api/admin/articles/s2/publish'));
+    await waitFor(() => expect(calls.filter((c) => c.startsWith('GET /api/admin/stories')).length).toBe(2));
+
+    await waitFor(() => expect(screen.getByLabelText('Select Story one')).toBeChecked());
   });
 });
 
