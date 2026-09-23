@@ -130,6 +130,39 @@ describe('schema (§8)', () => {
     after.close();
   });
 
+  it('migrates a v6 database: adds raw_articles.dismissedAt, dismissing nothing', () => {
+    const old = openDatabase(path);
+    old.exec(`
+      CREATE TABLE sources (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1, trustLevel TEXT NOT NULL, parser TEXT,
+        lastFetchedAt TEXT, lastFetchedItemPublishedAt TEXT,
+        createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      CREATE TABLE raw_articles (
+        id TEXT PRIMARY KEY, sourceId TEXT NOT NULL REFERENCES sources (id),
+        sourceName TEXT NOT NULL, sourceUrl TEXT NOT NULL, url TEXT NOT NULL,
+        headline TEXT NOT NULL, body TEXT NOT NULL, topic TEXT NOT NULL,
+        publishedAt TEXT, fetchedAt TEXT NOT NULL, simplifiedAt TEXT);
+      INSERT INTO sources VALUES
+        ('bbc', 'BBC News', 'https://feed', 1, 'high', NULL, NULL, NULL,
+         '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO raw_articles VALUES
+        ('r1', 'bbc', 'BBC News', 'https://feed', 'https://example.com/1',
+         'Adult headline', 'Body text', 'World', NULL, '2026-09-01T00:00:00.000Z', NULL);
+    `);
+    old.pragma('user_version = 6');
+    old.close();
+
+    initialiseSchema(path);
+
+    const db = openDatabase(path);
+    expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+    expect(
+      db.prepare(`SELECT simplifiedAt, dismissedAt FROM raw_articles WHERE id = 'r1'`).get(),
+    ).toEqual({ simplifiedAt: null, dismissedAt: null });
+    db.close();
+  });
+
   it('adds the run version count when migrating from v3', () => {
     initialiseSchema(path);
     seed(path);
