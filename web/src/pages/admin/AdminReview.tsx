@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
-import { useAdminAction } from '../../admin/useAdminAction';
+import { readError, useAdminAction } from '../../admin/useAdminAction';
 import { Notice } from '../../ui/Surface';
 import {
   EMPTY_FILTERS, toQueryString,
@@ -30,6 +30,10 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key'];
 
 type BulkAction = 'approve' | 'reject' | 'delete';
+
+const BULK_DONE: Record<BulkAction, string> = {
+  approve: 'approved', reject: 'rejected', delete: 'deleted',
+};
 
 /** /admin/review — PRD §4.2. Loads the queue and wires the pieces together. */
 export function AdminReview() {
@@ -135,7 +139,7 @@ export function AdminReview() {
         body: JSON.stringify({ ids, action, includeFlagged }),
       });
       if (!res.ok) {
-        setNotice('⚠ Bulk action failed.');
+        setNotice(`⚠ ${await readError(res, 'Bulk action failed.')}`);
         return;
       }
       result = (await res.json()) as BulkResult;
@@ -145,7 +149,9 @@ export function AdminReview() {
     }
 
     setBulkSkipped(result.skipped);
-    setNotice(`${result.appliedCount} article(s) ${action}d.`);
+    // Each id is a story (§5), whatever the endpoint calls it.
+    const count = result.appliedCount;
+    setNotice(`${count} ${count === 1 ? 'story' : 'stories'} ${BULK_DONE[action]}.`);
     await load();
   }
 

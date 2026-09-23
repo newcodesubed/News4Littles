@@ -22,7 +22,8 @@ export interface AdminActionState {
   run: (path: string, init: RequestInit, successMessage: string) => Promise<boolean>;
 }
 
-async function readError(response: Response, fallback: string): Promise<string> {
+/** The server's `{ error }` message, or the fallback when there is none. */
+export async function readError(response: Response, fallback: string): Promise<string> {
   try {
     const body = (await response.json()) as { error?: string };
     return body.error ?? fallback;

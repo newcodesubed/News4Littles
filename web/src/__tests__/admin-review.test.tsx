@@ -37,6 +37,7 @@ const article = (o: Partial<AdminArticle> = {}): AdminArticle => ({
 
 let articles: AdminArticle[] = [];
 let bulkBody: any = null;
+let bulkError: string | null = null;
 let calls: string[] = [];
 
 function mockApi() {
@@ -50,6 +51,7 @@ function mockApi() {
     if (path.includes('/articles/filters')) return json({ categories: ['World', 'Science'], sources: [{ id: 'bbc', name: 'BBC News' }, { id: 'manual', name: 'Manual submission' }], ageTargets: [6, 8], safety: [], statuses: [], sortFields: [] });
     if (path.includes('/articles/bulk')) {
       bulkBody = JSON.parse(String(init.body));
+      if (bulkError) return json({ error: bulkError }, 409);
       const flagged = articles.filter((a) => bulkBody.ids.includes(a.id) && a.safety === 'skip-young');
       const excluded = bulkBody.action === 'approve' && !bulkBody.includeFlagged ? flagged : [];
       return json({
@@ -98,7 +100,7 @@ const renderPage = () => render(
 
 beforeEach(() => {
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
-  articles = [article()]; bulkBody = null; calls = [];
+  articles = [article()]; bulkBody = null; bulkError = null; calls = [];
   mockApi();
 });
 afterEach(() => { vi.unstubAllGlobals(); window.sessionStorage.clear(); });
@@ -199,6 +201,43 @@ describe('bulk approve protects skip-young (§4.2, requirement 6 + 13)', () => {
 
     await waitFor(() => expect(bulkBody).not.toBeNull());
     expect(bulkBody.includeFlagged).toBe(true);
+  });
+});
+
+describe('bulk action feedback (§4.2)', () => {
+  beforeEach(() => {
+    articles = [
+      article({ id: 's1', kidHeadline: 'Story one' }),
+      article({ id: 's2', kidHeadline: 'Story two' }),
+    ];
+  });
+
+  it('counts stories and names the action in plain words', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('2 stories approved.')).toBeInTheDocument();
+  });
+
+  it('says "story" for one', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText('Select Story one'));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('1 story approved.')).toBeInTheDocument();
+  });
+
+  it("shows the server's reason when the bulk request fails", async () => {
+    bulkError = 'A scrape is already running.';
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('⚠ A scrape is already running.')).toBeInTheDocument();
   });
 });
 
