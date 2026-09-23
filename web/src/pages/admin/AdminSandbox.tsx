@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
@@ -61,6 +61,8 @@ export function AdminSandbox() {
 
   const [promptText, setPromptText] = useState('');
   const [result, setResult] = useState<TestResult | null>(null);
+  /** The prompt text `result` came from, so an edit after the run is noticed. */
+  const [testedText, setTestedText] = useState<string | null>(null);
   const [history, setHistory] = useRunHistory();
   const [busy, setBusy] = useState(false);
   const [promoting, setPromoting] = useState(false);
@@ -98,10 +100,13 @@ export function AdminSandbox() {
     [config, target, age],
   );
 
-  // Only on a fresh config: switching prompt is handled where the switch
-  // happens, so a run reloaded from history is not wiped straight after.
+  // Only on the first config. Save draft and Promote reload it too, and
+  // resetting then would throw away the text being worked on and the run
+  // that makes it promotable. Switching prompt is handled where it happens.
+  const seeded = useRef(false);
   useEffect(() => {
-    if (!config) return;
+    if (!config || seeded.current) return;
+    seeded.current = true;
     setPromptText(startingText(config, target, age));
     setResult(null);
   }, [config]);
@@ -128,6 +133,7 @@ export function AdminSandbox() {
 
       const testResult = body as TestResult;
       setResult(testResult);
+      setTestedText(promptText);
       setHistory((current) => [
         {
           at: new Date().toISOString(),
@@ -145,7 +151,15 @@ export function AdminSandbox() {
   }
 
   // §7.4: promotion needs at least one successful test run this session.
-  const canPromote = result !== null && !result.draft.fallbackReason;
+  // §7.4: promote only what a successful run has actually tried.
+  const promoteBlocker =
+    result === null
+      ? 'Promotion needs one successful test run first, so nothing reaches readers untried.'
+      : result.draft.fallbackReason
+        ? 'The last run fell back to the rule-based pipeline, so it does not count. Run it again.'
+        : testedText !== promptText
+          ? 'The prompt has changed since the last test. Run it again before promoting.'
+          : null;
 
   const sessionCost = history.reduce(
     (total, entry) => total + (entry.result.draft.costUsd ?? 0) + (entry.result.production?.costUsd ?? 0),
@@ -214,7 +228,7 @@ export function AdminSandbox() {
           productionText={productionText}
           templateVariables={config.templateVariables}
           busy={busy}
-          canPromote={canPromote}
+          promoteBlocker={promoteBlocker}
           onChange={setPromptText}
           onRun={() => void runTest(false)}
           onCompare={() => void runTest(true)}
@@ -239,6 +253,7 @@ export function AdminSandbox() {
             setAge(entry.age);
             setPromptText(entry.promptSnapshot);
             setResult(entry.result);
+            setTestedText(entry.promptSnapshot);
           }}
         />
         <VersionHistory

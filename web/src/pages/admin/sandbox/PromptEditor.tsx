@@ -3,14 +3,15 @@ import { Card, Notice } from '../../../ui/Surface';
 
 /** §7.3 panel 2: the prompt itself, plus what can be done with it. */
 export function PromptEditor({
-  promptText, productionText, templateVariables, busy, canPromote,
+  promptText, productionText, templateVariables, busy, promoteBlocker,
   onChange, onRun, onCompare, onReset, onSaveDraft, onPromote,
 }: {
   promptText: string;
   productionText: string;
   templateVariables: string[];
   busy: boolean;
-  canPromote: boolean;
+  /** Why Promote is unavailable, or null when it is. */
+  promoteBlocker: string | null;
   onChange: (text: string) => void;
   onRun: () => void;
   onCompare: () => void;
@@ -71,17 +72,13 @@ export function PromptEditor({
         <Button variant="outline" onClick={onSaveDraft} disabled={busy || !promptText.trim()}>
           Save draft
         </Button>
-        <Button variant="outline" onClick={onPromote} disabled={busy || !canPromote} className="ml-auto"
-          title={canPromote ? undefined : 'Run a successful test first'}>
+        <Button variant="outline" onClick={onPromote} disabled={busy || promoteBlocker !== null} className="ml-auto"
+          title={promoteBlocker ?? undefined}>
           Promote to production
         </Button>
       </div>
 
-      {!canPromote && (
-        <Notice tone="warn">
-          Promotion needs one successful test run first, so nothing reaches readers untried.
-        </Notice>
-      )}
+      {promoteBlocker && <Notice tone="warn">{promoteBlocker}</Notice>}
     </Card>
   );
 }

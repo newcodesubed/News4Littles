@@ -3,7 +3,7 @@ import { ExternalLink, Headphones } from 'lucide-react';
 import { StoryPreview } from '../../../components/StoryPreview';
 import { Button } from '../../../ui/Button';
 import { Notice } from '../../../ui/Surface';
-import type { AdminStory } from '../../../admin/types';
+import type { AdminArticle, AdminStory } from '../../../admin/types';
 import { Modal } from './Modal';
 import { ageBandLabel } from '../../../lib/ageBands';
 
@@ -29,7 +29,8 @@ export function ViewArticleDialog({
 }: {
   story: AdminStory;
   onClose: () => void;
-  onEdit: () => void;
+  /** Given the version on screen: edits are per version, unlike publish. */
+  onEdit: (version: AdminArticle) => void;
   onPublish: () => void;
   onReject: () => void;
 }) {
@@ -116,7 +117,7 @@ export function ViewArticleDialog({
 
       <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-border pt-5">
         <Button variant="ghost" size="lg" onClick={onClose}>Close</Button>
-        <Button variant="outline" size="lg" onClick={onEdit}>Edit</Button>
+        <Button variant="outline" size="lg" onClick={() => onEdit(version)}>Edit</Button>
         {version.status !== 'rejected' && (
           <Button variant="outline" size="lg" onClick={onReject}>Reject</Button>
         )}

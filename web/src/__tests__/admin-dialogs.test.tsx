@@ -240,6 +240,16 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
     expect(screen.getByText(/rule-based pipeline: upstream exploded/)).toBeInTheDocument();
   });
 
+  it('ignores a stray click outside, which would otherwise throw a paid preview away', async () => {
+    const { onDiscard } = open(job([version(5)]));
+
+    await userEvent.click(screen.getByRole('dialog'));
+
+    expect(onDiscard).not.toHaveBeenCalled();
+    // Discard is the only way out, so there is no X to mistake for "close for now".
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+  });
+
   it('discards without applying', async () => {
     const { onDiscard, onApply } = open(job([version(5)]));
 

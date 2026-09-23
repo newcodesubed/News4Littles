@@ -10,11 +10,15 @@ export function EditDialog({
   article,
   onCancel,
   onSave,
+  error = null,
 }: {
   article: AdminArticle;
   onCancel: () => void;
-  onSave: (patch: Record<string, unknown>) => void;
+  /** The dialog stays open, showing `error`, until the caller closes it. */
+  onSave: (patch: Record<string, unknown>) => void | Promise<unknown>;
+  error?: string | null;
 }) {
+  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState({
     kidHeadline: article.kidHeadline,
     summary: article.summary,
@@ -147,21 +151,29 @@ export function EditDialog({
         </div>
       </div>
 
+      {error && <p role="alert" className="mt-5 text-sm font-bold text-destructive">{error}</p>}
+
       <div className="mt-6 flex justify-end gap-2 border-t border-border pt-5">
-        <Button variant="ghost" size="lg" onClick={onCancel}>
+        <Button variant="ghost" size="lg" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
         <Button
           size="lg"
-          onClick={() =>
-            onSave({
-              ...draft,
-              feelingNote: draft.feelingNote.trim() || null,
-              vocab: draft.vocab.filter((v) => v.word.trim() && v.definition.trim()),
-            })
-          }
+          disabled={saving}
+          onClick={async () => {
+            setSaving(true);
+            try {
+              await onSave({
+                ...draft,
+                feelingNote: draft.feelingNote.trim() || null,
+                vocab: draft.vocab.filter((v) => v.word.trim() && v.definition.trim()),
+              });
+            } finally {
+              setSaving(false);
+            }
+          }}
         >
-          Save changes
+          {saving ? 'Saving…' : 'Save changes'}
         </Button>
       </div>
     </Modal>

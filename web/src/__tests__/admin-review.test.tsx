@@ -37,6 +37,9 @@ const article = (o: Partial<AdminArticle> = {}): AdminArticle => ({
 
 let articles: AdminArticle[] = [];
 let bulkBody: any = null;
+let bulkError: string | null = null;
+/** When set, single-story PATCHes (edit, reject) fail with this message. */
+let patchError: string | null = null;
 let calls: string[] = [];
 
 function mockApi() {
@@ -46,10 +49,12 @@ function mockApi() {
     const json = (body: unknown, status = 200) =>
       ({ ok: status < 400, status, json: async () => body, headers: new Headers() }) as unknown as Response;
 
+    if (patchError && init.method === 'PATCH') return json({ error: patchError }, 400);
     if (path.includes('/articles/counts')) return json({ pending_review: 3, published: 1, rejected: 1, total: 5, waiting: 0 });
     if (path.includes('/articles/filters')) return json({ categories: ['World', 'Science'], sources: [{ id: 'bbc', name: 'BBC News' }, { id: 'manual', name: 'Manual submission' }], ageTargets: [6, 8], safety: [], statuses: [], sortFields: [] });
     if (path.includes('/articles/bulk')) {
       bulkBody = JSON.parse(String(init.body));
+      if (bulkError) return json({ error: bulkError }, 409);
       const flagged = articles.filter((a) => bulkBody.ids.includes(a.id) && a.safety === 'skip-young');
       const excluded = bulkBody.action === 'approve' && !bulkBody.includeFlagged ? flagged : [];
       return json({
@@ -98,7 +103,7 @@ const renderPage = () => render(
 
 beforeEach(() => {
   window.sessionStorage.setItem('news4littles.admin', btoa('admin:admin123'));
-  articles = [article()]; bulkBody = null; calls = [];
+  articles = [article()]; bulkBody = null; bulkError = null; patchError = null; calls = [];
   mockApi();
 });
 afterEach(() => { vi.unstubAllGlobals(); window.sessionStorage.clear(); });
@@ -202,6 +207,71 @@ describe('bulk approve protects skip-young (§4.2, requirement 6 + 13)', () => {
   });
 });
 
+describe('bulk action feedback (§4.2)', () => {
+  beforeEach(() => {
+    articles = [
+      article({ id: 's1', kidHeadline: 'Story one' }),
+      article({ id: 's2', kidHeadline: 'Story two' }),
+    ];
+  });
+
+  it('counts stories and names the action in plain words', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('2 stories approved.')).toBeInTheDocument();
+  });
+
+  it('says "story" for one', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText('Select Story one'));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('1 story approved.')).toBeInTheDocument();
+  });
+
+  it('asks for a reason before a bulk reject, and sends it', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    // Scoped to the bulk bar: every row has a Reject button too.
+    const bar = screen.getByText('2 selected').parentElement!;
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reject' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Reject 2 stories' });
+    await userEvent.type(within(dialog).getByLabelText(/Reason \(optional\)/), 'Not kid news');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() => expect(bulkBody).toMatchObject({ action: 'reject', reason: 'Not kid news' }));
+    expect(await screen.findByText('2 stories rejected.')).toBeInTheDocument();
+  });
+
+  it('rejects nothing when the bulk reason box is cancelled', async () => {
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    // Scoped to the bulk bar: every row has a Reject button too.
+    const bar = screen.getByText('2 selected').parentElement!;
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reject' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+
+    expect(bulkBody).toBeNull();
+  });
+
+  it("shows the server's reason when the bulk request fails", async () => {
+    bulkError = 'A scrape is already running.';
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('⚠ A scrape is already running.')).toBeInTheDocument();
+  });
+});
+
 describe('row actions (§4.2)', () => {
   it('delete is disabled for published articles (requirement 7)', async () => {
     articles = [article({ status: 'published', publishedAt: '2026-09-04T11:00:00.000Z' })];
@@ -267,6 +337,64 @@ describe('edit form (requirement 11)', () => {
   });
 });
 
+describe('a failed save keeps what the editor typed', () => {
+  it('leaves the edit dialog open with the edits and the error', async () => {
+    patchError = 'Headline is too long.';
+    renderPage();
+    await screen.findByText('A calm story');
+    await userEvent.click(screen.getByRole('button', { name: /Edit/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    const headline = within(dialog).getByDisplayValue('A calm story');
+    await userEvent.type(headline, ' with more');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await within(dialog).findByText(/Headline is too long\./)).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByDisplayValue('A calm story with more')).toBeInTheDocument();
+  });
+
+  it('closes the edit dialog once the save succeeds', async () => {
+    renderPage();
+    await screen.findByText('A calm story');
+    await userEvent.click(screen.getByRole('button', { name: /Edit/ }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText(/Saved — marked as edited by a person/)).toBeInTheDocument();
+  });
+
+  it('leaves the reject dialog open with the reason and the error', async () => {
+    patchError = 'That story was already rejected.';
+    renderPage();
+    await screen.findByText('A calm story');
+    await userEvent.click(screen.getByRole('button', { name: 'Reject' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/Reason \(optional\)/), 'Not kid news');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+
+    expect(await within(dialog).findByText(/That story was already rejected\./)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/Reason \(optional\)/)).toHaveValue('Not kid news');
+  });
+
+  it('leaves the bulk reject dialog open with the reason and the error', async () => {
+    articles = [article({ id: 's1', kidHeadline: 'Story one' }), article({ id: 's2', kidHeadline: 'Story two' })];
+    bulkError = 'A scrape is already running.';
+    renderPage();
+    await screen.findByText('Story one');
+    await userEvent.click(screen.getByLabelText(/Select all/));
+    const bar = screen.getByText('2 selected').parentElement!;
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reject' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/Reason \(optional\)/), 'Not kid news');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reject' }));
+
+    expect(await within(dialog).findByText(/A scrape is already running\./)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/Reason \(optional\)/)).toHaveValue('Not kid news');
+  });
+});
+
 describe('auth', () => {
   it('sends the Basic credential on every admin call', async () => {
     renderPage();
@@ -313,6 +441,24 @@ describe('one row per story (§5)', () => {
     // SafetyBadge renders the friendly label, not the raw value.
     expect(await screen.findByText(/Skip for young kids/i)).toBeInTheDocument();
     expect(screen.queryByText(/^Calm$/)).not.toBeInTheDocument();
+  });
+
+  it('edits the reading group on screen in View, not always the youngest', async () => {
+    articles = [
+      article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, kidHeadline: 'Young headline' }),
+      article({ id: 'v8', originalId: 'raw-1', ageTarget: 8, kidHeadline: 'Middle headline' }),
+    ];
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Young headline' }));
+
+    const view = await screen.findByRole('dialog', { name: 'Read before deciding' });
+    await userEvent.click(within(view).getByRole('button', { name: /Ages 8/ }));
+    await userEvent.click(within(view).getByRole('button', { name: 'Edit' }));
+
+    const edit = await screen.findByRole('dialog', { name: 'Edit story' });
+    expect(within(edit).getByDisplayValue('Middle headline')).toBeInTheDocument();
+    await userEvent.click(within(edit).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(calls).toContain('PATCH /api/admin/articles/v8'));
   });
 
   it('sends one version id when approving, and the server applies it to the story', async () => {
