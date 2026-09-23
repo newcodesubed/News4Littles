@@ -42,7 +42,8 @@ export function RegenerateDialog({
     });
 
   return (
-    <Modal title="Regenerate — review before applying" onClose={onDiscard} wide>
+    // No onClose: the preview is paid for, so only Discard throws it away.
+    <Modal title="Regenerate — review before applying" wide>
       <p className="text-sm text-muted-foreground">
         {job.versions.length} version{plural} re-run through the current guard config and
         prompts. Nothing has been saved yet. Preview cost ${job.costUsd.toFixed(4)}.
