@@ -66,7 +66,7 @@ function SourceRow({
               placeholder="Feed URL"
               onChange={(e) => setDraft({ ...draft, url: e.target.value })}
               onBlur={(e) => void commit('url', e.target.value)}
-              className={`${FIELD_CLASS_COMPACT} min-w-64 flex-1 text-sm`}
+              className={`${FIELD_CLASS_COMPACT} min-w-0 flex-1 text-sm sm:min-w-64`}
             />
             <input
               value={draft.parser ?? ''}

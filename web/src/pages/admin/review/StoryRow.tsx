@@ -139,7 +139,8 @@ export function StoryRow({
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        {/* Full width below md, or the actions squeeze the headline off-screen. */}
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
           <Button size="sm" variant="outline" onClick={actions.onView} disabled={locked}>
             <Eye className="w-3.5 h-3.5" /> View
           </Button>

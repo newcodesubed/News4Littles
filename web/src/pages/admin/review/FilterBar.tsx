@@ -38,15 +38,15 @@ export function FilterBar({
   /** A labelled row of chips, the shape every filter group shares. */
   const Group = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground w-16">{label}</span>
+      <span className="w-full text-xs font-bold uppercase tracking-wider text-muted-foreground sm:w-16">{label}</span>
       {children}
     </div>
   );
 
   return (
-    <div className="mt-5 rounded-3xl border border-border bg-card p-5 shadow-soft space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative grow min-w-60">
+    <div className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-soft space-y-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative grow sm:min-w-60">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={filters.q}
@@ -62,20 +62,22 @@ export function FilterBar({
           <select
             value={filters.sort}
             onChange={(e) => set('sort', e.target.value)}
-            className="rounded-full border border-border bg-background px-3 py-2"
+            className="grow rounded-full border border-border bg-background px-3 py-2 sm:grow-0"
           >
             {SORTS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
 
-        <Button variant="outline" onClick={() => set('order', filters.order === 'desc' ? 'asc' : 'desc')}>
-          {filters.order === 'desc' ? 'Newest first ↓' : 'Oldest first ↑'}
-        </Button>
+        <div className="flex flex-wrap gap-3 sm:contents">
+          <Button variant="outline" onClick={() => set('order', filters.order === 'desc' ? 'asc' : 'desc')}>
+            {filters.order === 'desc' ? 'Newest first ↓' : 'Oldest first ↑'}
+          </Button>
 
-        <Button variant="ghost" className="text-muted-foreground"
-          onClick={() => onChange({ ...EMPTY_FILTERS, status: filters.status })}>
-          Clear filters
-        </Button>
+          <Button variant="ghost" className="text-muted-foreground"
+            onClick={() => onChange({ ...EMPTY_FILTERS, status: filters.status })}>
+            Clear filters
+          </Button>
+        </div>
       </div>
 
       <Group label="Safety">
@@ -138,14 +140,14 @@ export function FilterBar({
       )}
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground w-16">Created</span>
+        <span className="w-full text-xs font-bold uppercase tracking-wider text-muted-foreground sm:w-16">Created</span>
         <input type="date" value={filters.createdFrom} aria-label="Created from"
           onChange={(e) => set('createdFrom', e.target.value)}
-          className="rounded-full border border-border bg-background px-3 py-2" />
+          className="min-w-0 grow basis-32 rounded-full border border-border bg-background px-3 py-2 sm:grow-0 sm:basis-auto" />
         <span className="text-muted-foreground">to</span>
         <input type="date" value={filters.createdTo} aria-label="Created to"
           onChange={(e) => set('createdTo', e.target.value)}
-          className="rounded-full border border-border bg-background px-3 py-2" />
+          className="min-w-0 grow basis-32 rounded-full border border-border bg-background px-3 py-2 sm:grow-0 sm:basis-auto" />
       </div>
     </div>
   );
