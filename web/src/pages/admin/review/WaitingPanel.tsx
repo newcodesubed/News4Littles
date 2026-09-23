@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Trash2 } from 'lucide-react';
 import { useAdminAuth } from '../../../admin/AdminAuthContext';
 import { ErrorState, LoadingState } from '../../../components/States';
 import { Button } from '../../../ui/Button';
 import { Select, TextInput } from '../../../ui/Field';
 import { Notice } from '../../../ui/Surface';
 import type { SimplifyJob, WaitingRawArticle } from '../../../admin/types';
+import { ConfirmDialog, type Confirmation } from '../dialogs';
 
 const POLL_MS = 2000;
 /** One request covers the realistic backlog; the API caps at 200 regardless. */
@@ -25,10 +26,11 @@ const STUB_LENGTH = 200;
  * leave four pieces of state meaning different things depending on the tab.
  */
 export function WaitingPanel({
-  sources, onSimplified,
+  sources, onBacklogChanged,
 }: {
   sources: { id: string; name: string }[];
-  onSimplified: () => Promise<void> | void;
+  /** After a simplify or delete, so the tab badges can be recounted. */
+  onBacklogChanged: () => Promise<void> | void;
 }) {
   const { adminFetch } = useAdminAuth();
 
@@ -41,6 +43,7 @@ export function WaitingPanel({
   const [job, setJob] = useState<SimplifyJob | null>(null);
   const [sourceId, setSourceId] = useState('');
   const [search, setSearch] = useState('');
+  const [confirming, setConfirming] = useState<Confirmation | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,7 +92,7 @@ export function WaitingPanel({
               (failed > 0 ? `, ${failed} could not be simplified and are still here.` : '.'),
           );
           await load();
-          await onSimplified();
+          await onBacklogChanged();
         } catch {
           // A dropped poll is retried on the next tick.
         }
@@ -97,7 +100,7 @@ export function WaitingPanel({
     }, POLL_MS);
 
     return () => clearInterval(timer);
-  }, [job?.running, adminFetch, load, onSimplified]);
+  }, [job?.running, adminFetch, load, onBacklogChanged]);
 
   async function simplify(ids: string[]) {
     setNotice(null);
@@ -115,6 +118,40 @@ export function WaitingPanel({
     } catch {
       setNotice('⚠ Could not reach the server. Check it is running, then try again.');
     }
+  }
+
+  async function dismiss(ids: string[]) {
+    setNotice(null);
+    try {
+      const res = await adminFetch('/api/admin/raw-articles/dismiss', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { dismissed?: number; error?: string };
+      if (!res.ok) {
+        setNotice(`⚠ ${body.error ?? 'Could not delete.'}`);
+        return;
+      }
+      setNotice(`${body.dismissed ?? 0} article(s) deleted.`);
+      await load();
+      await onBacklogChanged();
+    } catch {
+      setNotice('⚠ Could not reach the server. Check it is running, then try again.');
+    }
+  }
+
+  /** Always confirmed: nothing in the UI brings a deleted article back. */
+  function confirmDismiss(ids: string[]) {
+    const one = ids.length === 1;
+    setConfirming({
+      title: one ? 'Delete this article?' : `Delete ${ids.length} articles?`,
+      body: one
+        ? "It won't be simplified, and a later scrape won't bring it back."
+        : "They won't be simplified, and a later scrape won't bring them back.",
+      confirmLabel: one ? 'Delete' : `Delete ${ids.length}`,
+      tone: 'danger',
+      onConfirm: () => void dismiss(ids),
+    });
   }
 
   // Filtered in the browser: one page covers the backlog, and this keeps the
@@ -146,7 +183,8 @@ export function WaitingPanel({
 
       <p className="mt-3 max-w-prose text-sm text-muted-foreground">
         Stories a scrape stored but did not simplify. They cost nothing while they wait.
-        Simplifying one sends it to the model and puts it in Pending review.
+        Simplifying one sends it to the model and puts it in Pending review; deleting one
+        removes it for good.
       </p>
 
       {notice && <div className="mt-4"><Notice>{notice}</Notice></div>}
@@ -187,12 +225,20 @@ export function WaitingPanel({
                 >
                   <Sparkles className="w-3.5 h-3.5" /> Simplify {selected.size} selected
                 </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={selected.size === 0 || running}
+                  onClick={() => confirmDismiss([...selected])}
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete {selected.size} selected
+                </Button>
               </div>
             </div>
 
             {visible.length === 0 ? (
               <p className="rounded-3xl border border-border bg-card px-6 py-14 text-center text-muted-foreground">
-                Nothing is waiting. Every stored article has been simplified.
+                Nothing is waiting. Every stored article has been simplified or deleted.
               </p>
             ) : (
               <div className="space-y-3">
@@ -245,6 +291,14 @@ export function WaitingPanel({
                     >
                       <Sparkles className="w-3.5 h-3.5" /> Simplify
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={running}
+                      onClick={() => confirmDismiss([row.id])}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -252,6 +306,10 @@ export function WaitingPanel({
           </>
         )}
       </div>
+
+      {confirming && (
+        <ConfirmDialog confirmation={confirming} onCancel={() => setConfirming(null)} />
+      )}
     </div>
   );
 }

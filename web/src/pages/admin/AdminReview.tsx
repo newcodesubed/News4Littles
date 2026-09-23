@@ -199,7 +199,7 @@ export function AdminReview() {
       </div>
 
       {tab === 'waiting' ? (
-        <WaitingPanel sources={options?.sources ?? []} onSimplified={loadCounts} />
+        <WaitingPanel sources={options?.sources ?? []} onBacklogChanged={loadCounts} />
       ) : (
       <>
       <FilterBar filters={filters} options={options} onChange={setFilters} />
