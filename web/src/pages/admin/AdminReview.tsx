@@ -339,7 +339,7 @@ export function AdminReview() {
         <ViewArticleDialog
           story={viewing}
           onClose={() => setViewing(null)}
-          onEdit={() => openDialog(() => { setEditing(viewing.versions[0]); setViewing(null); })}
+          onEdit={(version) => openDialog(() => { setEditing(version); setViewing(null); })}
           onReject={() => openDialog(() => { setRejecting(viewing.versions[0]); setViewing(null); })}
           onPublish={() => {
             const { id } = viewing.versions[0];

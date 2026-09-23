@@ -443,6 +443,24 @@ describe('one row per story (§5)', () => {
     expect(screen.queryByText(/^Calm$/)).not.toBeInTheDocument();
   });
 
+  it('edits the reading group on screen in View, not always the youngest', async () => {
+    articles = [
+      article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, kidHeadline: 'Young headline' }),
+      article({ id: 'v8', originalId: 'raw-1', ageTarget: 8, kidHeadline: 'Middle headline' }),
+    ];
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Young headline' }));
+
+    const view = await screen.findByRole('dialog', { name: 'Read before deciding' });
+    await userEvent.click(within(view).getByRole('button', { name: /Ages 8/ }));
+    await userEvent.click(within(view).getByRole('button', { name: 'Edit' }));
+
+    const edit = await screen.findByRole('dialog', { name: 'Edit story' });
+    expect(within(edit).getByDisplayValue('Middle headline')).toBeInTheDocument();
+    await userEvent.click(within(edit).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(calls).toContain('PATCH /api/admin/articles/v8'));
+  });
+
   it('sends one version id when approving, and the server applies it to the story', async () => {
     articles = [
       article({ id: 'v5', originalId: 'raw-1', ageTarget: 5 }),
