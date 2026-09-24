@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
 import { errorIn, readError, useAdminAction } from '../../admin/useAdminAction';
 import { Notice } from '../../ui/Surface';
 import {
-  EMPTY_FILTERS, toQueryString,
+  EMPTY_FILTERS, toQueryString, viewFromParams, viewToParams,
   type AdminArticle, type AdminStory, type BulkResult, type Filters, type FilterOptions,
   type StatusCounts,
 } from '../../admin/types';
@@ -39,8 +40,20 @@ const BULK_DONE: Record<BulkAction, string> = {
 export function AdminReview() {
   const { adminFetch } = useAdminAuth();
 
-  const [tab, setTab] = useState<TabKey>('pending_review');
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  // The tab and filters live in the page address, not in state, so a refresh,
+  // Back, a shared link or signing in again all come back to the same view.
+  const [params, setParams] = useSearchParams();
+  const view = useMemo(() => viewFromParams(params), [params]);
+  const tab: TabKey = TABS.find((t) => t.key === view.tab)?.key ?? 'pending_review';
+  const filters = useMemo<Filters>(
+    // Only real statuses go into the article query; the backlog tab has none.
+    () => ({ ...view.filters, status: tab === 'waiting' ? EMPTY_FILTERS.status : tab }),
+    [view, tab],
+  );
+  // replace: typing in Search must not add a history entry per keystroke.
+  const showView = (nextTab: TabKey, nextFilters: Filters) =>
+    setParams(viewToParams(nextTab, nextFilters), { replace: true });
+  const setFilters = (next: Filters) => showView(tab, next);
   const [stories, setStories] = useState<AdminStory[]>([]);
   const [counts, setCounts] = useState<StatusCounts | null>(null);
   const [options, setOptions] = useState<FilterOptions | null>(null);
@@ -208,11 +221,7 @@ export function AdminReview() {
           return (
             <button
               key={t.key}
-              onClick={() => {
-                setTab(t.key);
-                // Only real statuses go into the article query.
-                if (t.key !== 'waiting') setFilters({ ...filters, status: t.key });
-              }}
+              onClick={() => showView(t.key, filters)}
               aria-current={active ? 'page' : undefined}
               className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition ${
                 active ? 'bg-primary text-primary-foreground' : 'text-foreground/70 hover:bg-muted'

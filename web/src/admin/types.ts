@@ -146,6 +146,47 @@ export const EMPTY_FILTERS: Filters = {
   order: 'desc',
 };
 
+/**
+ * The review page's view as the page address holds it, so a refresh, Back or
+ * a shared link keeps it. Readable and minimal: defaults are left out, and
+ * `status` is not stored because the tab decides it.
+ */
+export function viewToParams(tab: string, filters: Filters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (tab !== EMPTY_FILTERS.status) params.set('tab', tab);
+  for (const value of filters.categories) params.append('category', value);
+  for (const value of filters.sources) params.append('source', value);
+  for (const value of filters.ageTargets) params.append('ageTarget', value);
+  for (const value of filters.safety) params.append('safety', value);
+  if (filters.flagged) params.set('flagged', 'true');
+  if (filters.q) params.set('q', filters.q);
+  if (filters.createdFrom) params.set('createdFrom', filters.createdFrom);
+  if (filters.createdTo) params.set('createdTo', filters.createdTo);
+  if (filters.sort !== EMPTY_FILTERS.sort) params.set('sort', filters.sort);
+  if (filters.order !== EMPTY_FILTERS.order) params.set('order', filters.order);
+  return params;
+}
+
+/** The inverse of viewToParams; anything missing falls back to the default. */
+export function viewFromParams(params: URLSearchParams): { tab: string; filters: Filters } {
+  return {
+    tab: params.get('tab') ?? EMPTY_FILTERS.status,
+    filters: {
+      ...EMPTY_FILTERS,
+      categories: params.getAll('category'),
+      sources: params.getAll('source'),
+      ageTargets: params.getAll('ageTarget'),
+      safety: params.getAll('safety'),
+      flagged: params.get('flagged') === 'true',
+      q: params.get('q') ?? '',
+      createdFrom: params.get('createdFrom') ?? '',
+      createdTo: params.get('createdTo') ?? '',
+      sort: params.get('sort') ?? EMPTY_FILTERS.sort,
+      order: params.get('order') === 'asc' ? 'asc' : 'desc',
+    },
+  };
+}
+
 export function toQueryString(filters: Filters): string {
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);

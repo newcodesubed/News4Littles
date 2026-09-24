@@ -1,7 +1,7 @@
 /** Admin login, session handling and the route guard — PRD §4.1. */
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminAuthProvider, useAdminAuth } from '../admin/AdminAuthContext';
 import { AdminLogin } from '../pages/admin/AdminLogin';
@@ -13,7 +13,13 @@ const reply = (status: number) =>
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: status < 400, status, json: async () => ({}) }) as unknown as Response));
 
 function Protected() {
-  return <p>secret content</p>;
+  const location = useLocation();
+  return (
+    <>
+      <p>secret content</p>
+      <p data-testid="where">{location.pathname + location.search}</p>
+    </>
+  );
 }
 
 const renderApp = (initial = '/admin/review') =>
@@ -61,6 +67,16 @@ describe('sign in', () => {
 
     expect(await screen.findByText('secret content')).toBeInTheDocument();
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBe(btoa('admin:admin123'));
+  });
+
+  it('returns to the same filtered view, not just the same page', async () => {
+    reply(200);
+    renderApp('/admin/review?tab=published&q=reef');
+    await userEvent.type(screen.getByLabelText('Username'), 'admin');
+    await userEvent.type(screen.getByLabelText('Password'), 'admin123');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByTestId('where')).toHaveTextContent('/admin/review?tab=published&q=reef');
   });
 
   it('verifies the credential before storing it', async () => {
