@@ -52,8 +52,15 @@ function Segment({ article, index, age }: { article: KidArticle; index: number; 
 
   const label = audio.playing ? `Stop story ${index + 1}` : `Listen to story ${index + 1}`;
 
+  // The whole card warms up rather than the words highlighting: the audio carries no sentence timings.
   return (
-    <li className="bg-card rounded-2xl p-5 border border-border shadow-soft">
+    <li
+      className={`rounded-2xl p-5 border transition duration-300 ${
+        audio.playing
+          ? 'bg-surface-sun border-primary/40 shadow-pop scale-[1.015]'
+          : 'bg-card border-border shadow-soft'
+      }`}
+    >
       <div className="flex items-start gap-3">
         <button
           onClick={audio.playing || audio.loading ? audio.stop : audio.play}
@@ -72,7 +79,17 @@ function Segment({ article, index, age }: { article: KidArticle; index: number; 
         </button>
 
         <div className="min-w-0">
-          <div className="text-xs font-bold text-primary mb-1">Story {index + 1}</div>
+          <div className="mb-1 flex items-center gap-2 text-xs font-bold text-primary">
+            Story {index + 1}
+            {audio.playing && (
+              <span aria-hidden className="sound-bars">
+                <span />
+                <span />
+                <span />
+                <span />
+              </span>
+            )}
+          </div>
           <h3 className="font-display text-lg mb-2">{article.kidHeadline}</h3>
           <p className="text-sm text-foreground/70 leading-relaxed">{script}</p>
 

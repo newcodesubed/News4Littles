@@ -381,6 +381,14 @@ useStoryAudio             GET /api/articles/:id/audio
                               └── SpeechProvider ────▶  OpenRouter /audio/speech
 ```
 
+The story being read aloud lights up: the whole card warms to the sun surface,
+lifts on the pop shadow, and four little bars dance beside its number until the
+audio ends. A child reads a card that changed colour long before they read a
+glowing outline, and the bars are the part that says *sound*. It is a "this one
+is playing" mark, not a read-along — the audio carries no sentence timings, so
+nothing on screen can honestly point at the words being spoken. Under
+`prefers-reduced-motion` the bars hold a still, staggered shape.
+
 ### Swapping the voice provider
 
 `src/tts/types.ts` defines a `SpeechProvider`: text in, audio bytes out. It is
@@ -652,8 +660,8 @@ resemblance.
   file, so the big play button at the top of `/podcast` is still a placeholder.
 - **Read-along highlighting.** The old browser-voice player highlighted the
   sentence being spoken, because each sentence was its own utterance. One audio
-  file per story has no such boundaries; the highlight comes back once timings
-  are carried alongside the audio.
+  file per story has no such boundaries; the playing card glows instead, and the
+  highlight comes back once timings are carried alongside the audio.
 - **Multiple admin accounts / roles.** One shared account by design (§2.2).
 - **Translations, mobile apps.** Out of scope (§14).
 

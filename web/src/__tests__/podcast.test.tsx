@@ -110,4 +110,23 @@ describe('Podcast', () => {
 
     expect(await screen.findByText(/could not be read aloud/i)).toBeInTheDocument();
   });
+
+  it('lights up the story being read aloud, and settles once it ends', async () => {
+    mockFetch([article({ audioScript: 'One.' })]);
+    renderIn(<Podcast />);
+    await userEvent.click(await screen.findByRole('button', { name: /listen to story 1/i }));
+
+    const card = screen.getByRole('listitem');
+    // Loading is not playing: the card waits for the voice, not for the click.
+    expect(card).toHaveClass('bg-card');
+    expect(card.querySelector('.sound-bars')).toBeNull();
+
+    await act(async () => FakeAudio.last.onplaying?.());
+    expect(card).toHaveClass('bg-surface-sun', 'shadow-pop');
+    expect(card.querySelector('.sound-bars')).not.toBeNull();
+
+    await act(async () => FakeAudio.last.onended?.());
+    expect(card).toHaveClass('bg-card');
+    expect(card.querySelector('.sound-bars')).toBeNull();
+  });
 });
