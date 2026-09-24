@@ -176,6 +176,20 @@ describe('GET /api/admin/raw-articles', () => {
     expect(body.map((a: { id: string }) => a.id)).toContain('r1');
   });
 
+  it('adds an older article asked for by id, so "Open in sandbox" can select it', async () => {
+    seedWaiting('old', { fetchedAt: '2026-01-01T00:00:00.000Z' });
+    seedWaiting('new', { fetchedAt: '2026-09-09T00:00:00.000Z' });
+
+    const body = await (await ctx.api('/api/admin/raw-articles?limit=1&include=old')).json();
+    expect(body.map((a: { id: string }) => a.id)).toEqual(['new', 'old']);
+  });
+
+  it('does not list an included article twice', async () => {
+    seedWaiting('r1');
+    const body = await (await ctx.api('/api/admin/raw-articles?include=r1')).json();
+    expect(body.map((a: { id: string }) => a.id)).toEqual(['r1']);
+  });
+
   it('leaves dismissed articles out of the dropdown', async () => {
     seedWaiting('r1');
     seedWaiting('r2');

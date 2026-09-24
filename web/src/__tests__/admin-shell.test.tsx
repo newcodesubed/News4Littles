@@ -1,7 +1,7 @@
 /** Admin login, session handling and the route guard — PRD §4.1. */
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminAuthProvider, useAdminAuth } from '../admin/AdminAuthContext';
 import { AdminLogin } from '../pages/admin/AdminLogin';
@@ -13,7 +13,13 @@ const reply = (status: number) =>
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: status < 400, status, json: async () => ({}) }) as unknown as Response));
 
 function Protected() {
-  return <p>secret content</p>;
+  const location = useLocation();
+  return (
+    <>
+      <p>secret content</p>
+      <p data-testid="where">{location.pathname + location.search}</p>
+    </>
+  );
 }
 
 const renderApp = (initial = '/admin/review') =>
@@ -51,6 +57,29 @@ describe('route guard', () => {
   });
 });
 
+describe('running job in the header', () => {
+  const activeJob = (job: string | null) =>
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const body = String(url).includes('/api/admin/jobs/active') ? { job } : {};
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    }));
+
+  it('says when a scrape is running, on every admin page', async () => {
+    window.sessionStorage.setItem(STORAGE_KEY, btoa('admin:admin123'));
+    activeJob('scrape');
+    renderApp();
+    expect(await screen.findByText('Scraping…')).toBeInTheDocument();
+  });
+
+  it('shows nothing when no job is running', async () => {
+    window.sessionStorage.setItem(STORAGE_KEY, btoa('admin:admin123'));
+    activeJob(null);
+    renderApp();
+    await screen.findByText('secret content');
+    expect(screen.queryByText(/…$/)).not.toBeInTheDocument();
+  });
+});
+
 describe('sign in', () => {
   it('stores the credential and lands on the protected page', async () => {
     reply(200);
@@ -61,6 +90,16 @@ describe('sign in', () => {
 
     expect(await screen.findByText('secret content')).toBeInTheDocument();
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBe(btoa('admin:admin123'));
+  });
+
+  it('returns to the same filtered view, not just the same page', async () => {
+    reply(200);
+    renderApp('/admin/review?tab=published&q=reef');
+    await userEvent.type(screen.getByLabelText('Username'), 'admin');
+    await userEvent.type(screen.getByLabelText('Password'), 'admin123');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByTestId('where')).toHaveTextContent('/admin/review?tab=published&q=reef');
   });
 
   it('verifies the credential before storing it', async () => {

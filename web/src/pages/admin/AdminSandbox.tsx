@@ -71,13 +71,18 @@ export function AdminSandbox() {
   const [diffLeft, setDiffLeft] = useState('');
   const [diffRight, setDiffRight] = useState('');
 
+  // "Open in sandbox" may name an article older than the 40 most recent.
+  const linkedArticleId = params.get('articleId');
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [promptsRes, articlesRes, versionsRes] = await Promise.all([
         adminFetch('/api/admin/prompts'),
-        adminFetch('/api/admin/raw-articles?limit=40'),
+        adminFetch(`/api/admin/raw-articles?${new URLSearchParams({
+          limit: '40', ...(linkedArticleId ? { include: linkedArticleId } : {}),
+        }).toString()}`),
         adminFetch('/api/admin/prompts/versions'),
       ]);
       if (!promptsRes.ok) throw new Error('Could not load the prompts.');
@@ -90,7 +95,7 @@ export function AdminSandbox() {
     } finally {
       setLoading(false);
     }
-  }, [adminFetch]);
+  }, [adminFetch, linkedArticleId]);
 
   useEffect(() => { void load(); }, [load]);
 

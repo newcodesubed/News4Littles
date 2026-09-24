@@ -7,7 +7,7 @@
  */
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminAuthProvider } from '../admin/AdminAuthContext';
 import { AdminReview } from '../pages/admin/AdminReview';
@@ -100,8 +100,14 @@ function mockApi() {
 const lastListCall = () =>
   [...calls].reverse().find((c) => c.startsWith('GET /api/admin/stories?')) ?? '';
 
-const renderPage = () => render(
-  <MemoryRouter><AdminAuthProvider><AdminReview /></AdminAuthProvider></MemoryRouter>,
+/** Shows the page address, so a test can see what the URL holds. */
+function Where() {
+  const location = useLocation();
+  return <p data-testid="where">{location.search}</p>;
+}
+
+const renderPage = (path = '/admin/review') => render(
+  <MemoryRouter initialEntries={[path]}><AdminAuthProvider><AdminReview /><Where /></AdminAuthProvider></MemoryRouter>,
 );
 
 beforeEach(() => {
@@ -485,6 +491,38 @@ describe('reading one story after another in View', () => {
     const view = screen.getByRole('dialog', { name: 'Read before deciding' });
     expect(within(view).getByRole('heading', { name: 'Story two' })).toBeInTheDocument();
     expect(calls.some((c) => c.startsWith('PATCH'))).toBe(false);
+  });
+});
+
+describe('the view lives in the page address', () => {
+  it('opens on the tab and filters the address names', async () => {
+    renderPage('/admin/review?tab=published&source=bbc&q=reef');
+
+    await waitFor(() => {
+      const last = lastListCall();
+      expect(last).toContain('status=published');
+      expect(last).toContain('source=bbc');
+      expect(last).toContain('q=reef');
+    });
+    expect(screen.getByRole('button', { name: /^Published/ })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByLabelText('Search')).toHaveValue('reef');
+  });
+
+  it('writes the tab and filter changes back to the address', async () => {
+    renderPage();
+    await screen.findByText('A calm story');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Rejected/ }));
+    await userEvent.type(screen.getByLabelText('Search'), 'coral');
+
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('tab=rejected'));
+    expect(screen.getByTestId('where')).toHaveTextContent('q=coral');
+  });
+
+  it('keeps the default view out of the address', async () => {
+    renderPage();
+    await screen.findByText('A calm story');
+    expect(screen.getByTestId('where')).toBeEmptyDOMElement();
   });
 });
 

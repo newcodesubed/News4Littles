@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminAuthProvider } from '../admin/AdminAuthContext';
 import { AdminSubmit } from '../pages/admin/AdminSubmit';
 import { AdminSettings } from '../pages/admin/AdminSettings';
+import { ScrapeAllControls } from '../pages/admin/settings/ScrapeControls';
 
 let calls: { method: string; path: string; body: any }[] = [];
 
@@ -243,6 +244,25 @@ describe('saving — requirements 2, 4, 5', () => {
     expect(calls.some((c) => c.path === '/api/admin/articles')).toBe(false);
   });
 
+  it('links to the review queue once a story is sent for review', async () => {
+    renderIn(<AdminSubmit />);
+    await fillForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Send for review' }));
+
+    expect(await screen.findByRole('link', { name: /open the review queue/i }))
+      .toHaveAttribute('href', '/admin/review');
+  });
+
+  it('links to the Published tab once a story is published', async () => {
+    renderIn(<AdminSubmit />);
+    await fillForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Publish now' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Publish now' }));
+
+    expect(await screen.findByRole('link', { name: /open published stories/i }))
+      .toHaveAttribute('href', '/admin/review?tab=published');
+  });
+
   it('Publish now posts only after the dialog is confirmed', async () => {
     renderIn(<AdminSubmit />);
     await fillForm();
@@ -396,6 +416,29 @@ describe('settings — §8.5 prompts are clearly inert', () => {
       expect(put).toBeDefined();
       expect('versions' in put!.body).toBe(false);
     });
+  });
+});
+
+describe('settings — a finished scrape', () => {
+  it('links to where its articles went', () => {
+    renderIn(
+      <ScrapeAllControls
+        onRunAll={() => {}}
+        status={{
+          running: false,
+          lastRuns: {},
+          run: {
+            id: 'run1', startedAt: '2026-09-08T06:00:00.000Z', finishedAt: '2026-09-08T06:01:00.000Z',
+            sourceIds: ['bbc'], phase: 'simplifying', budget: 10, simplifiedCount: 2, results: [],
+            summary: { inserted: 5, simplified: 2, leftWaiting: 3, failed: 0, costUsd: 0 },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'the review queue' })).toHaveAttribute('href', '/admin/review');
+    expect(screen.getByRole('link', { name: 'Not yet simplified' }))
+      .toHaveAttribute('href', '/admin/review?tab=waiting');
   });
 });
 

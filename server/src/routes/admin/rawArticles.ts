@@ -33,18 +33,29 @@ export function createRawArticlesRouter(db: Database): Router {
     return { running: job?.running ?? false, job };
   };
 
-  /** §7.6: recent raw articles for the sandbox's test-article dropdown. */
+  /**
+   * §7.6: recent raw articles for the sandbox's test-article dropdown.
+   * `include=<id>` adds one older article, so "Open in sandbox" from a story
+   * past the recent ones still finds its article in the list.
+   */
   router.get('/raw-articles', (req, res) => {
     const limit = Math.min(Number(req.query.limit ?? 25) || 25, 100);
+    const include = typeof req.query.include === 'string' ? req.query.include : '';
     res.json(
       db
         .prepare(
-          `SELECT r.id, r.headline, r.sourceName, r.topic, r.publishedAt, r.fetchedAt,
+          `SELECT * FROM (
+             SELECT r.id, r.headline, r.sourceName, r.topic, r.publishedAt, r.fetchedAt,
+                    LENGTH(r.body) AS bodyLength
+             FROM raw_articles r WHERE r.dismissedAt IS NULL
+             ORDER BY r.fetchedAt DESC LIMIT @limit)
+           UNION
+           SELECT r.id, r.headline, r.sourceName, r.topic, r.publishedAt, r.fetchedAt,
                   LENGTH(r.body) AS bodyLength
-           FROM raw_articles r WHERE r.dismissedAt IS NULL
-           ORDER BY r.fetchedAt DESC LIMIT ?`,
+           FROM raw_articles r WHERE r.id = @include AND r.dismissedAt IS NULL
+           ORDER BY fetchedAt DESC`,
         )
-        .all(limit),
+        .all({ limit, include }),
     );
   });
 

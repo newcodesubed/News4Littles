@@ -65,6 +65,10 @@ function mockApi() {
     });
     if (path.startsWith('/api/admin/raw-articles')) return json([
       { id: 'r1', headline: 'Survey team documents a coral reef', sourceName: 'BBC News', topic: 'World', publishedAt: null, fetchedAt: '2026-09-09T10:00:00.000Z', bodyLength: 120 },
+      // Past the recent ones: the server adds it only when asked to include it.
+      ...(path.includes('include=old1')
+        ? [{ id: 'old1', headline: 'An older story about bees', sourceName: 'BBC News', topic: 'Science', publishedAt: null, fetchedAt: '2026-01-01T10:00:00.000Z', bodyLength: 300 }]
+        : []),
     ]);
     return json({});
   }));
@@ -479,6 +483,14 @@ describe('entry points (§7.2)', () => {
       const call = calls.find((c) => c.path.startsWith('/api/admin/prompts/test'));
       expect(call?.body).toMatchObject({ articleId: 'r1', age: 8 });
     });
+  });
+
+  it('finds an older article from the URL, not only the recent ones', async () => {
+    renderSandbox('/admin/sandbox?articleId=old1&age=8');
+    await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
+
+    expect(calls.some((c) => c.path.includes('/api/admin/raw-articles?') && c.path.includes('include=old1'))).toBe(true);
+    expect(screen.getByDisplayValue('An older story about bees')).toBeInTheDocument();
   });
 
   it('opens on the guard target when the URL says so', async () => {

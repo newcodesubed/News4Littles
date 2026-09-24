@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Sparkles, Trash2 } from 'lucide-react';
 import { useAdminAuth } from '../../../admin/AdminAuthContext';
 import { ErrorState, LoadingState } from '../../../components/States';
@@ -38,7 +39,8 @@ export function WaitingPanel({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // ReactNode, so a finished batch can link to where its stories went.
+  const [notice, setNotice] = useState<ReactNode>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [job, setJob] = useState<SimplifyJob | null>(null);
   const [sourceId, setSourceId] = useState('');
@@ -103,8 +105,13 @@ export function WaitingPanel({
           const done = body.job.report.simplified.length;
           const failed = body.job.report.failures.length;
           setNotice(
-            `${done} article(s) simplified and waiting in Pending review` +
-              (failed > 0 ? `, ${failed} could not be simplified and are still here.` : '.'),
+            <>
+              {`${done} article(s) simplified and waiting in Pending review` +
+                (failed > 0 ? `, ${failed} could not be simplified and are still here.` : '.')}
+              {done > 0 && (
+                <>{' '}<Link to="/admin/review" className="underline">Open Pending review</Link></>
+              )}
+            </>,
           );
           await load();
           await onBacklogChanged();
