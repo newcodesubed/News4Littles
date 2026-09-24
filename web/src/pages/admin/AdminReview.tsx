@@ -53,7 +53,10 @@ export function AdminReview() {
   const [rejecting, setRejecting] = useState<AdminArticle | null>(null);
   const [bulkRejecting, setBulkRejecting] = useState(false);
   const [editing, setEditing] = useState<AdminArticle | null>(null);
-  const [viewing, setViewing] = useState<AdminStory | null>(null);
+  /** By id, not a copy, so View shows the story as the latest refresh has it. */
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  /** A reject started from View: where Cancel returns, and what to show after. */
+  const [rejectFromView, setRejectFromView] = useState<{ back: string; next: string | null } | null>(null);
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
   /** Which row is mid-action, so its button can show a spinner. */
   const [pending, setPending] = useState<{ id: string; action: PendingAction } | null>(null);
@@ -168,6 +171,12 @@ export function AdminReview() {
    */
   const openDialog = (open: () => void) => { setNotice(null); open(); };
   const dialogError = errorIn(notice);
+
+  // "Next" follows the list on screen: this tab, these filters, this order.
+  const viewIndex = stories.findIndex((story) => story.originalId === viewingId);
+  const viewing = viewIndex >= 0 ? stories[viewIndex]! : null;
+  const previousId = viewIndex > 0 ? stories[viewIndex - 1]!.originalId : null;
+  const nextId = viewIndex >= 0 ? stories[viewIndex + 1]?.originalId ?? null : null;
 
   const toggleSelected = (id: string, isSelected: boolean) =>
     setSelected((current) => {
@@ -300,7 +309,7 @@ export function AdminReview() {
                           : null
                       }
                       actions={{
-                        onView: () => setViewing(story),
+                        onView: () => openDialog(() => setViewingId(story.originalId)),
                         onPublish: () => void runRowAction(id, 'publish',
                           `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published every reading group.'),
                         onReject: () => openDialog(() => setRejecting(story.versions[0])),
@@ -342,14 +351,27 @@ export function AdminReview() {
 
       {viewing && (
         <ViewArticleDialog
+          // Keyed so each story opens on its own youngest version.
+          key={viewing.originalId}
           story={viewing}
-          onClose={() => setViewing(null)}
-          onEdit={(version) => openDialog(() => { setEditing(version); setViewing(null); })}
-          onReject={() => openDialog(() => { setRejecting(viewing.versions[0]); setViewing(null); })}
-          onPublish={() => {
+          position={{ index: viewIndex, total: stories.length }}
+          busy={pending !== null}
+          error={dialogError}
+          onClose={() => setViewingId(null)}
+          onPrevious={previousId ? () => setViewingId(previousId) : undefined}
+          onNext={nextId ? () => setViewingId(nextId) : undefined}
+          onEdit={(version) => openDialog(() => { setEditing(version); setViewingId(null); })}
+          onReject={(andNext) => openDialog(() => {
+            setRejecting(viewing.versions[0]);
+            setRejectFromView({ back: viewing.originalId, next: andNext ? nextId : null });
+            setViewingId(null);
+          })}
+          onPublish={async (andNext) => {
             const { id } = viewing.versions[0];
-            setViewing(null);
-            void runRowAction(id, 'publish', `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published.');
+            if (!andNext) setViewingId(null);
+            const ok = await runRowAction(id, 'publish', `/api/admin/articles/${id}/publish`, { method: 'PATCH' }, 'Published.');
+            // On failure the dialog stays on this story and shows the error.
+            if (andNext && ok) setViewingId(nextId);
           }}
         />
       )}
@@ -362,12 +384,19 @@ export function AdminReview() {
         <RejectDialog
           article={rejecting}
           error={dialogError}
-          onCancel={() => setRejecting(null)}
+          onCancel={() => {
+            setRejecting(null);
+            if (rejectFromView) setViewingId(rejectFromView.back);
+            setRejectFromView(null);
+          }}
           onConfirm={async (reason) => {
             const { id } = rejecting;
             const ok = await runRowAction(id, 'reject', `/api/admin/articles/${id}/reject`,
               { method: 'PATCH', body: JSON.stringify({ reason }) }, 'Rejected.');
-            if (ok) setRejecting(null);
+            if (!ok) return;
+            setRejecting(null);
+            if (rejectFromView?.next) setViewingId(rejectFromView.next);
+            setRejectFromView(null);
           }}
         />
       )}

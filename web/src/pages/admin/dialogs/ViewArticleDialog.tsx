@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ExternalLink, Headphones } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight, ExternalLink, Headphones } from 'lucide-react';
 import { StoryPreview } from '../../../components/StoryPreview';
 import { Button } from '../../../ui/Button';
 import { Notice } from '../../../ui/Surface';
@@ -22,17 +22,31 @@ const STATUS_LABEL: Record<string, string> = {
  */
 export function ViewArticleDialog({
   story,
+  position,
+  busy = false,
+  error = null,
   onClose,
   onEdit,
   onPublish,
   onReject,
+  onPrevious,
+  onNext,
 }: {
   story: AdminStory;
+  /** Where the story sits in the queue on screen, zero-based. */
+  position?: { index: number; total: number };
+  /** An action on this story is in flight. */
+  busy?: boolean;
+  error?: string | null;
   onClose: () => void;
   /** Given the version on screen: edits are per version, unlike publish. */
   onEdit: (version: AdminArticle) => void;
-  onPublish: () => void;
-  onReject: () => void;
+  /** `andNext` asks to show the next story afterwards instead of closing. */
+  onPublish: (andNext: boolean) => void;
+  onReject: (andNext: boolean) => void;
+  /** Absent at either end of the list. */
+  onPrevious?: () => void;
+  onNext?: () => void;
 }) {
   // Opens on the youngest version: it is the strictest reading level and the
   // one most likely to need a second look.
@@ -40,8 +54,37 @@ export function ViewArticleDialog({
   const version =
     story.versions.find((candidate) => candidate.ageTarget === ageTarget) ?? story.versions[0];
 
+  // ← and → move through the list without acting on anything. Publish and
+  // Reject stay click-only: a stray key must never put a story live.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key === 'ArrowRight') onNext?.();
+      if (event.key === 'ArrowLeft') onPrevious?.();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onNext, onPrevious]);
+
+  const publishLabel = story.versions.length > 1 ? `Publish all ${story.versions.length}` : 'Publish';
+
   return (
     <Modal title="Read before deciding" onClose={onClose} wide>
+      {position && position.total > 1 && (
+        <div className="mb-4 flex items-center justify-between gap-2 text-sm">
+          <Button variant="ghost" size="sm" onClick={onPrevious} disabled={!onPrevious}
+            aria-label="Previous story">
+            <ChevronLeft className="w-4 h-4" /> Previous
+          </Button>
+          <span className="font-bold text-muted-foreground">
+            Story {position.index + 1} of {position.total}
+          </span>
+          <Button variant="ghost" size="sm" onClick={onNext} disabled={!onNext} aria-label="Next story">
+            Next <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
       {/* §2.2 promises a human read every word a child sees. One Publish
           button covers every reading group, so every group has to be readable
           here. */}
@@ -115,16 +158,34 @@ export function ViewArticleDialog({
         </a>
       </div>
 
+      {error && <p role="alert" className="mt-5 text-sm font-bold text-destructive">{error}</p>}
+
+      {/* "& next" only when there is a next story; on the last one the plain
+          buttons already close the dialog. */}
       <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-border pt-5">
         <Button variant="ghost" size="lg" onClick={onClose}>Close</Button>
-        <Button variant="outline" size="lg" onClick={() => onEdit(version)}>Edit</Button>
+        <Button variant="outline" size="lg" onClick={() => onEdit(version)} disabled={busy}>Edit</Button>
         {version.status !== 'rejected' && (
-          <Button variant="outline" size="lg" onClick={onReject}>Reject</Button>
+          <>
+            <Button variant="outline" size="lg" onClick={() => onReject(false)} disabled={busy}>Reject</Button>
+            {onNext && (
+              <Button variant="outline" size="lg" onClick={() => onReject(true)} disabled={busy}>
+                Reject &amp; next
+              </Button>
+            )}
+          </>
         )}
         {version.status !== 'published' && (
-          <Button size="lg" onClick={onPublish}>
-            {story.versions.length > 1 ? `Publish all ${story.versions.length}` : 'Publish'}
-          </Button>
+          <>
+            <Button variant={onNext ? 'outline' : 'primary'} size="lg" onClick={() => onPublish(false)} disabled={busy}>
+              {publishLabel}
+            </Button>
+            {onNext && (
+              <Button size="lg" onClick={() => onPublish(true)} disabled={busy}>
+                {publishLabel} &amp; next
+              </Button>
+            )}
+          </>
         )}
       </div>
     </Modal>
