@@ -322,6 +322,62 @@ describe('reading every reading-group version before approving (§5)', () => {
     expect(screen.queryByText('Headline for fives')).not.toBeInTheDocument();
   });
 
+  describe('moving through the list', () => {
+    const handlers = () => ({
+      onPrevious: vi.fn(), onNext: vi.fn(), onPublish: vi.fn(), onReject: vi.fn(),
+    });
+    const openInList = (h: ReturnType<typeof handlers>, nav: Partial<ReturnType<typeof handlers>> = h) =>
+      render(
+        <ViewArticleDialog
+          story={story}
+          position={{ index: 1, total: 3 }}
+          onClose={() => {}}
+          onEdit={() => {}}
+          onPublish={h.onPublish}
+          onReject={h.onReject}
+          onPrevious={nav.onPrevious}
+          onNext={nav.onNext}
+        />,
+      );
+
+    it('says where the story sits in the list', () => {
+      openInList(handlers());
+      expect(screen.getByText('Story 2 of 3')).toBeInTheDocument();
+    });
+
+    it('moves with the arrow keys and the buttons, without acting on the story', async () => {
+      const h = handlers();
+      openInList(h);
+
+      await userEvent.keyboard('{ArrowRight}');
+      await userEvent.keyboard('{ArrowLeft}');
+      await userEvent.click(screen.getByRole('button', { name: /next story/i }));
+
+      expect(h.onNext).toHaveBeenCalledTimes(2);
+      expect(h.onPrevious).toHaveBeenCalledTimes(1);
+      expect(h.onPublish).not.toHaveBeenCalled();
+      expect(h.onReject).not.toHaveBeenCalled();
+    });
+
+    it('publishes or rejects and moves on, when asked to', async () => {
+      const h = handlers();
+      openInList(h);
+
+      await userEvent.click(screen.getByRole('button', { name: /publish all 3 & next/i }));
+      await userEvent.click(screen.getByRole('button', { name: 'Reject & next' }));
+
+      expect(h.onPublish).toHaveBeenCalledWith(true);
+      expect(h.onReject).toHaveBeenCalledWith(true);
+    });
+
+    it('offers no "& next" on the last story', () => {
+      const h = handlers();
+      openInList(h, { onPrevious: h.onPrevious });
+      expect(screen.queryByRole('button', { name: /& next/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /publish all 3$/i })).toBeInTheDocument();
+    });
+  });
+
   it('says how many versions Publish will approve', () => {
     open();
     expect(screen.getByRole('button', { name: /publish all 3/i })).toBeInTheDocument();

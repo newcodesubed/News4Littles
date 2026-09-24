@@ -430,6 +430,64 @@ describe('refreshing after an action', () => {
   });
 });
 
+describe('reading one story after another in View', () => {
+  beforeEach(() => {
+    articles = [
+      article({ id: 's1', kidHeadline: 'Story one' }),
+      article({ id: 's2', kidHeadline: 'Story two' }),
+    ];
+  });
+
+  const openFirst = async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Story one' }));
+    return screen.findByRole('dialog', { name: 'Read before deciding' });
+  };
+
+  it('publishes and shows the next story in the same dialog', async () => {
+    const view = await openFirst();
+    expect(within(view).getByText('Story 1 of 2')).toBeInTheDocument();
+
+    await userEvent.click(within(view).getByRole('button', { name: 'Publish & next' }));
+
+    await waitFor(() => expect(calls).toContain('PATCH /api/admin/articles/s1/publish'));
+    const next = await screen.findByRole('dialog', { name: 'Read before deciding' });
+    await waitFor(() => expect(within(next).getByRole('heading', { name: 'Story two' })).toBeInTheDocument());
+  });
+
+  it('rejects with a reason, then shows the next story', async () => {
+    const view = await openFirst();
+    await userEvent.click(within(view).getByRole('button', { name: 'Reject & next' }));
+
+    const reject = await screen.findByRole('dialog', { name: 'Reject this story' });
+    await userEvent.type(within(reject).getByLabelText(/Reason \(optional\)/), 'Not kid news');
+    await userEvent.click(within(reject).getByRole('button', { name: 'Reject' }));
+
+    await waitFor(() => expect(calls).toContain('PATCH /api/admin/articles/s1/reject'));
+    const next = await screen.findByRole('dialog', { name: 'Read before deciding' });
+    await waitFor(() => expect(within(next).getByRole('heading', { name: 'Story two' })).toBeInTheDocument());
+  });
+
+  it('goes back to the same story when the reject is cancelled', async () => {
+    const view = await openFirst();
+    await userEvent.click(within(view).getByRole('button', { name: 'Reject & next' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Reject this story' }))
+      .getByRole('button', { name: 'Cancel' }));
+
+    const back = await screen.findByRole('dialog', { name: 'Read before deciding' });
+    expect(within(back).getByRole('heading', { name: 'Story one' })).toBeInTheDocument();
+  });
+
+  it('moves to the next story with the arrow key, changing nothing', async () => {
+    await openFirst();
+    await userEvent.keyboard('{ArrowRight}');
+
+    const view = screen.getByRole('dialog', { name: 'Read before deciding' });
+    expect(within(view).getByRole('heading', { name: 'Story two' })).toBeInTheDocument();
+    expect(calls.some((c) => c.startsWith('PATCH'))).toBe(false);
+  });
+});
+
 describe('auth', () => {
   it('sends the Basic credential on every admin call', async () => {
     renderPage();
