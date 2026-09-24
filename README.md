@@ -531,7 +531,7 @@ been edited since it was seeded (see `src/db/refreshSeededPrompts.ts`).
 | `guard_config`                      | Deny-list and the safety-guard prompt                     |
 | `translation_prompt_config`         | Live simplification prompts                               |
 | `prompt_drafts` / `prompt_versions` | Sandbox drafts and promotion history                      |
-| `app_settings`                      | Default reading age, scrape times, simplification budget, LLM provider |
+| `app_settings`                      | Default reading age, scrape times, simplification budget  |
 | `admin_users`                       | The single admin account (bcrypt)                         |
 | `scrape_runs`                       | What each scrape stored, simplified, versioned and left raw |
 
