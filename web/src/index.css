@@ -75,6 +75,16 @@
   }
 }
 
+@keyframes sound-bar {
+  0%,
+  to {
+    height: 35%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+
 /* The prototype's .container: fixed max-width with 1.25rem gutters. */
 @utility container {
   width: 100%;
@@ -103,6 +113,48 @@
 
 @utility bg-gradient-sun {
   background: linear-gradient(135deg, hsl(45 95% 80%), hsl(14 88% 75%));
+}
+
+/* Bars that dance while a story plays: the motion belongs to the sound, not to the card. */
+@utility sound-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 0.875rem;
+
+  & > span {
+    width: 3px;
+    border-radius: 999px;
+    background: var(--color-primary);
+    animation: sound-bar 0.9s ease-in-out infinite;
+  }
+
+  & > span:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+
+  & > span:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+
+  & > span:nth-child(4) {
+    animation-delay: 0.54s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sound-bars > span {
+    animation: none;
+    height: 55%;
+  }
+
+  .sound-bars > span:nth-child(2) {
+    height: 100%;
+  }
+
+  .sound-bars > span:nth-child(4) {
+    height: 80%;
+  }
 }
 
 @layer base {
