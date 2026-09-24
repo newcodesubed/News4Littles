@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Loader2, Sparkles } from 'lucide-react';
 import { CategoryBadge, CATEGORIES, SafetyBadge } from '../../components/Badges';
 import { ConfirmDialog, type Confirmation } from './dialogs';
@@ -42,7 +43,8 @@ export function AdminSubmit() {
   const [busy, setBusy] = useState(false);
   /** Which save is in flight, so only the pressed button says it is working. */
   const [saving, setSaving] = useState<'pending_review' | 'published' | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // ReactNode, so a saved story can link to where it went.
+  const [notice, setNotice] = useState<ReactNode>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<Confirmation | null>(null);
 
@@ -97,9 +99,13 @@ export function AdminSubmit() {
       if (!res.ok) throw new Error(body.error ?? 'Could not save.');
 
       setNotice(
-        status === 'published'
-          ? 'Published — it is live on the site now.'
-          : 'Sent to the review queue as pending review.',
+        status === 'published' ? (
+          <>Published — it is live on the site now.{' '}
+            <Link to="/admin/review?tab=published" className="underline">Open published stories</Link></>
+        ) : (
+          <>Sent to the review queue as pending review.{' '}
+            <Link to="/admin/review" className="underline">Open the review queue</Link></>
+        ),
       );
       setForm({ headline: '', sourceName: '', sourceUrl: '', body: '', category: 'World', ageTarget: form.ageTarget });
       setPreview(null);

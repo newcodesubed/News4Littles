@@ -238,6 +238,20 @@ describe('the waiting tab', () => {
     expect(screen.getByRole('button', { name: /^simplify$/i })).toBeDisabled();
   });
 
+  it('links to Pending review once a batch finishes', async () => {
+    const user = userEvent.setup();
+    view();
+    await openTab(user);
+    await user.click(screen.getByRole('button', { name: /^simplify$/i }));
+    jobRunning = false;
+    waiting = [];
+
+    const link = await screen.findByRole('link', { name: /open pending review/i }, { timeout: 4000 });
+    await user.click(link);
+
+    expect(screen.getByRole('button', { name: /^Pending review/ })).toHaveAttribute('aria-current', 'page');
+  });
+
   it('never sends status=waiting to the article query', async () => {
     // 'waiting' is not a kid_articles status; the API rejects it with a 400.
     const user = userEvent.setup();

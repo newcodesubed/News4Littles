@@ -1,4 +1,5 @@
 import { Play } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '../../../ui/Button';
 import { Notice } from '../../../ui/Surface';
 import type { ScrapeRun, ScrapeStatus } from './types';
@@ -100,8 +101,12 @@ export function ScrapeAllControls({
             {run.summary.leftWaiting > 0 && `, ${run.summary.leftWaiting} left raw`}
             {run.summary.failed > 0 && `, ${run.summary.failed} source(s) failed`}
             {run.summary.costUsd > 0 && ` · $${run.summary.costUsd.toFixed(5)}`}
-            . Simplified articles are waiting in the review queue
-            {run.summary.leftWaiting > 0 && '; the rest are under “Not yet simplified”'}.
+            . Simplified articles are waiting in{' '}
+            <Link to="/admin/review" className="underline">the review queue</Link>
+            {run.summary.leftWaiting > 0 && (
+              <>; the rest are under{' '}
+                <Link to="/admin/review?tab=waiting" className="underline">Not yet simplified</Link></>
+            )}.
           </Notice>
         </div>
       )}
