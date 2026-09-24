@@ -6,10 +6,7 @@ import { Notice, Section } from '../../../ui/Surface';
 import { AGE_BANDS, ageBandLabel } from '../../../lib/ageBands';
 import type { PromptConfig, Save } from './types';
 
-/**
- * §8.5 prompt editor. Stored only — the local rule-based simplifier never reads
- * these, so nothing here changes output until LLM simplification exists.
- */
+/** §8.5 prompt editor. The simplify pipeline sends these whenever an LLM is configured. */
 export function PromptsSection({ config, save }: { config: PromptConfig; save: Save }) {
   const [draft, setDraft] = useState(config);
   // Overrides are per reading group, keyed by the group's youngest age.
@@ -21,15 +18,17 @@ export function PromptsSection({ config, save }: { config: PromptConfig; save: S
   return (
     <Section
       title="Translation prompts"
-      blurb="Instructions sent to an LLM when one is configured. Saved here, but they change nothing today — the local rule-based simplifier does not read them."
+      blurb="Instructions sent to the LLM each time a story is rewritten. The rule-based fallback does not read them."
       className="mb-6"
     >
-      <div className="mb-4">
-        <Notice tone="warn">
-          No LLM is wired up yet. These prompts are stored for later and have no effect on output
-          until LLM simplification is built.
-        </Notice>
-      </div>
+      {config.inertUntilLlm && (
+        <div className="mb-4">
+          <Notice tone="warn">
+            No LLM is configured, so these prompts change nothing today. Set OPENROUTER_KEY to
+            switch simplification on.
+          </Notice>
+        </div>
+      )}
 
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-bold">Generic prompt</span>

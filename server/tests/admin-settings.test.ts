@@ -111,7 +111,7 @@ describe('guard config (§6)', () => {
 });
 
 describe('translation prompts (§8.5)', () => {
-  it('returns prompts and flags them as inert', async () => {
+  it('returns prompts and flags them inert while no LLM is configured', async () => {
     const config = await json('/api/admin/prompt-config');
     expect(typeof config.genericPrompt).toBe('string');
     expect(config.inertUntilLlm).toBe(true);

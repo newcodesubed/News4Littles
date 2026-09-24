@@ -1,12 +1,13 @@
 /**
  * Guardrails, translation prompts and app settings — PRD §4.4, §6, §8.5, §8.7.
  *
- * NO LLM calls. The prompt fields are stored and returned, but nothing reads
- * them until §9.1 exists.
+ * No LLM calls happen here. The prompts are stored; the simplify pipeline (§9.1)
+ * is what reads them.
  */
 import { Router } from 'express';
 import type { Database } from 'better-sqlite3';
 import { BadRequestError } from '../../core/errors.js';
+import { LLM_ENABLED } from '../../env.js';
 import { AGE_BAND_ANCHORS, isAgeBandAnchor } from '../../core/article.js';
 import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
 import {
@@ -79,9 +80,10 @@ export function createSettingsRouter(db: Database): Router {
     res.json({ denyList, count: denyList.length });
   });
 
-  // ─── §8.5 translation prompts (inert until §9.1) ────────────────────────
+  // ─── §8.5 translation prompts ───────────────────────────────────────────
   router.get('/prompt-config', (_req, res) => {
-    res.json({ ...settings.getPromptConfig(), inertUntilLlm: true });
+    // Asked of the environment, not hardcoded: with a key the pipeline really does read these.
+    res.json({ ...settings.getPromptConfig(), inertUntilLlm: !LLM_ENABLED });
   });
 
   router.put('/prompt-config', (req, res) => {

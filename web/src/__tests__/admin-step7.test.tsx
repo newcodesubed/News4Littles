@@ -61,7 +61,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
       { id: 'manual', name: 'Manual submission', url: '', enabled: false, trustLevel: 'high', parser: null, lastFetchedAt: null, lastFetchedItemPublishedAt: null, articleCount: 3 },
     ]);
     if (path.includes('/guard-config')) return json({ denyList: ['war', 'killed'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '', ...overrides });
-    if (path.includes('/prompt-config')) return json({ genericPrompt: 'The generic prompt', ageOverrides: { '5': 'Ages 5 to 7' }, versions: {}, inertUntilLlm: true });
+    if (path.includes('/prompt-config')) return json({ genericPrompt: 'The generic prompt', ageOverrides: { '5': 'Ages 5 to 7' }, versions: {}, inertUntilLlm: true, ...overrides });
     if (path.includes('/app-settings')) return json({ defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 10, apiKeyLocation: 'environment variable only (never stored in the database)' });
     return json({});
   }));
@@ -369,9 +369,17 @@ describe('settings — §6 guardrails', () => {
 });
 
 describe('settings — §8.5 prompts are clearly inert', () => {
-  it('warns that prompts do nothing without an LLM', async () => {
+  it('warns that prompts do nothing when no LLM is configured', async () => {
     renderIn(<AdminSettings />);
-    expect(await screen.findByText(/No LLM is wired up yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/No LLM is configured/)).toBeInTheDocument();
+  });
+
+  it('drops the warning once the server reports an LLM', async () => {
+    // The prompts really are sent once a key exists, so the warning would be a lie.
+    mockApi({ inertUntilLlm: false });
+    renderIn(<AdminSettings />);
+    await screen.findByLabelText('Generic prompt');
+    expect(screen.queryByText(/No LLM is configured/)).not.toBeInTheDocument();
   });
 
   it('shows version counters as read-only', async () => {
@@ -381,7 +389,7 @@ describe('settings — §8.5 prompts are clearly inert', () => {
 
   it('saving prompts omits versions', async () => {
     renderIn(<AdminSettings />);
-    await screen.findByText(/No LLM is wired up yet/);
+    await screen.findByLabelText('Generic prompt');
     await userEvent.click(screen.getByRole('button', { name: 'Save prompts' }));
     await waitFor(() => {
       const put = calls.find((c) => c.method === 'PUT' && c.path === '/api/admin/prompt-config');
@@ -411,7 +419,6 @@ describe('settings — §8.7 app settings', () => {
     // A select of bands, not a number: the stored value is a band anchor.
     expect(await screen.findByLabelText('Default reading group')).toHaveValue('5');
     expect(screen.getByText('06:00')).toBeInTheDocument();
-    expect(screen.getByLabelText('LLM provider')).toHaveValue('');
   });
 
   it('states the API key is never stored in the database', async () => {

@@ -9,7 +9,7 @@ import type { AppSettings, Save } from './types';
 /** One model call per reading group, so this is the multiplier on the budget. */
 const GROUP_COUNT = AGE_BANDS.length;
 
-/** §8.7 app settings: reading age, scrape times, LLM provider. */
+/** §8.7 app settings: default reading group, simplify budget, scrape times. */
 export function AppSettingsSection({ settings, save }: { settings: AppSettings; save: Save }) {
   const [draft, setDraft] = useState(settings);
   const [newTime, setNewTime] = useState('');
@@ -83,20 +83,7 @@ export function AppSettingsSection({ settings, save }: { settings: AppSettings; 
         </Button>
       </div>
 
-      <label className="mt-5 block max-w-xs">
-        <span className="text-sm font-bold">LLM provider</span>
-        <Select value={draft.llmProvider ?? ''}
-          onChange={(e) => setDraft({ ...draft, llmProvider: e.target.value || null })}>
-          <option value="">none (local fallback)</option>
-          <option value="openai">openai</option>
-          <option value="anthropic">anthropic</option>
-        </Select>
-      </label>
-
-      <p className="mt-2 text-xs text-muted-foreground">
-        API key: {settings.apiKeyLocation}. Setting a provider here does not enable LLM
-        simplification — that integration does not exist yet.
-      </p>
+      <p className="mt-5 text-xs text-muted-foreground">API key: {settings.apiKeyLocation}.</p>
 
       <Button
         size="lg"

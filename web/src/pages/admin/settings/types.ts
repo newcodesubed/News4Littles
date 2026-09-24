@@ -21,11 +21,14 @@ export interface PromptConfig {
   genericPrompt: string;
   ageOverrides: Record<string, string>;
   versions: Record<string, number>;
+  /** True while no LLM is configured, when these prompts really do change nothing. */
+  inertUntilLlm: boolean;
 }
 
 export interface AppSettings {
   defaultAge: number;
   scrapeTimes: string[];
+  /** Stored and round-tripped only; the provider comes from the environment. */
   llmProvider: string | null;
   apiKeyLocation: string;
   /** How many stored articles one scrape run may simplify. 0 disables it. */
