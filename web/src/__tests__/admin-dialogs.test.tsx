@@ -30,6 +30,13 @@ describe('Modal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('closes on Escape', async () => {
+    const onClose = vi.fn();
+    render(<Modal title="T" onClose={onClose}>body</Modal>);
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('closes when the backdrop is clicked, but not the panel', async () => {
     const onClose = vi.fn();
     render(<Modal title="T" onClose={onClose}><p>inner</p></Modal>);
@@ -238,6 +245,12 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
     const fell = { ...version(5), fallbackReason: 'upstream exploded' };
     open(job([fell]));
     expect(screen.getByText(/rule-based pipeline: upstream exploded/)).toBeInTheDocument();
+  });
+
+  it('ignores Escape too, for the same reason', async () => {
+    const { onDiscard } = open(job([version(5)]));
+    await userEvent.keyboard('{Escape}');
+    expect(onDiscard).not.toHaveBeenCalled();
   });
 
   it('ignores a stray click outside, which would otherwise throw a paid preview away', async () => {

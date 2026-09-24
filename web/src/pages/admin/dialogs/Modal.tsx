@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 /**
- * Without `onClose` the dialog has no X and ignores backdrop clicks, for one
- * whose only ways out are its own buttons.
+ * Without `onClose` the dialog has no X and ignores backdrop clicks and
+ * Escape, for one whose only ways out are its own buttons.
  */
 export function Modal({
   title,
@@ -16,6 +16,13 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/40 p-4 py-10"
