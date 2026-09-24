@@ -29,6 +29,44 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
       : 'text-foreground/70 hover:text-foreground hover:bg-muted'
   }`;
 
+const JOB_LABEL: Record<string, string> = {
+  scrape: 'Scraping…',
+  simplify: 'Simplifying…',
+  regenerate: 'Regenerating…',
+};
+
+/**
+ * The background job the server is running, if any. Only one runs at a time,
+ * so without this an editor learns of it only when a click meets "already
+ * running".
+ */
+function RunningJob() {
+  const { adminFetch } = useAdminAuth();
+  const [job, setJob] = useState<string | null>(null);
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await adminFetch('/api/admin/jobs/active');
+        if (res.ok) setJob(((await res.json()) as { job: string | null }).job ?? null);
+      } catch {
+        // Only a hint; the page works without it.
+      }
+    };
+    void check();
+    const timer = setInterval(() => void check(), 5000);
+    return () => clearInterval(timer);
+  }, [adminFetch]);
+
+  const label = job ? JOB_LABEL[job] : undefined;
+  if (!label) return null;
+  return (
+    <span role="status" className="rounded-full bg-surface-sun px-3 py-1 text-xs font-bold text-amber-800">
+      {label}
+    </span>
+  );
+}
+
 export function AdminChrome() {
   const { signOut } = useAdminAuth();
   const { pathname } = useLocation();
@@ -58,6 +96,7 @@ export function AdminChrome() {
           </nav>
 
           <div className="hidden md:flex items-center gap-2">
+            <RunningJob />
             <Link
               to="/"
               className="px-3 py-2 rounded-full text-sm font-semibold text-foreground/70 hover:bg-muted"

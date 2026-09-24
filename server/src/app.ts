@@ -17,6 +17,7 @@ import { logger as defaultLogger, type Logger } from './logger.js';
 import { createArticleActionsRouter } from './routes/admin/articleActions.js';
 import { createArticleBulkRouter } from './routes/admin/articleBulk.js';
 import { createArticleQueueRouter } from './routes/admin/articleQueue.js';
+import { createJobsRouter } from './routes/admin/jobs.js';
 import { createPromptsRouter } from './routes/admin/prompts.js';
 import { createRawArticlesRouter } from './routes/admin/rawArticles.js';
 import { createScrapeRouter } from './routes/admin/scrape.js';
@@ -39,6 +40,7 @@ const ADMIN_ROUTERS = [
   createRawArticlesRouter,
   createScrapeRouter,
   createArticleActionsRouter,
+  createJobsRouter,
 ];
 
 /**

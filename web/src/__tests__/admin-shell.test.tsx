@@ -57,6 +57,29 @@ describe('route guard', () => {
   });
 });
 
+describe('running job in the header', () => {
+  const activeJob = (job: string | null) =>
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const body = String(url).includes('/api/admin/jobs/active') ? { job } : {};
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    }));
+
+  it('says when a scrape is running, on every admin page', async () => {
+    window.sessionStorage.setItem(STORAGE_KEY, btoa('admin:admin123'));
+    activeJob('scrape');
+    renderApp();
+    expect(await screen.findByText('Scraping…')).toBeInTheDocument();
+  });
+
+  it('shows nothing when no job is running', async () => {
+    window.sessionStorage.setItem(STORAGE_KEY, btoa('admin:admin123'));
+    activeJob(null);
+    renderApp();
+    await screen.findByText('secret content');
+    expect(screen.queryByText(/…$/)).not.toBeInTheDocument();
+  });
+});
+
 describe('sign in', () => {
   it('stores the credential and lands on the protected page', async () => {
     reply(200);
