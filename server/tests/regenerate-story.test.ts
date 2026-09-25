@@ -189,6 +189,29 @@ describe('startRegenerateJob', () => {
     expect(version.current.editedByHuman).toBe(true);
   });
 
+  it("keeps a manual submission's category, whatever the model picks", async () => {
+    insertRawArticle(ctx.db, {
+      id: 'm1', sourceId: 'manual', topic: 'Culture', simplifiedAt: '2026-09-06T09:00:00.000Z',
+    });
+    for (const age of [5, 8, 11]) {
+      insertKidArticle(ctx.db, { id: `m1-v${age}`, originalId: 'm1', ageTarget: age, category: 'Culture' });
+    }
+    const { client } = countingClient(JSON.stringify({ ...JSON.parse(KID_REPLY), category: 'Science' }));
+
+    const job = await runJob('m1-v5', { client });
+
+    expect(job.versions.map((v) => v.generated.category)).toEqual(['Culture', 'Culture', 'Culture']);
+  });
+
+  it("lets the model pick a scraped story's category", async () => {
+    seedStory('r1');
+    const { client } = countingClient(JSON.stringify({ ...JSON.parse(KID_REPLY), category: 'Science' }));
+
+    const job = await runJob('r1-v5', { client });
+
+    expect(job.versions.map((v) => v.generated.category)).toEqual(['Science', 'Science', 'Science']);
+  });
+
   it('keeps the original article link rather than the feed URL', async () => {
     // raw.sourceUrl is the rss.xml; raw.url is the story. Regenerating must not
     // replace a working "Read the original" link with a link to raw XML.

@@ -26,6 +26,7 @@ import { createRawArticleRepository } from '../db/repositories/rawArticleReposit
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
 import { simplifyStory } from '../pipeline/simplifyArticle.js';
 import { acquireJob, releaseJob } from './jobLock.js';
+import { MANUAL_SOURCE_ID } from './submitArticle.js';
 
 export interface RegeneratedVersion {
   /** The band's anchor — what the generated row carries as ageTarget. */
@@ -199,6 +200,8 @@ export function startRegenerateJob(
           headline: raw.headline,
           body: raw.body,
           topic: raw.topic,
+          // A manual submission's category was the editor's choice; keep it.
+          topicChosenByEditor: raw.sourceId === MANUAL_SOURCE_ID,
           sourceName: raw.sourceName,
           // The article, not the feed it came from — see simplifyService.
           sourceUrl: raw.url,

@@ -171,7 +171,7 @@ export async function simplifyArticle(
       safety: guard.safety,
       contentWarnings:
         content.contentWarnings ?? (denyMatches.length > 0 ? denyMatches : null),
-      category: raw.topic,
+      category: (!raw.topicChosenByEditor && content.category) || raw.topic,
       readingMinutes: content.readingMinutes,
       sourceName: raw.sourceName,
       sourceUrl: raw.sourceUrl,
@@ -302,6 +302,14 @@ export async function simplifyStory(
     done += 1;
     onProgress?.(done);
   }
+
+  // One category per story, like one status: the versions are one story at
+  // three reading levels, and the Home filter should not show it under Science
+  // at 5-7 and World at 11-14. The first version that moved off the hint came
+  // from the model — the rule-based path always keeps raw.topic — and bands
+  // ascend, so that is the youngest band's pick.
+  const category = versions.find((v) => v.article.category !== raw.topic)?.article.category ?? raw.topic;
+  for (const version of versions) version.article.category = category;
 
   return { versions, promptGuard, costUsd, fallbacks };
 }

@@ -54,6 +54,7 @@ Return ONLY a JSON object — no markdown fences, no commentary — in exactly t
   "audioScript": "The story told out loud for radio, for children aged {{ageRange}}. 60 to 90 words.",
   "feelingNote": "One or two reassuring sentences, but ONLY if the story could worry a child. Otherwise null.",
   "safety": "calm",
+  "category": "One category from the list in the field notes.",
   "contentWarnings": [],
   "readingMinutes": 3
 }
@@ -78,6 +79,12 @@ Field notes:
 
 - "feelingNote" must be null when "safety" is "calm", and must be written when
   it is not.
+- "category" must be exactly one of "World", "Science", "Environment",
+  "Health", "Culture", "Technology", "Sports" or "Good News" — whichever best
+  fits what the story is about. The CATEGORY above is only a first guess from
+  keywords; replace it when it is wrong. "Good News" is for a story whose main
+  point is something kind, brave or hopeful. "World" is for news that fits
+  none of the others.
 - "contentWarnings" holds short labels for anything a grown-up should know about,
   or an empty list.
 - "vocab" holds two to four words that ACTUALLY APPEAR in the story. Never proper
@@ -121,6 +128,7 @@ Return ONLY a JSON object — no markdown fences, no commentary — in exactly t
   "audioScript": "The story read out loud to a 5-year-old. 40 to 60 words.",
   "feelingNote": "One gentle, reassuring sentence, but ONLY if the story could worry a child. Otherwise null.",
   "safety": "calm",
+  "category": "One category from the list in the field notes.",
   "contentWarnings": [],
   "readingMinutes": 2
 }
@@ -141,6 +149,12 @@ Field notes:
 
 - "feelingNote" must be null when "safety" is "calm", and must be written when
   it is not.
+- "category" must be exactly one of "World", "Science", "Environment",
+  "Health", "Culture", "Technology", "Sports" or "Good News" — whichever best
+  fits what the story is about. The CATEGORY above is only a first guess from
+  keywords; replace it when it is wrong. "Good News" is for a story whose main
+  point is something kind, brave or hopeful. "World" is for news that fits
+  none of the others.
 - "vocab" holds exactly two words that appear in the story, each explained in
   under 12 words. Never proper nouns, brand names or people's names.
 - "audioScript" is the same story as a kind grown-up would read it out loud to
