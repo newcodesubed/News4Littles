@@ -61,7 +61,7 @@ Everything under `/admin` needs the admin password.
 | ----------------- | ------------------------------------------------------------------------ |
 | `/admin/review`   | The review queue — one row per story, every reading group approved together |
 | `/admin/submit`   | Paste an article by hand and simplify it                                 |
-| `/admin/settings` | Sources, guardrails, prompts, app defaults, and **Run now** scraping     |
+| `/admin/settings` | Sources, guardrails, app defaults, and **Run now** scraping (prompts are edited in the sandbox) |
 | `/admin/sandbox`  | Edit a prompt and see what it does to a real article before promoting it |
 
 ---

@@ -12,7 +12,7 @@ const PROTECTED: [string, string][] = [
   ['GET', '/api/admin/articles/filters'],
   ['GET', '/api/admin/sources'],
   ['GET', '/api/admin/guard-config'],
-  ['GET', '/api/admin/prompt-config'],
+  ['GET', '/api/admin/prompts'],
   ['GET', '/api/admin/app-settings'],
   ['POST', '/api/admin/simplify'],
   ['POST', '/api/admin/articles'],

@@ -110,35 +110,12 @@ describe('guard config (§6)', () => {
   });
 });
 
-describe('translation prompts (§8.5)', () => {
-  it('returns prompts and flags them inert while no LLM is configured', async () => {
-    const config = await json('/api/admin/prompt-config');
-    expect(typeof config.genericPrompt).toBe('string');
-    expect(config.inertUntilLlm).toBe(true);
-  });
-
-  it('saves the generic prompt and band overrides', async () => {
-    await put('/api/admin/prompt-config', { genericPrompt: 'New prompt', ageOverrides: { '8': 'Ages 8 to 10' } });
-    const config = await json('/api/admin/prompt-config');
-    expect(config.genericPrompt).toBe('New prompt');
-    expect(config.ageOverrides['8']).toBe('Ages 8 to 10');
-  });
-
-  it('does not let the version counter be written by hand (§7.5)', async () => {
-    const before = await json('/api/admin/prompt-config');
-    await put('/api/admin/prompt-config', { genericPrompt: 'x', ageOverrides: {}, versions: { guard: 99 } });
-    expect((await json('/api/admin/prompt-config')).versions).toEqual(before.versions);
-  });
-
-  it.each([
-    ['an out-of-range override age', { genericPrompt: 'x', ageOverrides: { '99': 'y' } }],
-    // An override at 6 is one selectPrompt would never look up: a version is
-    // written for a band anchor, so only an anchor can carry an override.
-    ['an override age that is not a band anchor', { genericPrompt: 'x', ageOverrides: { '6': 'y' } }],
-    ['a non-string prompt', { genericPrompt: 5, ageOverrides: {} }],
-    ['an array instead of a map', { genericPrompt: 'x', ageOverrides: [] }],
-  ])('rejects %s with 400', async (_label, body) => {
-    expect((await put('/api/admin/prompt-config', body)).status).toBe(400);
+describe('translation prompts are changed only in the sandbox (§7.4)', () => {
+  // A direct write here would change live prompts with no test run and no
+  // version record, which is exactly what sandbox promotion exists to prevent.
+  it('has no route that edits them from Settings', async () => {
+    expect((await put('/api/admin/prompt-config', { genericPrompt: 'x', ageOverrides: {} })).status).toBe(404);
+    expect((await ctx.api('/api/admin/prompt-config')).status).toBe(404);
   });
 });
 

@@ -17,14 +17,6 @@ export interface GuardConfig {
   promptGuardText: string;
 }
 
-export interface PromptConfig {
-  genericPrompt: string;
-  ageOverrides: Record<string, string>;
-  versions: Record<string, number>;
-  /** True while no LLM is configured, when these prompts really do change nothing. */
-  inertUntilLlm: boolean;
-}
-
 export interface AppSettings {
   defaultAge: number;
   scrapeTimes: string[];

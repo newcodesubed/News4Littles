@@ -61,7 +61,6 @@ function serveThenGoOffline() {
       if (path.includes('/scrape/status')) return body({ running: false, run: null, lastRuns: {} });
     if (path.includes('/sources')) return body(SOURCES);
       if (path.includes('/guard-config')) return body({ denyList: ['war'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '' });
-      if (path.includes('/prompt-config')) return body({ genericPrompt: 'p', ageOverrides: {}, versions: {}, inertUntilLlm: true });
       if (path.includes('/app-settings')) return body({ defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, apiKeyLocation: 'env' });
       // §5: the queue reads stories, not versions.
       if (path.includes('/stories')) return body({ stories: [storyOf(ARTICLE)], total: 1 });
