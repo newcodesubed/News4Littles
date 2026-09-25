@@ -109,9 +109,12 @@ describe('editor portal — §4.3 form', () => {
     expect(screen.getByRole('button', { name: /Simplify with AI/ })).toBeEnabled();
   });
 
-  it('says plainly that no AI key is configured', () => {
+  it('does not claim there is no AI key; the preview says what ran', () => {
+    // The shared pipeline uses the model whenever a key is set, so a fixed
+    // "no key" line is wrong on any deployment that has one.
     renderIn(<AdminSubmit />);
-    expect(screen.getByText(/No AI key is configured/)).toBeInTheDocument();
+    expect(screen.queryByText(/No AI key is configured/)).not.toBeInTheDocument();
+    expect(screen.getByText(/the preview says which/i)).toBeInTheDocument();
   });
 
   it('has no Save draft button — §8.3 has no draft status', async () => {

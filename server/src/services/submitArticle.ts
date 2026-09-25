@@ -1,8 +1,9 @@
 /**
  * Manual submission — PRD §4.3.
  *
- * NO LLM. "Simplify with AI" is the Phase 4 local pipeline (§9.2), the same
- * function the scraper calls, reading the same guard config.
+ * "Simplify with AI" runs the same function the scraper calls, reading the
+ * same guard config: the LLM when a key is configured, the local rule-based
+ * pipeline (§9.2) otherwise.
  */
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
