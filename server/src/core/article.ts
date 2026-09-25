@@ -19,6 +19,18 @@ export const ARTICLE_STATUSES: readonly ArticleStatus[] = ['pending_review', 'pu
 /** §4.2's "flagged only" shortcut: both non-calm levels. */
 export const FLAGGED_SAFETY: readonly Safety[] = ['adult-nearby', 'skip-young'];
 
+/**
+ * The story categories the reader UI has a badge and a filter chip for —
+ * mirrored in web/src/components/Badges.tsx, so the two lists change together.
+ */
+export const CATEGORIES = [
+  'World', 'Science', 'Environment', 'Health', 'Culture', 'Technology', 'Sports', 'Good News',
+] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+/** Where a story lands when nothing better is known about it. */
+export const DEFAULT_CATEGORY: Category = 'World';
+
 /** §3.6 reading-age range — what the public slider offers — and its default. */
 export const MIN_AGE = 5;
 export const MAX_AGE = 14;
