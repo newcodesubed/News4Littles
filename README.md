@@ -594,7 +594,10 @@ terminal as well:
   reaches 5 MB, and the newest ten are kept, so the directory never grows
   past ~50 MB.
 - **Terminal** — coloured and readable with `LOG_PRETTY=true` (the default);
-  raw JSON with `LOG_PRETTY=false` for a process manager to capture.
+  raw JSON with `LOG_PRETTY=false` for a process manager to capture. The
+  colouring comes from `pino-pretty`, a dev dependency; on an install without
+  it (`npm ci --omit=dev`) the server logs JSON instead and writes one warning
+  saying so, rather than failing to start.
 
 Every request writes two lines — `request started` and `request completed` —
 rather than one, so a request that hangs still shows up: it is a `started`
