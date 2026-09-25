@@ -19,17 +19,10 @@ import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository, type SourceRow } from '../db/repositories/sourceRepository.js';
+import { guessCategory } from '../pipeline/categorize.js';
 import { fetchFeed, selectNewItems, type FeedItem } from './feedParser.js';
 
 export type { SourceRow };
-
-/**
- * ASSUMPTION: the BBC front-page feed carries no category, and §5.2 does not
- * say what to put in RawArticle.topic. Everything lands in 'World', which is a
- * real category in the UI. The clean fix is per-source category feeds (BBC
- * publishes /news/science_and_environment/rss.xml and friends).
- */
-const DEFAULT_TOPIC = 'World';
 
 export interface ScrapeResult {
   sourceId: string;
@@ -124,7 +117,10 @@ function storeItems(
         url: item.link,
         headline: item.title,
         body: item.body,
-        topic: DEFAULT_TOPIC,
+        // The BBC front-page feed carries no category and §5.2 does not say
+        // what RawArticle.topic should hold, so it is guessed from keywords.
+        // The LLM picks its own when it runs; see pipeline/categorize.ts.
+        topic: guessCategory(item.title, item.body),
         publishedAt: item.publishedAt,
         fetchedAt,
         // The run's simplification phase decides which of these get a model

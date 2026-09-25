@@ -11,7 +11,7 @@ import {
   parseLlmContent, renderPrompt, selectPrompt, LlmResponseError, TEMPLATE_VARIABLES,
 } from '../src/llm/llmSimplifier.js';
 import { simplifyArticle, simplifyStory } from '../src/pipeline/simplifyArticle.js';
-import { AGE_BANDS, AGE_BAND_ANCHORS, bandForAge } from '../src/core/article.js';
+import { AGE_BANDS, AGE_BAND_ANCHORS, CATEGORIES, bandForAge } from '../src/core/article.js';
 import {
   GENERIC_SIMPLIFICATION_PROMPT, YOUNG_READERS_SIMPLIFICATION_PROMPT,
 } from '../src/db/seed-prompts.js';
@@ -251,6 +251,29 @@ describe('OpenRouterClient', () => {
   });
 });
 
+describe('category is optional and must be one the reader UI has', () => {
+  const withCategory = (value: unknown) => JSON.stringify({ ...GOOD, category: value });
+
+  it('keeps a category from the list', () => {
+    expect(parseLlmContent(withCategory('Science')).category).toBe('Science');
+  });
+
+  it('matches case-insensitively and stores the list spelling', () => {
+    expect(parseLlmContent(withCategory('  good news ')).category).toBe('Good News');
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['not on the list', 'Politics'],
+    ['not a string', 7],
+    ['null', null],
+  ])('nulls a %s category rather than failing the story', (_label, value) => {
+    const content = parseLlmContent(withCategory(value));
+    expect(content.category).toBeNull();
+    expect(content.kidHeadline).toBe(GOOD.kidHeadline);
+  });
+});
+
 describe('simplifyArticle orchestration', () => {
   let ctx: TestContext;
   beforeEach(() => { ctx = createTestContext(); });
@@ -297,6 +320,26 @@ describe('simplifyArticle orchestration', () => {
     const out = await simplifyArticle(ctx.db, RAW, { client: withClient(completion(JSON.stringify(GOOD))) });
     expect(out.article.status).toBe('pending_review');
     expect(out.article.publishedAt).toBeNull();
+  });
+
+  it("uses the model's category over the scraper's keyword guess", async () => {
+    const reply = completion(JSON.stringify({ ...GOOD, category: 'Science' }));
+    const out = await simplifyArticle(ctx.db, RAW, { client: withClient(reply), ageTarget: 8 });
+    expect(out.article.category).toBe('Science');
+  });
+
+  it('keeps the guess when the model names no usable category', async () => {
+    const reply = completion(JSON.stringify({ ...GOOD, category: 'Politics' }));
+    const out = await simplifyArticle(ctx.db, RAW, { client: withClient(reply), ageTarget: 8 });
+    expect(out.article.category).toBe(RAW.topic);
+  });
+
+  it("never replaces a category an editor chose", async () => {
+    const reply = completion(JSON.stringify({ ...GOOD, category: 'Science' }));
+    const out = await simplifyArticle(ctx.db, { ...RAW, topicChosenByEditor: true }, {
+      client: withClient(reply), ageTarget: 8,
+    });
+    expect(out.article.category).toBe(RAW.topic);
   });
 
   describe('§6: the guard beats the model', () => {
@@ -408,6 +451,15 @@ describe('the seeded prompts must keep their safety criteria', () => {
     ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
   ])('%s prompt asks for an audioScript', (_label, prompt) => {
     expect(prompt).toContain('"audioScript"');
+  });
+
+  it.each([
+    ['generic', GENERIC_SIMPLIFICATION_PROMPT],
+    ['ages 5-7', YOUNG_READERS_SIMPLIFICATION_PROMPT],
+  ])('%s prompt asks for a category from the full list', (_label, prompt) => {
+    // An override REPLACES the generic prompt, so each must ask for itself.
+    expect(prompt).toContain('"category"');
+    for (const category of CATEGORIES) expect(prompt).toContain(`"${category}"`);
   });
 
   it.each([
@@ -602,6 +654,33 @@ describe('simplifyStory', () => {
     // The reason names the band, so a reviewer knows which version is weaker.
     expect(outcome.fallbacks.some((reason) => reason.includes('ages 8–10'))).toBe(true);
     expect(outcome.fallbacks).toHaveLength(1);
+  });
+
+  const replyIn = (category: string) =>
+    JSON.stringify({ ...JSON.parse(reply('A kid headline')), category });
+
+  it("gives every version the youngest band's category", async () => {
+    // The young-readers override renders "aged 5 to 7"; the generic prompt
+    // serves the other two bands.
+    const { client } = scriptedClient((prompt) => ({
+      ok: true, body: replyIn(prompt.includes('aged 5 to 7') ? 'Science' : 'Sports'),
+    }));
+
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
+
+    expect(outcome.versions.map((v) => v.article.category)).toEqual(['Science', 'Science', 'Science']);
+  });
+
+  it('takes the next band\u2019s pick when the youngest band fell back', async () => {
+    const { client } = scriptedClient((prompt) =>
+      prompt.includes('aged 5 to 7')
+        ? { ok: false, body: 'upstream exploded' }
+        : { ok: true, body: replyIn('Sports') },
+    );
+
+    const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
+
+    expect(outcome.versions.map((v) => v.article.category)).toEqual(['Sports', 'Sports', 'Sports']);
   });
 
   it('sums the cost across every version', async () => {

@@ -101,6 +101,19 @@ describe('happy path (§5.2)', () => {
     expect(result.stored[0].headline).toBe('A rover surveyed the reef');
   });
 
+  it('guesses a category for each article rather than filing everything under World', async () => {
+    feedItems = [
+      { title: 'Football team wins the league', link: 'https://example.com/s', pubDate: 'Thu, 03 Sep 2026 10:00:00 GMT', description: 'Fans cheered.' },
+      { title: 'Council meets on Tuesday', link: 'https://example.com/w', pubDate: 'Fri, 04 Sep 2026 10:00:00 GMT', description: 'It was a long meeting.' },
+    ];
+    await scrapeSource(ctx.db, bbc());
+
+    const topicOf = (url: string) =>
+      ctx.db.prepare(`SELECT topic FROM raw_articles WHERE url = ?`).pluck().get(url);
+    expect(topicOf('https://example.com/s')).toBe('Sports');
+    expect(topicOf('https://example.com/w')).toBe('World');
+  });
+
   it('advances the cursor to the newest stored item (§5.2 step 5)', async () => {
     const result = await scrapeSource(ctx.db, bbc());
     expect(result.newestItemPublishedAt).toBe('2026-09-04T10:00:00.000Z');

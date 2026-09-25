@@ -59,6 +59,8 @@ function toRawInput(submission: Submission, id: string) {
     headline: submission.headline,
     body: submission.body,
     topic: submission.category,
+    // The editor picked it on the form, so the model's pick must not replace it.
+    topicChosenByEditor: true,
     sourceName: submission.sourceName,
     sourceUrl: submission.sourceUrl,
   };

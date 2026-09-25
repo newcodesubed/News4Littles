@@ -30,6 +30,12 @@ export interface RawArticleInput {
   headline: string;
   body: string;
   topic: string;
+  /**
+   * True when a person chose `topic` — an editor's manual submission — so the
+   * model's category pick must not replace it. Otherwise `topic` is only the
+   * scraper's keyword guess, and the model's pick wins.
+   */
+  topicChosenByEditor?: boolean;
   sourceName: string;
   sourceUrl: string;
 }

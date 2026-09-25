@@ -161,6 +161,30 @@ This diverges from PRD §5.2, which runs steps 4–7 as a single pass over every
 item. Steps 1–5 live in `ingestion/rssScraper.ts`; steps 6–7 moved to
 `services/simplifyService.ts`.
 
+### Categories
+
+The BBC front-page feed carries no category, so a story's category is decided
+in two steps:
+
+1. **At scrape time, a keyword guess** (`pipeline/categorize.ts`). Free, no API
+   key needed, and it is the category the rule-based pipeline keeps. Anything
+   that matches no keywords is `World`.
+2. **When the model rewrites the story, the model picks** from the same list
+   the site has badges for (`CATEGORIES` in `core/article.ts`, mirrored in
+   `web/src/components/Badges.tsx`). The keyword guess is only the hint it sees
+   as `{{category}}`. A pick that is not on the list is ignored, and the guess
+   stands.
+
+A story has **one category across its three versions**: the youngest group's
+pick, or the next group's if that one fell back to the rule-based pipeline.
+A story an editor pasted in `/admin/submit` keeps the category the editor
+chose, including through Regenerate. Stories simplified before this change
+stay `World` until an editor edits or regenerates them.
+
+A custom prompt only gets model-picked categories if it asks for a
+`"category"` field; the seeded prompts do, and `npm run db:init` brings an
+untouched seeded prompt up to date.
+
 ### Auto mode (off by default)
 
 Set `AUTO_APPROVE_ENABLED=true` and an LLM judges each story a scrape just
@@ -544,7 +568,7 @@ it instead); and JSON columns are checked with `json_valid`.
 ## Tests
 
 ```bash
-cd server && npm test    # 683 tests
+cd server && npm test    # 722 tests
 cd web    && npm test    # 288 tests
 ```
 

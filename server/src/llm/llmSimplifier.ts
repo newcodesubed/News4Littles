@@ -11,7 +11,9 @@
  *     calling a war story "calm" cannot override the deny-list.
  */
 import { LLM_MAX_BODY_CHARS } from '../env.js';
-import { SAFETY_VALUES, bandForAge, type Safety, type VocabEntry } from '../core/article.js';
+import {
+  CATEGORIES, SAFETY_VALUES, bandForAge, type Category, type Safety, type VocabEntry,
+} from '../core/article.js';
 
 /** §7.3's template variables. */
 export interface PromptContext {
@@ -83,6 +85,12 @@ export interface LlmContent {
   audioScript: string | null;
   /** The model's opinion. Combined with the other guards, never trusted alone. */
   safety: Safety;
+  /**
+   * The model's pick from CATEGORIES, or null when it gave none or named one
+   * the reader UI has no badge for. Optional for the same reason audioScript
+   * is: a missing category costs a filter chip, a throw would cost the story.
+   */
+  category: Category | null;
   contentWarnings: string[] | null;
   readingMinutes: number;
 }
@@ -148,12 +156,18 @@ export function parseLlmContent(text: string): LlmContent {
       ? raw.audioScript.trim()
       : null;
 
+  // Matched case-insensitively and stored in the list's own spelling, so
+  // "science" and "SCIENCE" both land on the Science filter chip.
+  const categoryText = typeof raw.category === 'string' ? raw.category.trim().toLowerCase() : '';
+  const category = CATEGORIES.find((name) => name.toLowerCase() === categoryText) ?? null;
+
   return {
     ...(content as Pick<LlmContent, (typeof REQUIRED_TEXT)[number]>),
     vocab,
     feelingNote,
     audioScript,
     safety,
+    category,
     contentWarnings: warnings.length > 0 ? warnings : null,
     // Clamp rather than reject: the schema requires >= 1, and a model
     // occasionally returns 0 or a string.
