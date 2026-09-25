@@ -2,23 +2,23 @@ import { useCallback, useEffect, useState } from 'react';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAdminAuth } from '../../admin/AdminAuthContext';
 import { useAdminAction } from '../../admin/useAdminAction';
-import { Notice } from '../../ui/Surface';
+import { Link } from 'react-router-dom';
+import { Notice, Section } from '../../ui/Surface';
 import { AppSettingsSection } from './settings/AppSettingsSection';
 import { GuardrailsSection } from './settings/GuardrailsSection';
-import { PromptsSection } from './settings/PromptsSection';
 import { SourcesSection } from './settings/SourcesSection';
-import type { AppSettings, GuardConfig, PromptConfig, ScrapeStatus, Source } from './settings/types';
+import type { AppSettings, GuardConfig, ScrapeStatus, Source } from './settings/types';
 
 /**
- * Admin settings — PRD §4.4. This file loads the four config blocks and hands
- * each to its own section; the sections own their editing.
+ * Admin settings — PRD §4.4. This file loads the three config blocks and hands
+ * each to its own section; the sections own their editing. Translation prompts
+ * are not edited here: the sandbox is their one editing surface (§7).
  *
  * No LLM calls anywhere on this page.
  */
 interface SettingsData {
   sources: Source[];
   guard: GuardConfig;
-  prompts: PromptConfig;
   app: AppSettings;
 }
 
@@ -35,13 +35,13 @@ export function AdminSettings() {
     setError(null);
     try {
       const responses = await Promise.all(
-        ['/api/admin/sources', '/api/admin/guard-config', '/api/admin/prompt-config', '/api/admin/app-settings']
+        ['/api/admin/sources', '/api/admin/guard-config', '/api/admin/app-settings']
           .map((path) => adminFetch(path)),
       );
       if (responses.some((response) => !response.ok)) throw new Error('Could not load settings.');
 
-      const [sources, guard, prompts, app] = await Promise.all(responses.map((r) => r.json()));
-      setData({ sources, guard, prompts, app });
+      const [sources, guard, app] = await Promise.all(responses.map((r) => r.json()));
+      setData({ sources, guard, app });
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : 'Could not load settings.');
     } finally {
@@ -127,8 +127,16 @@ export function AdminSettings() {
         onRunAll={() => void startScrape('/api/admin/scrape', 'Scrape of all enabled sources')}
       />
       <GuardrailsSection guard={data.guard} save={save} />
+      <Section
+        title="Translation prompts"
+        blurb="Read, tested and changed in the sandbox, so every change is tried on a real article first and gets a version number."
+        className="mb-6"
+      >
+        <Link to="/admin/sandbox" className="font-semibold text-primary hover:underline">
+          Edit prompts in the sandbox →
+        </Link>
+      </Section>
       {/* Remount when the server's copy changes, so drafts start from fresh data. */}
-      <PromptsSection key={JSON.stringify(data.prompts)} config={data.prompts} save={save} />
       <AppSettingsSection key={JSON.stringify(data.app)} settings={data.app} save={save} />
     </div>
   );

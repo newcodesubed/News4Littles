@@ -211,7 +211,7 @@ export function AdminReview() {
     <div className="container max-w-6xl py-10">
       <h1 className="font-display text-4xl mb-1">Review queue</h1>
       <p className="text-muted-foreground mb-6">
-        Approve, reject or edit simplified articles before they reach kids. Nothing is published automatically.
+        Approve, reject or edit simplified articles before they reach kids.
       </p>
 
       {/* §4.2 status tabs with count badges */}

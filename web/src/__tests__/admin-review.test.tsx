@@ -610,6 +610,13 @@ describe('one row per story (§5)', () => {
 });
 
 describe('auto mode is visible in the queue', () => {
+  it('does not promise that nothing is published automatically', async () => {
+    // Untrue once AUTO_APPROVE_ENABLED is on; the row badge says which ones were.
+    renderPage();
+    await screen.findByText('A calm story');
+    expect(screen.queryByText(/Nothing is published automatically/)).not.toBeInTheDocument();
+  });
+
   it('marks a story the judge published, not a person', async () => {
     articles = [article({ id: 'v5', originalId: 'raw-1', ageTarget: 5, status: 'published', approvedBy: 'auto' })];
     renderPage();

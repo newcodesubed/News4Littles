@@ -1,14 +1,13 @@
 /**
- * Guardrails, translation prompts and app settings — PRD §4.4, §6, §8.5, §8.7.
+ * Guardrails and app settings — PRD §4.4, §6, §8.7.
  *
- * No LLM calls happen here. The prompts are stored; the simplify pipeline (§9.1)
- * is what reads them.
+ * No LLM calls happen here. Translation prompts are not edited here: only a
+ * sandbox promotion changes them (§7.4), so every change has a test run and a
+ * version record.
  */
 import { Router } from 'express';
 import type { Database } from 'better-sqlite3';
 import { BadRequestError } from '../../core/errors.js';
-import { LLM_ENABLED } from '../../env.js';
-import { AGE_BAND_ANCHORS, isAgeBandAnchor } from '../../core/article.js';
 import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
 import {
   optionalString, requireAgeTarget, requireInt, requireTimeOfDay,
@@ -36,23 +35,6 @@ function normaliseDenyList(value: unknown): string[] {
   return words;
 }
 
-function readAgeOverrides(value: unknown): Record<string, string> {
-  const valid =
-    typeof value === 'object' && value !== null && !Array.isArray(value) &&
-    Object.entries(value).every(
-      ([age, prompt]) =>
-        /^\d+$/.test(age) && isAgeBandAnchor(Number(age)) && typeof prompt === 'string',
-    );
-
-  if (!valid) {
-    throw new BadRequestError(
-      `ageOverrides must be an object mapping a reading band's youngest age `
-      + `(${AGE_BAND_ANCHORS.join(', ')}) to a prompt string.`,
-    );
-  }
-  return value as Record<string, string>;
-}
-
 export function createSettingsRouter(db: Database): Router {
   const router = Router();
   const settings = createSettingsRepository(db);
@@ -78,28 +60,6 @@ export function createSettingsRouter(db: Database): Router {
     );
 
     res.json({ denyList, count: denyList.length });
-  });
-
-  // ─── §8.5 translation prompts ───────────────────────────────────────────
-  router.get('/prompt-config', (_req, res) => {
-    // Asked of the environment, not hardcoded: with a key the pipeline really does read these.
-    res.json({ ...settings.getPromptConfig(), inertUntilLlm: !LLM_ENABLED });
-  });
-
-  router.put('/prompt-config', (req, res) => {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    if (typeof body.genericPrompt !== 'string') {
-      throw new BadRequestError('genericPrompt must be a string.');
-    }
-
-    // `versions` is not writable: §7.5 makes it a counter only a sandbox
-    // promotion may increment. Editing it by hand would falsify the history.
-    settings.savePromptConfig(
-      { genericPrompt: body.genericPrompt, ageOverrides: readAgeOverrides(body.ageOverrides) },
-      now(),
-    );
-
-    res.json({ ok: true });
   });
 
   // ─── §8.7 app settings ──────────────────────────────────────────────────

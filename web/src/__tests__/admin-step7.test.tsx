@@ -62,7 +62,6 @@ function mockApi(overrides: Record<string, unknown> = {}) {
       { id: 'manual', name: 'Manual submission', url: '', enabled: false, trustLevel: 'high', parser: null, lastFetchedAt: null, lastFetchedItemPublishedAt: null, articleCount: 3 },
     ]);
     if (path.includes('/guard-config')) return json({ denyList: ['war', 'killed'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '', ...overrides });
-    if (path.includes('/prompt-config')) return json({ genericPrompt: 'The generic prompt', ageOverrides: { '5': 'Ages 5 to 7' }, versions: {}, inertUntilLlm: true, ...overrides });
     if (path.includes('/app-settings')) return json({ defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 10, apiKeyLocation: 'environment variable only (never stored in the database)' });
     return json({});
   }));
@@ -110,9 +109,12 @@ describe('editor portal — §4.3 form', () => {
     expect(screen.getByRole('button', { name: /Simplify with AI/ })).toBeEnabled();
   });
 
-  it('says plainly that no AI key is configured', () => {
+  it('does not claim there is no AI key; the preview says what ran', () => {
+    // The shared pipeline uses the model whenever a key is set, so a fixed
+    // "no key" line is wrong on any deployment that has one.
     renderIn(<AdminSubmit />);
-    expect(screen.getByText(/No AI key is configured/)).toBeInTheDocument();
+    expect(screen.queryByText(/No AI key is configured/)).not.toBeInTheDocument();
+    expect(screen.getByText(/the preview says which/i)).toBeInTheDocument();
   });
 
   it('has no Save draft button — §8.3 has no draft status', async () => {
@@ -388,34 +390,15 @@ describe('settings — §6 guardrails', () => {
   });
 });
 
-describe('settings — §8.5 prompts are clearly inert', () => {
-  it('warns that prompts do nothing when no LLM is configured', async () => {
+describe('settings — prompts live in the sandbox (§7)', () => {
+  it('points to the sandbox instead of editing prompts here', async () => {
     renderIn(<AdminSettings />);
-    expect(await screen.findByText(/No LLM is configured/)).toBeInTheDocument();
-  });
 
-  it('drops the warning once the server reports an LLM', async () => {
-    // The prompts really are sent once a key exists, so the warning would be a lie.
-    mockApi({ inertUntilLlm: false });
-    renderIn(<AdminSettings />);
-    await screen.findByLabelText('Generic prompt');
-    expect(screen.queryByText(/No LLM is configured/)).not.toBeInTheDocument();
-  });
-
-  it('shows version counters as read-only', async () => {
-    renderIn(<AdminSettings />);
-    expect(await screen.findByText(/only a sandbox promotion changes these/)).toBeInTheDocument();
-  });
-
-  it('saving prompts omits versions', async () => {
-    renderIn(<AdminSettings />);
-    await screen.findByLabelText('Generic prompt');
-    await userEvent.click(screen.getByRole('button', { name: 'Save prompts' }));
-    await waitFor(() => {
-      const put = calls.find((c) => c.method === 'PUT' && c.path === '/api/admin/prompt-config');
-      expect(put).toBeDefined();
-      expect('versions' in put!.body).toBe(false);
-    });
+    expect(await screen.findByRole('link', { name: /edit prompts in the sandbox/i }))
+      .toHaveAttribute('href', '/admin/sandbox');
+    expect(screen.queryByLabelText('Generic prompt')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save prompts' })).not.toBeInTheDocument();
+    expect(calls.some((c) => c.path.includes('/prompt-config'))).toBe(false);
   });
 });
 
@@ -445,14 +428,14 @@ describe('settings — a finished scrape', () => {
 describe('settings — saving one section', () => {
   it('keeps unsaved edits in the other sections', async () => {
     renderIn(<AdminSettings />);
-    const prompt = await screen.findByDisplayValue('The generic prompt');
-    await userEvent.type(prompt, ' still typing');
+    // An App settings change, not yet saved.
+    await userEvent.selectOptions(await screen.findByLabelText('Default reading group'), '8');
 
     await userEvent.click(screen.getByLabelText('Remove war'));
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && c.path === '/api/admin/guard-config')).toBe(true));
-    await waitFor(() => expect(calls.filter((c) => c.path === '/api/admin/prompt-config').length).toBe(2));
+    await waitFor(() => expect(calls.filter((c) => c.path === '/api/admin/app-settings').length).toBe(2));
 
-    expect(screen.getByDisplayValue('The generic prompt still typing')).toBeInTheDocument();
+    expect(screen.getByLabelText('Default reading group')).toHaveValue('8');
   });
 });
 

@@ -13,9 +13,9 @@ import { AGE_BANDS, DEFAULT_AGE, ageBandLabel, bandForAge, formatAgeBand } from 
 /**
  * Editor portal — PRD §4.3.
  *
- * "Simplify with AI" calls POST /api/admin/simplify, which runs the local
- * rule-based pipeline (§9.2). There is no LLM configured, and this page makes
- * no model calls of any kind.
+ * "Simplify with AI" calls POST /api/admin/simplify, which runs the same
+ * pipeline as a scrape: the model when a key is configured, the local
+ * rule-based simplifier (§9.2) otherwise. The preview names which one ran.
  */
 interface GuardInfo {
   matches: string[];
@@ -181,8 +181,8 @@ export function AdminSubmit() {
           {busy ? 'Working…' : 'Simplify with AI'}
         </Button>
         <p className="text-xs text-muted-foreground">
-          No AI key is configured, so this runs the local rule-based simplifier. Nothing is saved
-          until you choose an action below.
+          Uses the AI model when one is configured, and the local rule-based simplifier
+          otherwise; the preview says which. Nothing is saved until you choose an action below.
         </p>
       </Card>
 
