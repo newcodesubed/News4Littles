@@ -1,4 +1,3 @@
-/** podcast_episodes: the stored episode script (spec §6). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createEpisodeRepository, type StoredEpisode } from '../src/db/repositories/episodeRepository.js';
 import { createTestContext, type TestContext } from './helpers.js';

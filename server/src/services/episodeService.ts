@@ -1,16 +1,3 @@
-/**
- * The daily podcast episode: the latest day's stories, retold by the LLM as one
- * script and spoken as one file.
- *
- * Built on demand and remembered under an episode key hashed from everything
- * that shapes the script. So a reload is a lookup, and a newly published or
- * edited story is a new key and a new episode — nothing is ever invalidated by
- * hand. See docs/superpowers/specs/2026-09-28-daily-podcast-episode-design.md.
- *
- * Nobody reviews the script, so safety is layered: reviewed inputs, a strict
- * prompt, free checks on the answer, and a stitched fallback built only from
- * reviewed text whenever any of that fails.
- */
 import { createHash } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
 import { bandForAge, type KidArticle } from '../core/article.js';
@@ -35,14 +22,11 @@ import { audioFromBuffer, audioKey, type AudioCache } from '../tts/audioCache.js
 import { SPEECH_CONTENT_TYPES, type SpeechProvider } from '../tts/types.js';
 import type { AudioSuccess } from './audioService.js';
 
-/** What GET /api/podcast answers. */
 export interface EpisodeView {
-  /** Local YYYY-MM-DD the stories were published; null when there are none. */
   date: string | null;
   articles: KidArticle[];
   script: string | null;
   source: EpisodeSource | null;
-  /** The content hash of the script's audio; null with no voice or no episode. */
   audioKey: string | null;
 }
 
@@ -56,24 +40,18 @@ export type EpisodeAudioOutcome = AudioSuccess | EpisodeAudioFailure;
 
 export interface EpisodeService {
   episodeFor(ageTarget: number): Promise<EpisodeView>;
-  /** Never writes a script: only the current episode's audio can be spoken. */
   audioFor(ageTarget: number, audioKey: string): Promise<EpisodeAudioOutcome>;
 }
 
 export interface EpisodeServiceOptions {
-  /** Null means the LLM is off, and every episode is the stitched fallback. */
   llm: Pick<OpenRouterClient, 'complete'> | null;
-  /** Part of the key, so a new LLM_MODEL writes new episodes. */
   llmModel?: string;
-  /** Null means speech is off: episodes have no audioKey, and audio is 503. */
   provider: SpeechProvider | null;
   cache: AudioCache;
   timeZone?: string;
   maxStories?: number;
   maxChars?: number;
-  /** Longest piece sent to the voice in one request. */
   chunkChars?: number;
-  /** How long a temporary fallback stands before the model is tried again. */
   retryAfterMs?: number;
   now?: () => Date;
   logger?: Logger;
@@ -83,10 +61,8 @@ const EMPTY: EpisodeView = { date: null, articles: [], script: null, source: nul
 
 const TEN_MINUTES = 10 * 60 * 1000;
 
-/** Room for about a thousand words of script plus the JSON around them. */
 const EPISODE_MAX_TOKENS = 3_000;
 
-/** Everything that shapes the script, and nothing that does not. */
 export function episodeKey(parts: {
   version: number;
   model: string;
@@ -122,11 +98,9 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
   const now = options.now ?? (() => new Date());
   const log = options.logger ?? logger.child({ area: 'podcast' });
 
-  /** Scripts and audio being made right now, so a crowd pays once. */
   const writing = new Map<string, Promise<StoredEpisode>>();
   const speaking = new Map<string, Promise<EpisodeAudioOutcome>>();
 
-  /** The day's stories and the key they hash to. Reads only. */
   const inputsFor = (ageTarget: number) => {
     const day = articles.listLatestPublishedDayForAge(ageTarget, timeZone, maxStories);
     if (!day.date || day.articles.length === 0) return null;
@@ -134,7 +108,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
     const stories = day.articles.map(toEpisodeStory);
     const key = episodeKey({
       version: EPISODE_PROMPT_VERSION,
-      // Switching the LLM on turns yesterday's permanent fallback into a new key.
       model: llm ? llmModel : 'fallback',
       ageTarget,
       date: day.date,
@@ -152,7 +125,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
         })
       : null;
 
-  /** A stored episode stands unless it is a temporary fallback past its time. */
   const stillStands = (episode: StoredEpisode): boolean =>
     !episode.retryAfter || Date.parse(episode.retryAfter) > now().getTime();
 
@@ -168,8 +140,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
   const compose = async (inputs: Inputs): Promise<Composed> => {
     if (!llm) return fallback(inputs, 'The LLM is switched off.', false);
 
-    // Checked before the call: a story trying to steer the model is spoken
-    // through the fallback, and the model never has to resist it.
     for (const story of inputs.stories) {
       for (const field of [story.kidHeadline, story.sourceName, story.script, story.thinkAbout]) {
         const tripped = detectInjection(field);
@@ -181,7 +151,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
       prompt: renderEpisodePrompt(inputs.stories, bandForAge(inputs.ageTarget), maxChars),
       maxTokens: EPISODE_MAX_TOKENS,
     });
-    // Only a transient failure (timeout, 429, 5xx) is worth trying again later.
     if (!result.ok) return fallback(inputs, `The LLM failed: ${result.reason}`, result.transient);
 
     const costUsd = result.costUsd ?? null;
@@ -212,8 +181,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
 
     const fields = { key: episode.key, ageTarget: episode.ageTarget, date: episode.date };
     if (episode.source === 'fallback') {
-      // The page looks the same either way, so without this line a dead model
-      // and a failed check are invisible.
       log.warn({ ...fields, reason: episode.reason, retryAfter: episode.retryAfter }, 'podcast episode used the fallback');
     } else {
       log.info({ ...fields, model: episode.model, costUsd: episode.costUsd }, 'podcast episode written');
@@ -233,12 +200,8 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
     const voice = provider!;
     const chunks = chunkScript(script, chunkChars);
     const audio: Buffer[] = new Array<Buffer>(chunks.length);
-    // An object, not a `let`: TypeScript does not see assignments made inside
-    // the workers, and would narrow a plain variable to null below.
     const state: { failure: string | null; next: number } = { failure: null, next: 0 };
 
-    // Two at a time: faster than one for the first listener, gentler on the
-    // provider's rate limit than all at once. A failure stops both workers.
     const worker = async () => {
       while (state.failure === null && state.next < chunks.length) {
         const index = state.next++;
@@ -257,13 +220,9 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
         { key, model: voice.model, voice: voice.voice, reason: state.failure },
         'podcast episode could not be spoken',
       );
-      // Not cached: half an episode is never served, and a blip is not permanent.
       return { ok: false, status: 502, reason: state.failure };
     }
 
-    // MP3 is a run of self-contained frames, so pieces in the same voice and
-    // format play straight through when joined — once each piece's own length
-    // header is gone (see joinMp3).
     const joined = voice.format === 'mp3' ? joinMp3(audio) : Buffer.concat(audio);
     await cache.write(key, joined);
     return {
@@ -280,8 +239,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
       const stored = episodes.findByKey(inputs.key);
       if (stored && stillStands(stored)) return view(inputs, stored);
 
-      // Join the write already running for this key, or start one. Cleared
-      // once settled, so the next request after a temporary fallback retries.
       let pending = writing.get(inputs.key);
       if (!pending) {
         pending = write(inputs, stored).finally(() => writing.delete(inputs.key));
@@ -296,8 +253,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
       const inputs = inputsFor(ageTarget);
       if (!inputs) return { ok: false, status: 404, reason: 'There is no episode yet.' };
 
-      // Only the episode a page was shown, and only while it is still the
-      // current one: a story unpublished since must never be read out.
       const stored = episodes.findByKey(inputs.key);
       if (!stored || audioKeyFor(stored.script) !== requested) {
         return { ok: false, status: 409, reason: 'The episode has changed. Fetch it again.' };

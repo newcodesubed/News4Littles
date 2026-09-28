@@ -16,7 +16,6 @@ class FakeAudio {
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
   currentTime = 0;
-  /** NaN until the browser knows the length, as a streamed response starts out. */
   duration = NaN;
   ontimeupdate: (() => void) | null = null;
   pause = vi.fn();

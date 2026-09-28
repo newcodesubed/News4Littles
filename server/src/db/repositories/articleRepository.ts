@@ -93,11 +93,8 @@ export type ArticleContent = Pick<
   | 'category' | 'readingMinutes' | 'ageTarget'
 >;
 
-/** One day's published stories for a band: what the podcast episode covers. */
 export interface PublishedDay {
-  /** The local YYYY-MM-DD they were published on; null when there are none. */
   date: string | null;
-  /** Oldest-published first, the order the episode tells them in. */
   articles: KidArticle[];
 }
 
@@ -128,11 +125,6 @@ export interface ArticleRepository {
    */
   listPublishedForAge(ageTarget: number): KidArticle[];
   findPublishedForAge(id: string, ageTarget: number): KidArticle | undefined;
-  /**
-   * The podcast's stories: published versions for this band from the most
-   * recent local calendar day that has any, measured in `timeZone`. On a day
-   * with more than `limit`, the NEWEST `limit` are kept.
-   */
   listLatestPublishedDayForAge(ageTarget: number, timeZone: string, limit: number): PublishedDay;
   findAdminById(id: string): AdminArticle | undefined;
   /** Status + safety only — enough to decide whether an action is allowed. */
@@ -181,8 +173,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
        WHERE status = 'published' AND ageTarget = @age
          AND originalId = (SELECT originalId FROM kid_articles WHERE id = @id)`,
     ),
-    // Newest published first. Fifty is far more than one day's stories; the
-    // podcast keeps only those from the newest one's day.
     recentPublishedForAge: db.prepare(
       `SELECT * FROM kid_articles
        WHERE status = 'published' AND ageTarget = @age
@@ -284,8 +274,6 @@ export function createArticleRepository(db: Database): ArticleRepository {
       const newest = rows[0];
       if (!newest?.publishedAt) return { date: null, articles: [] };
 
-      // The day is decided in JS, not with UTC bounds in SQL: Intl knows the
-      // zone's DST rules and SQLite does not.
       const date = localDate(newest.publishedAt, timeZone);
       const sameDay = rows.filter(
         (article) => article.publishedAt && localDate(article.publishedAt, timeZone) === date,

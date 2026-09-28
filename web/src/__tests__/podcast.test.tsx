@@ -31,7 +31,6 @@ const episode = (o: Partial<PodcastEpisode> = {}): PodcastEpisode => ({
   source: 'llm', audioKey: EPISODE_KEY, ...o,
 });
 
-/** Answers each fetch with the next payload, repeating the last one. */
 const mockFetchSequence = (...payloads: unknown[]) => {
   const fetchMock = vi.fn(async () => {
     const payload = payloads.length > 1 ? payloads.shift() : payloads[0];
@@ -164,13 +163,10 @@ describe('Podcast — the whole episode', () => {
 
     expect(await screen.findByRole('heading', { name: /What you'll hear/ })).toBeInTheDocument();
     expect(screen.getByText(/Did you know a robot can swim\?/)).toBeInTheDocument();
-    // The old fixed intro would no longer match the audio.
     expect(screen.queryByText(/Friendly intro/)).not.toBeInTheDocument();
   });
 
   it('plays this exact episode straight from the click, with no fetch first', async () => {
-    // Browsers only let audio start from a click; waiting on a network
-    // round-trip first can get the play blocked (spec §2.1).
     const fetchMock = mockFetchSequence(episode());
     renderIn(<Podcast />);
     const play = await screen.findByRole('button', { name: 'Play episode' });
@@ -205,7 +201,6 @@ describe('Podcast — the whole episode', () => {
     renderIn(<Podcast />);
     await userEvent.click(await screen.findByRole('button', { name: 'Play episode' }));
 
-    // The server answered 409; an <audio> element only ever sees an error.
     await act(async () => episodeAudio().onerror?.());
 
     expect(await screen.findByText(/New stories just arrived! Press play to hear them\./)).toBeInTheDocument();
@@ -223,7 +218,6 @@ describe('Podcast — the whole episode', () => {
   });
 
   it('says the episode is on its way while it loads, not that there is none', async () => {
-    // The first load can take seconds while the server writes a new episode.
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
     renderIn(<Podcast />);
 

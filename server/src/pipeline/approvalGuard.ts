@@ -51,11 +51,7 @@ export const INJECTION_PATTERNS: readonly RegExp[] = [
   /<<<\s*(END\s+)?STORY/i,
 ];
 
-/**
- * The first pattern the text trips, or null. Exported for the podcast episode,
- * whose script is also generated from feed-derived text and also reaches a
- * child without an editor.
- */
+/** The first pattern the text trips, or null. */
 export function detectInjection(
   text: string,
   patterns: readonly RegExp[] = INJECTION_PATTERNS,

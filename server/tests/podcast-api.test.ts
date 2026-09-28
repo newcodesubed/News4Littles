@@ -1,4 +1,3 @@
-/** GET /api/podcast and /api/podcast/audio/:audioKey (spec §8). */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import express from 'express';
 import pino from 'pino';
@@ -30,7 +29,6 @@ const voice: SpeechProvider = {
   },
 };
 
-/** Only the podcast routes, with a stub voice — ctx's app has speech off. */
 const startWithStubVoice = () => {
   const service = createEpisodeService(ctx.db, {
     llm: null, provider: voice, cache: createMemoryAudioCache(), timeZone: 'UTC',
@@ -50,11 +48,9 @@ describe('GET /api/podcast', () => {
 
     expect(response.status).toBe(200);
     expect(episode.articles.map((a: { id: string }) => a.id)).toEqual(['pub-1']);
-    // vitest.config.ts has the LLM off, so this is the stitched fallback.
     expect(episode.source).toBe('fallback');
     expect(episode.script).toContain('A little robot swam down to a coral reef');
     expect(episode.script).not.toContain('Not reviewed yet.');
-    // And speech off, so there is nothing to play.
     expect(episode.audioKey).toBeNull();
   });
 

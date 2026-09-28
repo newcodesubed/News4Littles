@@ -10,11 +10,9 @@ import type { KidArticle } from '../lib/types';
 /**
  * Podcast — PRD §3.5, layout matching the prototype.
  *
- * The big button plays the day's whole episode: the latest day's stories,
- * retold by the server as one script and read aloud as one file
- * (docs/superpowers/specs/2026-09-28-daily-podcast-episode-design.md). The
- * script is shown in full under "What you'll hear", so a child still hears
- * exactly what is on screen. Each story below keeps its own play button.
+ * Each story is now really read aloud: the server synthesises it through a
+ * configured voice provider and this page plays the file. The page does not
+ * know or care which provider that is.
  */
 
 /**
@@ -102,13 +100,11 @@ function Segment({ article, index, age }: { article: KidArticle; index: number; 
   );
 }
 
-/** Today as the server writes dates, YYYY-MM-DD, in the reader's own zone. */
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Noon, so no time zone can move a YYYY-MM-DD onto a neighbouring day. */
 function formatEpisodeDate(iso: string): string {
   return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'long',
@@ -124,12 +120,6 @@ const NOTICE_TEXT: Record<Exclude<Notice, null>, string> = {
   failed: 'The episode could not be played right now. Please try again in a moment.',
 };
 
-/**
- * The big button. It plays the episode the page is SHOWING, by its audio key,
- * straight from the click: browsers only let audio start from a click, so it
- * never waits on a fetch first. When that fails, the page finds out why
- * (spec §2.1) and says so through `notice`.
- */
 function EpisodePlayer({
   audioKey,
   age,
@@ -141,7 +131,6 @@ function EpisodePlayer({
 }: {
   audioKey: string | null;
   age: number;
-  /** The episode itself is being fetched (or written), so nothing is known yet. */
   episodeLoading: boolean;
   hasStories: boolean;
   notice: Notice;
@@ -212,19 +201,14 @@ function EpisodePlayer({
 
 export function Podcast() {
   const { readingAge } = useSettings();
-  /** Bumped to fetch the episode again after it failed to play (spec §2.1). */
   const [reloads, setReloads] = useState(0);
-  /** The audio key that just failed, while we find out whether it went stale. */
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const state = useAsync(() => fetchEpisode(readingAge), [readingAge, reloads]);
 
-  // Read defensively: a stub that answers with a bare array must not crash
-  // the page (routing.test.tsx does exactly that).
   const episode = state.status === 'ready' ? state.data : null;
   const articles: KidArticle[] = episode?.articles ?? [];
   const minutes = articles.reduce((total, a) => total + a.readingMinutes, 0);
 
-  // Same key as before: a real failure. A different one: the stories changed.
   const notice: Notice =
     failedKey && episode ? (episode.audioKey === failedKey ? 'failed' : 'changed') : null;
 

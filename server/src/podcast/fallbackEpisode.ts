@@ -1,11 +1,3 @@
-/**
- * The episode when the model cannot be used: the LLM is off, it failed, or its
- * script failed a check (spec §5.3).
- *
- * Every word is either fixed text or a script an editor reviewed, so this is
- * always safe to play. The welcome and goodbye are the page's old hardcoded
- * intro and closing.
- */
 import type { EpisodeStory } from './episodePrompt.js';
 
 const CLOSING =
@@ -14,8 +6,6 @@ const CLOSING =
   'favorite story today. See you tomorrow!';
 
 function segment(story: EpisodeStory, index: number): string {
-  // An old story's script is assembleScript's, which already names the source
-  // and asks the question.
   if (!story.hasOwnScript) return `Story ${index + 1}. ${story.script}`;
 
   return (

@@ -1,7 +1,3 @@
-/**
- * The episode script: the prompt the host is given, and the checks its answer
- * must pass before a child hears it (spec §5). Nothing here calls a model.
- */
 import { describe, expect, it } from 'vitest';
 import { AGE_BANDS, type KidArticle } from '../src/core/article.js';
 import {
@@ -31,7 +27,6 @@ const STORIES: EpisodeStory[] = [
 ];
 const BAND_5_7 = AGE_BANDS[0]!;
 
-/** A script that passes every check: names both sources and is long enough. */
 const GOOD = [
   'Did you know a robot can go swimming? Welcome to News for Curious Kids! We have two stories today.',
   'This story comes from BBC News. A little robot swam down to a coral reef and counted all the fish.',
@@ -80,8 +75,6 @@ describe('renderEpisodePrompt', () => {
   });
 
   it('does not let story text fill a placeholder', () => {
-    // Rule placeholders are filled BEFORE the stories go in, so a story that
-    // happens to contain "{{minAge}}" stays literal.
     const sneaky = toEpisodeStory(article({ audioScript: 'The sign said {{minAge}}.' }));
     expect(renderEpisodePrompt([sneaky], BAND_5_7, 6000)).toContain('The sign said {{minAge}}.');
   });
@@ -95,8 +88,6 @@ describe('renderEpisodePrompt', () => {
   });
 
   it('asks for each source exactly as written, even an abbreviation', () => {
-    // "No abbreviations" alone would turn NPR into "National Public Radio",
-    // which the source check then refuses.
     expect(prompt).toContain('even if it is an abbreviation');
   });
 });
@@ -135,8 +126,6 @@ describe('checkEpisodeScript', () => {
   });
 
   it('accepts "you\'re a", which the prompt asks for instead of "you are a"', () => {
-    // "you are a ..." trips the injection detector; a host talks like that
-    // constantly, so the prompt steers it to the contraction.
     expect(check(`${GOOD} You're a star!`)).toEqual({ ok: true });
   });
 
@@ -164,8 +153,6 @@ describe('checkEpisodeScript', () => {
   });
 
   it('accepts natural host speech like "imagine you are an astronaut"', () => {
-    // The script only goes to a voice, not to another model, so a host
-    // talking to the child is not a role-reassignment attack.
     expect(check(`${GOOD} Imagine you are an astronaut! You are the best listeners.`)).toEqual({ ok: true });
   });
 
@@ -198,8 +185,6 @@ describe('buildFallbackEpisode', () => {
   });
 
   it('does not name the source or ask the question twice for an old story', () => {
-    // assembleScript already says "Our next story is from ..." and
-    // "Something to wonder about: ...".
     const old = toEpisodeStory(article({ audioScript: null }));
     const script = buildFallbackEpisode([old]);
 
@@ -209,7 +194,6 @@ describe('buildFallbackEpisode', () => {
   });
 
   it('passes the same checks the model\'s script must pass', () => {
-    // The fallback is what plays when a check fails; it must never fail one.
     expect(checkEpisodeScript(buildFallbackEpisode(STORIES), STORIES, 6000)).toEqual({ ok: true });
   });
 });

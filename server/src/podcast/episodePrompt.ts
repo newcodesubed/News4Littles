@@ -1,35 +1,15 @@
-/**
- * The daily podcast episode's script: the prompt the host is given, and the
- * checks its answer must pass before a child hears it.
- *
- * No editor reads this output (spec §1), so it is built like APPROVAL_PROMPT in
- * pipeline/approvalGuard.ts rather than like the editable simplification
- * prompts: hardcoded, versioned, the story text fenced as data, and the rules
- * AFTER the fence so the last thing the model reads is the instruction.
- *
- * The stories are safe going in — each was guarded and approved with its
- * reviewed audioScript. The prompt's job is to add warmth without adding facts.
- */
 import { formatAgeBand, type AgeBand, type KidArticle } from '../core/article.js';
 import { INJECTION_PATTERNS, detectInjection } from '../pipeline/approvalGuard.js';
 import { scriptFor } from '../services/audioService.js';
 
-/** Bump on ANY change to EPISODE_PROMPT: it is part of the episode key. */
 export const EPISODE_PROMPT_VERSION = 2;
 
-/** What the host is told about one story. Every field was reviewed with it. */
 export interface EpisodeStory {
   id: string;
   kidHeadline: string;
   sourceName: string;
-  /** Exactly what the story's own play button speaks (scriptFor). */
   script: string;
   thinkAbout: string;
-  /**
-   * False for a story published before audioScript existed. Its script is
-   * then assembleScript's, which already names the source and asks the
-   * question, so the fallback must not say either twice.
-   */
   hasOwnScript: boolean;
 }
 
@@ -44,19 +24,12 @@ export function toEpisodeStory(article: KidArticle): EpisodeStory {
   };
 }
 
-/** Per-field cap, as in approvalGuard: one runaway field would drown the rules. */
 const MAX_FIELD_CHARS = 1_500;
 const clamp = (value: string): string =>
   value.length > MAX_FIELD_CHARS ? value.slice(0, MAX_FIELD_CHARS) : value;
 
-/** Roughly six characters a spoken word, the space included. */
 const CHARS_PER_WORD = 6;
 
-/**
- * About 75 words a story plus 100 for the hook, recap and goodbye — but never
- * more than the character cap can hold, or a good script would fail the length
- * check it was asked to meet.
- */
 export function wordBudget(count: number, maxChars: number): { minWords: number; maxWords: number } {
   const maxWords = Math.min(75 * count + 100, Math.floor(maxChars / CHARS_PER_WORD));
   return { minWords: Math.min(45 * count + 50, maxWords), maxWords };
@@ -141,8 +114,6 @@ function renderStory(story: EpisodeStory, index: number): string {
 export function renderEpisodePrompt(stories: EpisodeStory[], band: AgeBand, maxChars: number): string {
   const { minWords, maxWords } = wordBudget(stories.length, maxChars);
 
-  // Rule placeholders first and the stories LAST, so text inside a story that
-  // happens to look like "{{minAge}}" is never substituted.
   return EPISODE_PROMPT.replaceAll('{{ageRange}}', formatAgeBand(band))
     .replaceAll('{{count}}', String(stories.length))
     .replaceAll('{{maxWordsPerSentence}}', String(band.maxWordsPerSentence))
@@ -152,7 +123,6 @@ export function renderEpisodePrompt(stories: EpisodeStory[], band: AgeBand, maxC
     .replace('{{stories}}', () => stories.map(renderStory).join('\n\n'));
 }
 
-/** The script out of `{ "script": "..." }`, or null for anything else. */
 export function parseEpisodeScript(text: string): string | null {
   let parsed: unknown;
   try {
@@ -168,33 +138,16 @@ export function parseEpisodeScript(text: string): string | null {
 
 export type ScriptCheck = { ok: true } | { ok: false; reason: string };
 
-/**
- * Fences, placeholders, markdown headings, bullets and speaker labels: none of
- * them belong in words a voice will say, and each is a sign the model did not
- * do what it was asked.
- */
 const LEFTOVER_MARKUP = /<<<|>>>|\{\{|\}\}|^\s*#{1,6}\s|^\s*[-*•]\s|^\s*(host|narrator|speaker|announcer)\s*:/im;
 
-/**
- * The injection patterns that matter for words going to a VOICE. "you are a /
- * an / the ..." exists to catch text reassigning a model's role; this script
- * reaches no model, and a host says "imagine you are an astronaut" all the
- * time. An outright reassignment ("you are now ...") is still refused.
- * Inputs, which DO go to a model, are checked with the full set.
- */
 const ROLE_ASSIGNMENT = /you\s+are\s+(now\s+)?(a|an|the)\s/i;
 const SPOKEN_PATTERNS: readonly RegExp[] = [
   ...INJECTION_PATTERNS.filter((pattern) => pattern.source !== ROLE_ASSIGNMENT.source),
   /you\s+are\s+now\s/i,
 ];
 
-/** Below this share of the input's length, the script has dropped stories. */
 const MIN_SHARE_OF_INPUT = 0.4;
 
-/**
- * Free checks on the model's answer — no second model call. Anything that
- * fails here is replaced by the stitched fallback, which is always safe.
- */
 export function checkEpisodeScript(script: string, stories: EpisodeStory[], maxChars: number): ScriptCheck {
   if (script.length > maxChars) {
     return { ok: false, reason: `The script is ${script.length} characters, over the ${maxChars} limit.` };
@@ -217,8 +170,6 @@ export function checkEpisodeScript(script: string, stories: EpisodeStory[], maxC
     return { ok: false, reason: 'The script contains markup or a speaker label.' };
   }
 
-  // The prompt requires every source by name, which makes this a cheap test
-  // that no story was left out.
   const spoken = script.toLowerCase();
   const missing = [...new Set(stories.map((story) => story.sourceName))].filter(
     (name) => !spoken.includes(name.toLowerCase()),

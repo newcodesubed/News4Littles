@@ -1,7 +1,3 @@
-/**
- * The daily episode service (spec §2–§5, §7). A stub model and a stub voice
- * stand in for the paid ones.
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CompletionResult } from '../src/llm/openRouterClient.js';
 import { createEpisodeRepository } from '../src/db/repositories/episodeRepository.js';
@@ -16,7 +12,6 @@ afterEach(() => ctx.close());
 
 const NOW = new Date('2026-09-28T12:00:00.000Z');
 
-/** A story published this morning, UTC. */
 const publish = (id: string, extra: Record<string, unknown> = {}) =>
   insertKidArticle(ctx.db, {
     id, status: 'published', publishedAt: '2026-09-28T09:00:00.000Z',
@@ -24,7 +19,6 @@ const publish = (id: string, extra: Record<string, unknown> = {}) =>
     ...extra,
   });
 
-/** Passes every check for stories whose source is BBC News. */
 const GOOD_SCRIPT =
   'Did you know a robot can swim? Welcome to News for Curious Kids! This story comes from BBC News. ' +
   'A little robot swam down to a coral reef, and it counted the fish one by one. '.repeat(3) +
@@ -105,7 +99,6 @@ describe('episodeFor', () => {
 
     await episodes.episodeFor(8);
     await episodes.episodeFor(8);
-    // A fresh service — a server restart — still finds it in the table.
     await service({ llm }).episodeFor(8);
 
     expect(complete).toHaveBeenCalledTimes(1);
@@ -227,7 +220,6 @@ describe('episodeFor', () => {
       const retried = await episodes.episodeFor(8);
       expect(retried.source).toBe('llm');
       expect(complete).toHaveBeenCalledTimes(2);
-      // A new script is new audio, so an open page learns of it (spec §2.1).
       expect(retried.audioKey).not.toBe(first.audioKey);
     });
 
@@ -274,13 +266,10 @@ describe('audioFor', () => {
     expect(said.length).toBeGreaterThan(1);
     expect(said.every((piece) => piece.length <= 120)).toBe(true);
     expect(said.join(' ')).toBe(script!.replace(/\s+/g, ' ').trim());
-    // Joined in script order, even though two pieces are spoken at a time.
     expect(audio).toBe(said.map((piece) => `[${piece}]`).join(''));
   });
 
   it('joins the pieces without their own length headers, so the file reports the whole episode', async () => {
-    // Each real piece is a whole MP3 file whose Xing frame states that piece's
-    // length; glued as-is, the browser would think the episode is one piece long.
     const piece = (fill: number) => {
       const xing = Buffer.alloc(417, 0);
       Buffer.from([0xff, 0xfb, 0x90, 0x00]).copy(xing, 0);
@@ -367,9 +356,6 @@ describe('audioFor', () => {
   });
 
   it('refuses any key but the current episode\'s, even while that episode is stored', async () => {
-    // Otherwise any well-formed key would be answered with — and cached as —
-    // the current episode's audio, and a page holding an outdated script would
-    // hear different words from the ones it shows.
     publish('a');
     const { provider, said } = stubVoice();
     const cache = createMemoryAudioCache();

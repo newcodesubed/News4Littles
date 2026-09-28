@@ -1,6 +1,3 @@
-/**
- * Sending a synthesised file: shared by a story's audio and the episode's.
- */
 import type { Request, Response } from 'express';
 import type { AudioSuccess } from '../../services/audioService.js';
 

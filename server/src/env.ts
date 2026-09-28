@@ -160,14 +160,6 @@ export const TTS_MAX_CHARS = readInt('TTS_MAX_CHARS', 2000);
  */
 export const AUDIO_CACHE_DIR = resolve(SERVER_ROOT, readString('AUDIO_CACHE_DIR', 'data/audio'));
 
-/**
- * The daily podcast episode — docs/superpowers/specs/2026-09-28-daily-podcast-episode-design.md.
- *
- * The story cap and the character cap bound what one episode can cost, in
- * model tokens and in TTS characters. The timeout is far shorter than
- * LLM_TIMEOUT_MS because someone is waiting on the page; past it, the stitched
- * fallback plays and the model is tried again ten minutes later.
- */
 export const PODCAST_MAX_STORIES = readInt('PODCAST_MAX_STORIES', 8);
 export const PODCAST_MAX_CHARS = readInt('PODCAST_MAX_CHARS', 6000);
 export const PODCAST_LLM_TIMEOUT_MS = readInt('PODCAST_LLM_TIMEOUT_MS', 12_000);

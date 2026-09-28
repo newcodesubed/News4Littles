@@ -1,7 +1,3 @@
-/**
- * Which stories make today's podcast episode: the published versions for a
- * band from the most recent LOCAL day that has any (spec §3).
- */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { localDate } from '../src/core/localDate.js';
 import { createArticleRepository } from '../src/db/repositories/articleRepository.js';
@@ -9,9 +5,7 @@ import { createTestContext, insertKidArticle, type TestContext } from './helpers
 
 describe('localDate', () => {
   it('is the calendar date in the given zone, not in UTC', () => {
-    // 02:00 UTC on the 29th is still the evening of the 28th in New York.
     expect(localDate('2026-09-29T02:00:00.000Z', 'America/New_York')).toBe('2026-09-28');
-    // And 20:00 UTC on the 28th is already the 29th in Kathmandu (+05:45).
     expect(localDate('2026-09-28T20:00:00.000Z', 'Asia/Kathmandu')).toBe('2026-09-29');
     expect(localDate('2026-09-28T23:30:00.000Z', 'UTC')).toBe('2026-09-28');
   });
@@ -40,8 +34,6 @@ describe('listLatestPublishedDayForAge', () => {
   });
 
   it('falls back to the latest day that has stories when today has none', () => {
-    // Nothing published "today" is not a special case: the newest story's day
-    // simply is the episode's day.
     publish('older', '2026-09-25T09:00:00.000Z');
     publish('latest', '2026-09-26T09:00:00.000Z');
 
@@ -52,7 +44,6 @@ describe('listLatestPublishedDayForAge', () => {
   });
 
   it('measures the day in the configured zone', () => {
-    // Both are Sep 28 in New York, but different UTC days.
     publish('ny-morning', '2026-09-28T15:00:00.000Z');
     publish('ny-night', '2026-09-29T02:00:00.000Z');
 
@@ -70,8 +61,6 @@ describe('listLatestPublishedDayForAge', () => {
   });
 
   it('keeps the newest stories when a day has more than the cap', () => {
-    // The newest story must always make the episode, or publishing one more
-    // on a busy day would change nothing a child hears.
     for (let hour = 1; hour <= 5; hour += 1) {
       publish(`s${hour}`, `2026-09-28T0${hour}:00:00.000Z`);
     }

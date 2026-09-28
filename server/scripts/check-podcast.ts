@@ -1,18 +1,3 @@
-/**
- * Live check of the daily podcast episode.
- *
- *   npm run podcast:check              # reading band for age 8
- *   npm run podcast:check -- --age 5
- *
- * Calls the paid LLM and TTS APIs, so it is deliberately NOT part of
- * `npm test`. It builds the real episode exactly as the page would, prints
- * the script, and writes podcast-check.mp3 — the way to hear whether the
- * prompt sounds like a podcast, and whether the joins between the spoken
- * pieces click.
- *
- * It stores the episode row the page would have stored, so the first real
- * listener gets it for free. It writes nothing to the audio cache.
- */
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { bandForAge } from '../src/core/article.js';

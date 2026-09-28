@@ -18,7 +18,6 @@ export interface StoryAudio {
   status: AudioStatus;
   playing: boolean;
   loading: boolean;
-  /** 0 to 1 through the audio; 0 while idle or while its length is unknown. */
   progress: number;
   /** A message fit for a child to read, or null. */
   error: string | null;
@@ -102,8 +101,6 @@ export function useStoryAudio(src: string | null): StoryAudio {
 
     audio.onplaying = () => setStatus('playing');
     audio.onended = () => release();
-    // A streamed response has no duration until enough of it has arrived, and
-    // NaN / Infinity must not reach the progress bar as a width.
     audio.ontimeupdate = () => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
         setProgress(Math.min(1, audio.currentTime / audio.duration));

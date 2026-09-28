@@ -1,16 +1,6 @@
-/**
- * Joining the spoken pieces of an episode into one MP3 (spec §7.3).
- *
- * Each piece the voice returns is a whole file: often an ID3 tag, then a
- * Xing/Info (or VBRI) frame that states THAT piece's length, then the audio.
- * Glued together as-is, the first piece's header tells the browser the whole
- * episode is one piece long — the progress bar fills early and some players
- * stop there. These frames are built by hand, so no real audio is needed.
- */
 import { describe, expect, it } from 'vitest';
 import { joinMp3 } from '../src/podcast/joinMp3.js';
 
-/** MPEG-1 Layer III, 128 kbps, 44.1 kHz, no padding: 417 bytes a frame. */
 const STEREO = [0xff, 0xfb, 0x90, 0x00];
 const MONO = [0xff, 0xfb, 0x90, 0xc0];
 const FRAME_BYTES = 417;
@@ -22,7 +12,6 @@ function frame(header: number[], fill: number, tag?: { at: number; text: string 
   return bytes;
 }
 
-/** An ID3v2.4 tag with `size` bytes of body (sizes are syncsafe). */
 function id3(size: number): Buffer {
   const head = Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, size]);
   return Buffer.concat([head, Buffer.alloc(size, 0x11)]);
@@ -66,7 +55,6 @@ describe('joinMp3', () => {
   });
 
   it('leaves a single piece exactly as the voice sent it', () => {
-    // One piece's header describes that piece correctly.
     const only = Buffer.concat([id3(20), xing(), audio(0xa1)]);
 
     expect(joinMp3([only]).equals(only)).toBe(true);
