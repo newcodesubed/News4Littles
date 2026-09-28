@@ -222,6 +222,32 @@ describe('Podcast — the whole episode', () => {
     expect(await screen.findByText(/could not be played right now/i)).toBeInTheDocument();
   });
 
+  it('says the episode is on its way while it loads, not that there is none', async () => {
+    // The first load can take seconds while the server writes a new episode.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    renderIn(<Podcast />);
+
+    expect(screen.getByTestId('episode-status')).toHaveTextContent(/Getting today’s episode ready/);
+    expect(screen.queryByText('No episode yet.')).not.toBeInTheDocument();
+  });
+
+  it('says the episode is on its way while it is fetched again after a failed play', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(() => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve({ ok: true, status: 200, json: async () => episode() } as unknown as Response)
+        : new Promise(() => {});
+    }));
+    renderIn(<Podcast />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Play episode' }));
+
+    await act(async () => episodeAudio().onerror?.());
+
+    expect(screen.getByTestId('episode-status')).toHaveTextContent(/Getting today’s episode ready/);
+    expect(screen.queryByText('No episode yet.')).not.toBeInTheDocument();
+  });
+
   it('labels an episode from an earlier day as the latest, not today\'s', async () => {
     mockFetch(episode({ date: '2020-01-01' }));
     renderIn(<Podcast />);

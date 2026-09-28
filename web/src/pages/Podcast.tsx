@@ -133,6 +133,7 @@ const NOTICE_TEXT: Record<Exclude<Notice, null>, string> = {
 function EpisodePlayer({
   audioKey,
   age,
+  episodeLoading,
   hasStories,
   notice,
   onPlay,
@@ -140,6 +141,8 @@ function EpisodePlayer({
 }: {
   audioKey: string | null;
   age: number;
+  /** The episode itself is being fetched (or written), so nothing is known yet. */
+  episodeLoading: boolean;
   hasStories: boolean;
   notice: Notice;
   onPlay: () => void;
@@ -154,15 +157,17 @@ function EpisodePlayer({
   const busy = audio.playing || audio.loading;
   const status = notice
     ? NOTICE_TEXT[notice]
-    : !hasStories
-      ? 'No episode yet.'
-      : !audioKey
-        ? "Listening isn't switched on right now."
-        : audio.loading
-          ? 'Getting today’s episode ready…'
-          : audio.playing
-            ? 'Playing today’s episode.'
-            : 'Press play to hear all of today’s stories in one go.';
+    : episodeLoading
+      ? 'Getting today’s episode ready…'
+      : !hasStories
+        ? 'No episode yet.'
+        : !audioKey
+          ? "Listening isn't switched on right now."
+          : audio.loading
+            ? 'Getting today’s episode ready…'
+            : audio.playing
+              ? 'Playing today’s episode.'
+              : 'Press play to hear all of today’s stories in one go.';
 
   return (
     <div className="bg-gradient-sun rounded-2xl p-5 flex items-center gap-4">
@@ -197,7 +202,7 @@ function EpisodePlayer({
             style={{ width: `${Math.round(audio.progress * 100)}%` }}
           />
         </div>
-        <p role="status" className="text-xs text-foreground/70 mt-2 font-semibold">
+        <p role="status" data-testid="episode-status" className="text-xs text-foreground/70 mt-2 font-semibold">
           {status}
         </p>
       </div>
@@ -255,6 +260,7 @@ export function Podcast() {
             <EpisodePlayer
               audioKey={episode?.audioKey ?? null}
               age={readingAge}
+              episodeLoading={state.status === 'loading'}
               hasStories={articles.length > 0}
               notice={notice}
               onPlay={() => setFailedKey(null)}
