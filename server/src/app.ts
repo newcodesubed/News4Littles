@@ -27,6 +27,7 @@ import { createStoriesRouter } from './routes/admin/stories.js';
 import { createSubmitRouter } from './routes/admin/submit.js';
 import { createArticlesRouter } from './routes/public/articles.js';
 import { createAudioRouter } from './routes/public/audio.js';
+import { createPodcastRouter } from './routes/public/podcast.js';
 
 /** Mounted in order; the literal paths must come before any that take an :id. */
 const ADMIN_ROUTERS = [
@@ -88,6 +89,7 @@ export function createApp(db: Database = openDatabase(), { logger = defaultLogge
   // Audio first: '/articles/:id/audio' is two segments and '/articles/:id' is
   // one, so they cannot actually collide — the order is for readers, not routing.
   app.use('/api', createAudioRouter(db));
+  app.use('/api', createPodcastRouter(db));
   app.use('/api', createArticlesRouter(db));
 
   app.use(notFoundHandler);

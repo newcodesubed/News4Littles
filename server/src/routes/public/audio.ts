@@ -7,12 +7,12 @@
  */
 import { Router } from 'express';
 import type { Database } from 'better-sqlite3';
-import { MAX_AGE, MIN_AGE, bandForAge } from '../../core/article.js';
-import { createSettingsRepository } from '../../db/repositories/settingsRepository.js';
 import { AUDIO_CACHE_DIR } from '../../env.js';
 import { createAudioService, type AudioService } from '../../services/audioService.js';
 import { createFileAudioCache, createMemoryAudioCache } from '../../tts/audioCache.js';
 import { createSpeechProvider } from '../../tts/index.js';
+import { createAgeTargetReader } from './ageTarget.js';
+import { sendAudio } from './sendAudio.js';
 
 export interface AudioRouterOptions {
   /** Injected by tests; production builds the configured provider and cache. */
@@ -21,7 +21,7 @@ export interface AudioRouterOptions {
 
 export function createAudioRouter(db: Database, options: AudioRouterOptions = {}): Router {
   const router = Router();
-  const settings = createSettingsRepository(db);
+  const readAgeTarget = createAgeTargetReader(db);
 
   // No provider means nothing is ever written, so no cache directory is
   // created — a test run or a key-less deployment leaves no empty data/audio.
@@ -32,13 +32,6 @@ export function createAudioRouter(db: Database, options: AudioRouterOptions = {}
       provider,
       cache: provider ? createFileAudioCache(AUDIO_CACHE_DIR) : createMemoryAudioCache(),
     });
-
-  /** Same lenient rule as the JSON routes: an odd age falls back, never 400s. */
-  const readAgeTarget = (raw: unknown): number => {
-    const age = Number(raw);
-    const usable = Number.isInteger(age) && age >= MIN_AGE && age <= MAX_AGE;
-    return bandForAge(usable ? age : settings.getAppSettings().defaultAge).minAge;
-  };
 
   /**
    * GET /api/articles/:id/audio[?age=N] -> the story read aloud.
@@ -54,32 +47,7 @@ export function createAudioRouter(db: Database, options: AudioRouterOptions = {}
       return;
     }
 
-    // The key hashes the script, model and voice, so it is a strong validator:
-    // change any of them and the ETag changes with it.
-    res.setHeader('ETag', `"${result.key}"`);
-    res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Content-Length', String(result.body.size));
-    // Revalidate every time, or a regenerated story keeps playing the old audio.
-    res.setHeader('Cache-Control', 'public, no-cache');
-
-    if (req.headers['if-none-match'] === `"${result.key}"`) {
-      res.status(304).end();
-      return;
-    }
-
-    const audio = result.body.open();
-
-    // Headers are already sent by the time a stream can fail, so there is no
-    // error page to send; dropping the connection at least lets the browser
-    // report a truncated file instead of treating half a story as complete.
-    audio.on('error', (error: Error) => {
-      req.log.error({ err: error, key: result.key }, 'audio stream failed');
-      res.destroy();
-    });
-    // A listener who navigates away would otherwise leave the file handle open.
-    res.on('close', () => audio.destroy());
-
-    audio.pipe(res);
+    sendAudio(req, res, result);
   });
 
   return router;
