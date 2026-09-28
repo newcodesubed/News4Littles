@@ -7,14 +7,14 @@
  *
  * Configuration lives in .env (see .env.example).
  */
-import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { openDatabase } from './db/connection.js';
 import { CORS_ORIGINS, DATABASE_PATH, PORT } from './env.js';
 import { startScrapeSchedule } from './ingestion/scheduler.js';
 
-export { createApp };
-
+// Starts unconditionally: a process manager such as PM2 loads this file through
+// its own wrapper, so an "is this the entry script?" check never matches there.
+// Tests import createApp from app.ts instead.
 function start(): void {
   // One connection shared by the request handlers and the cron jobs (§5.3).
   const db = openDatabase();
@@ -36,4 +36,4 @@ function start(): void {
   });
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) start();
+start();

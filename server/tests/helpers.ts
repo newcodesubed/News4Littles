@@ -12,7 +12,7 @@ import type { Database } from 'better-sqlite3';
 import { openDatabase } from '../src/db/connection.js';
 import { initialiseSchema } from '../src/db/init.js';
 import { seed } from '../src/db/seed.js';
-import { createApp } from '../src/server.js';
+import { createApp } from '../src/app.js';
 import type { Logger } from '../src/logger.js';
 
 export const ADMIN_AUTH = `Basic ${Buffer.from('admin:admin123').toString('base64')}`;
