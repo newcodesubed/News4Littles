@@ -63,7 +63,7 @@ same database and settings as `npm start`.
 | ------------ | --------------------------------------------------------------------------------------- |
 | `/`          | Today's stories                                                                         |
 | `/story/:id` | One story: what happened, why it matters, words to know, a feeling note                 |
-| `/podcast`   | Daily episode. Each story is really read aloud by a text-to-speech voice; the whole-episode player is still a **placeholder** (§14) |
+| `/podcast`   | Daily episode. The big play button plays the latest day's stories as one episode, written by the LLM and read aloud; each story also has its own play button |
 | `/about`     | The mission and the editorial guardrails                                                |
 | `/settings`  | Reading age and which sources to show. Saved in the browser only; there are no accounts |
 
@@ -481,6 +481,45 @@ Measured on the default model: about **1.6s** to synthesise a 335-character
 script, **5ms** to serve it from cache. Only the first listener of a story
 waits, which is why the play button has a real loading state.
 
+### The daily episode
+
+The big play button on `/podcast` plays one episode covering the stories
+**published on the most recent day** (in `SCRAPE_TIMEZONE`) for the reader's
+band. The LLM retells each story's reviewed `audioScript` as a kids' radio
+show: a hook, a lead-in and a wonder question per story, a recap, and a
+goodbye.
+
+```
+GET /api/podcast?age=N                  → the day's stories, the script, and its audioKey
+GET /api/podcast/audio/:audioKey?age=N  → that exact script, read aloud
+```
+
+- **Paid once per set of stories.** The script is stored in `podcast_episodes`
+  under a hash of the day's stories and their scripts, and the audio is cached
+  under a hash of the script. A reload costs nothing. A newly published or
+  edited story is a new hash, so the next visitor builds a new episode once.
+- **No editor reads the episode script**, so it's guarded instead. Only
+  reviewed scripts go in. The prompt is hardcoded (`src/podcast/episodePrompt.ts`)
+  and forbids new facts. The answer must pass free checks (length, every
+  source named, no markup, no instruction-like text). If anything fails, the
+  episode is built from the reviewed scripts stitched between a fixed welcome
+  and goodbye.
+- **Never out of sync.** Audio is requested by the `audioKey` the page was
+  given. If the stories changed since the page loaded, the server answers `409`
+  and speaks nothing, and the page fetches the new episode.
+- **Long scripts** are spoken in sentence-sized pieces (`TTS_MAX_CHARS` each)
+  and joined into one MP3.
+
+| Setting                  | Default | Why                                                        |
+| ------------------------ | ------- | ---------------------------------------------------------- |
+| `PODCAST_MAX_STORIES`    | `8`     | The newest this-many stories of the day go in              |
+| `PODCAST_MAX_CHARS`      | `6000`  | A longer script from the model is replaced by the fallback |
+| `PODCAST_LLM_TIMEOUT_MS` | `12000` | A page is waiting; past this, the fallback plays for now   |
+
+```bash
+npm run podcast:check    # builds the real episode and writes podcast-check.mp3
+```
+
 ---
 
 ## Prompts and the sandbox
@@ -677,6 +716,7 @@ server/src/
   services/           use cases: submit, regenerate, sandbox, scrape runs,
                       simplification (simplifyService, simplifyBudget, jobLock)
   tts/                the speech provider registry, its contract, and the audio cache
+  podcast/            the daily episode's prompt, script checks, fallback and chunking
   routes/             public/ and admin/
 
 web/src/
@@ -696,9 +736,6 @@ resemblance.
 
 ## Not built
 
-- **Whole-episode audio.** Individual stories are read aloud for real (see
-  _Reading stories aloud_), but nothing stitches the day's stories into one
-  file, so the big play button at the top of `/podcast` is still a placeholder.
 - **Read-along highlighting.** The old browser-voice player highlighted the
   sentence being spoken, because each sentence was its own utterance. One audio
   file per story has no such boundaries; the playing card glows instead, and the
