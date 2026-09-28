@@ -325,3 +325,34 @@ CREATE TABLE IF NOT EXISTS admin_users (
   username     TEXT PRIMARY KEY,
   passwordHash TEXT NOT NULL
 );
+
+
+-- -----------------------------------------------------------------------------
+-- podcast_episodes — the daily episode's script, one row per set of inputs.
+-- docs/superpowers/specs/2026-09-28-daily-podcast-episode-design.md §6
+--
+-- The key hashes everything that shapes the script (the day's stories, their
+-- reviewed scripts, the prompt version, the model), so a new story is a new
+-- row and a reload is a lookup. Stored rather than regenerated because the
+-- model is not deterministic, and the page and the audio must say the same
+-- words. No editor reads this text, so this table is also the record of
+-- exactly what children heard.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS podcast_episodes (
+  key        TEXT    PRIMARY KEY,
+  ageTarget  INTEGER NOT NULL,
+  date       TEXT    NOT NULL,                                -- local YYYY-MM-DD the stories were published
+  articleIds TEXT    NOT NULL,                                -- JSON: string[], in episode order
+  script     TEXT    NOT NULL,                                -- exactly what is spoken
+  source     TEXT    NOT NULL CHECK (source IN ('llm', 'fallback')),
+  reason     TEXT,                                            -- why the fallback was used; NULL for 'llm'
+  model      TEXT,                                            -- the LLM that wrote it; NULL for 'fallback'
+  costUsd    REAL,
+  retryAfter TEXT,                                            -- ISO; a temporary fallback may be replaced after this
+  createdAt  TEXT    NOT NULL,                                -- ISO
+  updatedAt  TEXT    NOT NULL,                                -- ISO
+
+  CHECK (json_valid(articleIds))
+);
+
+CREATE INDEX IF NOT EXISTS idx_podcast_episodes_date ON podcast_episodes (date DESC);

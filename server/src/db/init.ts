@@ -24,12 +24,13 @@ import { refreshSeededPrompts } from './refreshSeededPrompts.js';
  * 5 — added kid_articles.approvedBy (records an auto-approved publish).
  * 6 — added kid_articles.audioScript (the spoken version of a story).
  * 7 — added raw_articles.dismissedAt (deleting from the waiting backlog).
+ * 8 — added podcast_episodes (the daily podcast episode's script).
  *
  * Seeded prompt TEXT is not versioned here: refreshSeededPrompts decides by
  * comparing the stored text with every seed ever shipped, so it is safe to run
  * on every init and needs no version guard.
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 

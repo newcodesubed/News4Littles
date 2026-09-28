@@ -25,8 +25,8 @@ describe('schema (§8)', () => {
   it('creates every table', () => {
     expect(initialiseSchema(path)).toEqual([
       'admin_users', 'app_settings', 'guard_config', 'kid_articles',
-      'prompt_drafts', 'prompt_versions', 'raw_articles', 'scrape_runs', 'sources',
-      'translation_prompt_config',
+      'podcast_episodes', 'prompt_drafts', 'prompt_versions', 'raw_articles', 'scrape_runs',
+      'sources', 'translation_prompt_config',
     ]);
   });
 
