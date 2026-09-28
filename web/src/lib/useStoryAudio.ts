@@ -18,6 +18,8 @@ export interface StoryAudio {
   status: AudioStatus;
   playing: boolean;
   loading: boolean;
+  /** 0 to 1 through the audio; 0 while idle or while its length is unknown. */
+  progress: number;
   /** A message fit for a child to read, or null. */
   error: string | null;
   play: () => void;
@@ -39,6 +41,7 @@ const canPlay = typeof window !== 'undefined' && typeof window.Audio === 'functi
 export function useStoryAudio(src: string | null): StoryAudio {
   const [status, setStatus] = useState<AudioStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
   const element = useRef<HTMLAudioElement | null>(null);
 
   /** Stop and let go, without disturbing whoever plays next. */
@@ -51,6 +54,7 @@ export function useStoryAudio(src: string | null): StoryAudio {
       // child chose to stop.
       audio.currentTime = 0;
     }
+    setProgress(0);
     setStatus('idle');
   }, []);
 
@@ -98,6 +102,13 @@ export function useStoryAudio(src: string | null): StoryAudio {
 
     audio.onplaying = () => setStatus('playing');
     audio.onended = () => release();
+    // A streamed response has no duration until enough of it has arrived, and
+    // NaN / Infinity must not reach the progress bar as a width.
+    audio.ontimeupdate = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setProgress(Math.min(1, audio.currentTime / audio.duration));
+      }
+    };
     // Fires alike for a 404, a 502 from the provider and a 503 when speech is
     // off. The status code is not readable here; the network tab has it.
     audio.onerror = fail;
@@ -109,6 +120,7 @@ export function useStoryAudio(src: string | null): StoryAudio {
     status,
     playing: status === 'playing',
     loading: status === 'loading',
+    progress,
     error,
     play,
     stop,

@@ -1,4 +1,4 @@
-import type { KidArticle } from './types';
+import type { KidArticle, PodcastEpisode } from './types';
 
 /**
  * Base URL of the /server API. Configured in web/.env as VITE_API_BASE_URL —
@@ -65,4 +65,18 @@ export function fetchArticle(id: string, age: number): Promise<KidArticle> {
   return getJson<KidArticle>(
     `/api/articles/${encodeURIComponent(id)}?age=${encodeURIComponent(age)}`,
   );
+}
+
+/** The latest day's podcast episode, in the version for the reader's age. */
+export function fetchEpisode(age: number): Promise<PodcastEpisode> {
+  return getJson<PodcastEpisode>(`/api/podcast?age=${encodeURIComponent(age)}`);
+}
+
+/**
+ * The audio of one exact episode script. The key is part of the URL so the
+ * server can refuse (409) an episode the page is still showing after the
+ * stories have changed, instead of reading out something else.
+ */
+export function episodeAudioUrl(audioKey: string, age: number): string {
+  return `${API_BASE_URL}/api/podcast/audio/${encodeURIComponent(audioKey)}?age=${encodeURIComponent(age)}`;
 }

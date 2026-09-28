@@ -16,6 +16,9 @@ class FakeAudio {
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
   currentTime = 0;
+  /** NaN until the browser knows the length, as a streamed response starts out. */
+  duration = NaN;
+  ontimeupdate: (() => void) | null = null;
   pause = vi.fn();
   play = vi.fn(async () => {
     if (FakeAudio.rejectPlay) throw new Error('blocked');
@@ -199,5 +202,38 @@ describe('useStoryAudio', () => {
     await act(async () => result.current.play());
 
     expect(FakeAudio.instances).toHaveLength(0);
+  });
+  it('reports how far through the audio is', async () => {
+    const { result } = renderHook(() => useStoryAudio(URL_A));
+    await act(async () => result.current.play());
+    act(() => FakeAudio.last.onplaying?.());
+
+    FakeAudio.last.duration = 200;
+    FakeAudio.last.currentTime = 50;
+    act(() => FakeAudio.last.ontimeupdate?.());
+
+    expect(result.current.progress).toBe(0.25);
+  });
+
+  it('reports no progress while the length is still unknown', async () => {
+    const { result } = renderHook(() => useStoryAudio(URL_A));
+    await act(async () => result.current.play());
+
+    FakeAudio.last.currentTime = 5;
+    act(() => FakeAudio.last.ontimeupdate?.());
+
+    expect(result.current.progress).toBe(0);
+  });
+
+  it('rewinds progress when stopped', async () => {
+    const { result } = renderHook(() => useStoryAudio(URL_A));
+    await act(async () => result.current.play());
+    FakeAudio.last.duration = 100;
+    FakeAudio.last.currentTime = 80;
+    act(() => FakeAudio.last.ontimeupdate?.());
+
+    act(() => result.current.stop());
+
+    expect(result.current.progress).toBe(0);
   });
 });

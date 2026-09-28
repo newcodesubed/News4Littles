@@ -46,3 +46,18 @@ export interface KidArticle {
 export function needsFeelingNote(article: Pick<KidArticle, 'safety'>): boolean {
   return article.safety !== 'calm';
 }
+
+/**
+ * GET /api/podcast — the latest day's episode for a reading band.
+ *
+ * `audioKey` names the audio of exactly this `script`. It is null when there is
+ * nothing to play: no stories, or speech switched off on the server.
+ */
+export interface PodcastEpisode {
+  /** Local YYYY-MM-DD the stories were published; null when there are none. */
+  date: string | null;
+  articles: KidArticle[];
+  script: string | null;
+  source: 'llm' | 'fallback' | null;
+  audioKey: string | null;
+}
