@@ -245,3 +245,125 @@ describe('episodeFor', () => {
     });
   });
 });
+
+describe('audioFor', () => {
+  const drain = async (outcome: Awaited<ReturnType<ReturnType<typeof service>['audioFor']>>) => {
+    if (!outcome.ok) throw new Error(`expected audio, got ${outcome.status}`);
+    const chunks: Buffer[] = [];
+    for await (const chunk of outcome.body.open()) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks).toString();
+  };
+
+  it('answers 503 while speech is off', async () => {
+    publish('a');
+    expect(await service().audioFor(8, 'x')).toMatchObject({ ok: false, status: 503 });
+  });
+
+  it('answers 404 when nothing is published', async () => {
+    expect(await service({ provider: stubVoice().provider }).audioFor(8, 'x')).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it('speaks the episode in sentence-sized pieces, joined in order', async () => {
+    publish('a');
+    const { provider, said } = stubVoice();
+    const episodes = service({ provider, chunkChars: 120 });
+    const { audioKey: key, script } = await episodes.episodeFor(8);
+
+    const audio = await drain(await episodes.audioFor(8, key!));
+
+    expect(said.length).toBeGreaterThan(1);
+    expect(said.every((piece) => piece.length <= 120)).toBe(true);
+    expect(said.join(' ')).toBe(script!.replace(/\s+/g, ' ').trim());
+    // Joined in script order, even though two pieces are spoken at a time.
+    expect(audio).toBe(said.map((piece) => `[${piece}]`).join(''));
+  });
+
+  it('pays once: the second listener gets the cached file', async () => {
+    publish('a');
+    const { provider, said } = stubVoice();
+    const episodes = service({ provider });
+    const { audioKey: key } = await episodes.episodeFor(8);
+
+    await episodes.audioFor(8, key!);
+    const spokenOnce = said.length;
+    const again = await episodes.audioFor(8, key!);
+
+    expect(again).toMatchObject({ ok: true, cached: true });
+    expect(said.length).toBe(spokenOnce);
+  });
+
+  it('shares one synthesis when a crowd presses play at once', async () => {
+    publish('a');
+    const { provider, said } = stubVoice();
+    const episodes = service({ provider });
+    const { audioKey: key } = await episodes.episodeFor(8);
+    const spokenBefore = said.length;
+
+    await Promise.all(Array.from({ length: 5 }, () => episodes.audioFor(8, key!)));
+
+    expect(said.length - spokenBefore).toBe(1);
+  });
+
+  it('refuses the old episode once a new story is published, and speaks nothing', async () => {
+    publish('a');
+    const { provider, said } = stubVoice();
+    const episodes = service({ provider });
+    const { audioKey: oldKey } = await episodes.episodeFor(8);
+
+    publish('b', { publishedAt: '2026-09-28T10:00:00.000Z' });
+
+    expect(await episodes.audioFor(8, oldKey!)).toMatchObject({ ok: false, status: 409 });
+    expect(said).toEqual([]);
+  });
+
+  it('never reads out a story that was unpublished after the page loaded', async () => {
+    publish('a');
+    publish('b', { publishedAt: '2026-09-28T10:00:00.000Z' });
+    const { provider, said } = stubVoice();
+    const episodes = service({ provider });
+    const { audioKey: oldKey } = await episodes.episodeFor(8);
+
+    ctx.db.prepare(`UPDATE kid_articles SET status = 'pending_review', publishedAt = NULL WHERE id = 'b'`).run();
+
+    expect(await episodes.audioFor(8, oldKey!)).toMatchObject({ ok: false, status: 409 });
+    expect(said).toEqual([]);
+  });
+
+  it('refuses any key but the current episode\'s, even while that episode is stored', async () => {
+    // Otherwise any well-formed key would be answered with — and cached as —
+    // the current episode's audio, and a page holding an outdated script would
+    // hear different words from the ones it shows.
+    publish('a');
+    const { provider, said } = stubVoice();
+    const cache = createMemoryAudioCache();
+    const episodes = service({ provider, cache });
+    await episodes.episodeFor(8);
+    const other = `${'c'.repeat(64)}.mp3`;
+
+    expect(await episodes.audioFor(8, other)).toMatchObject({ ok: false, status: 409 });
+    expect(said).toEqual([]);
+    expect(await cache.read(other)).toBeUndefined();
+  });
+
+  it('never writes a script: an episode nobody loaded is a 409, not a model call', async () => {
+    publish('a');
+    const { llm, complete } = stubLlm();
+    const episodes = service({ llm, provider: stubVoice().provider });
+
+    expect(await episodes.audioFor(8, `${'a'.repeat(64)}.mp3`)).toMatchObject({ ok: false, status: 409 });
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('turns a failed piece into 502, caches nothing, and lets the next press retry', async () => {
+    publish('a');
+    const cache = createMemoryAudioCache();
+    const broken = service({ provider: stubVoice(true).provider, cache });
+    const { audioKey: key } = await broken.episodeFor(8);
+
+    expect(await broken.audioFor(8, key!)).toMatchObject({ ok: false, status: 502 });
+    expect(await cache.read(key!)).toBeUndefined();
+
+    const working = service({ provider: stubVoice().provider, cache });
+    expect(await working.audioFor(8, key!)).toMatchObject({ ok: true, cached: false });
+  });
+});
