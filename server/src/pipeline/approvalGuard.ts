@@ -51,8 +51,12 @@ const INJECTION_PATTERNS = [
   /<<<\s*(END\s+)?STORY/i,
 ];
 
-/** The first pattern the text trips, or null. */
-function detectInjection(text: string): string | null {
+/**
+ * The first pattern the text trips, or null. Exported for the podcast episode,
+ * whose script is also generated from feed-derived text and also reaches a
+ * child without an editor.
+ */
+export function detectInjection(text: string): string | null {
   for (const pattern of INJECTION_PATTERNS) {
     if (pattern.test(text)) return pattern.source;
   }
