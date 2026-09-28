@@ -39,6 +39,20 @@ No API key is needed. Without one the app runs a local rule-based simplifier,
 and everything works end to end — just with plainer output. See
 [Turning on the LLM](#turning-on-the-llm).
 
+### Building for production
+
+```bash
+cd server
+npm run build        # compiles src/ to dist/ and copies schema.sql alongside
+npm run start:prod   # node dist/server.js
+
+cd web
+npm run build        # static site in web/dist
+```
+
+`.env` and `data/` are still read from `/server`, so the built API uses the
+same database and settings as `npm start`.
+
 ---
 
 ## The pages
