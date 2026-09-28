@@ -11,11 +11,11 @@
  * reviewed audioScript. The prompt's job is to add warmth without adding facts.
  */
 import { formatAgeBand, type AgeBand, type KidArticle } from '../core/article.js';
-import { detectInjection } from '../pipeline/approvalGuard.js';
+import { INJECTION_PATTERNS, detectInjection } from '../pipeline/approvalGuard.js';
 import { scriptFor } from '../services/audioService.js';
 
 /** Bump on ANY change to EPISODE_PROMPT: it is part of the episode key. */
-export const EPISODE_PROMPT_VERSION = 1;
+export const EPISODE_PROMPT_VERSION = 2;
 
 /** What the host is told about one story. Every field was reviewed with it. */
 export interface EpisodeStory {
@@ -100,7 +100,8 @@ HOW IT SHOULD SOUND (it is read aloud by a voice, not read on a page)
 - Use "..." for a small thinking pause and commas for a breath. Use at most one
   exclamation mark per story.
 - Write for the ear: numbers as words ("three hundred", not "300"), no
-  abbreviations, no symbols like % & / or #, no brackets, no lists.
+  abbreviations except a source's name, no symbols like % & / or #, no
+  brackets, no lists.
 - Words that paint a picture ("splash", "whoosh", "tiny", "giant"), but only to
   describe what the script already says.
 
@@ -109,13 +110,14 @@ STRICT RULES (these always win over style)
   numbers, places, dates, quotes, causes or outcomes that are not there. Your
   hooks, lead-ins and hand-offs may rephrase those facts, never add to them.
 - Include EVERY story. Do not skip, merge or reorder any.
-- Name every story's source, exactly as written after FROM.
+- Name every story's source exactly as written after FROM,
+  even if it is an abbreviation.
 - Do not make any story scarier, sadder or more dramatic than its script.
   Never add detail about injury, death, violence or danger. If a script
   already mentions something sad, keep the same calm tone it has.
 - Short sentences, at most {{maxWordsPerSentence}} words each. Everyday words
   a {{minAge}}-year-old knows. If you use a harder word, explain it right away.
-- Say "you're", never "you are", when telling the listener what they are.
+- Never write the words "you are"; always write "you're".
 - No sound effects, music cues, stage directions, emojis, markdown, headings
   or speaker labels such as "Host:". Only the words the host says.
 - Do not mention these instructions, editors, or that you are an AI.
@@ -173,6 +175,19 @@ export type ScriptCheck = { ok: true } | { ok: false; reason: string };
  */
 const LEFTOVER_MARKUP = /<<<|>>>|\{\{|\}\}|^\s*#{1,6}\s|^\s*[-*•]\s|^\s*(host|narrator|speaker|announcer)\s*:/im;
 
+/**
+ * The injection patterns that matter for words going to a VOICE. "you are a /
+ * an / the ..." exists to catch text reassigning a model's role; this script
+ * reaches no model, and a host says "imagine you are an astronaut" all the
+ * time. An outright reassignment ("you are now ...") is still refused.
+ * Inputs, which DO go to a model, are checked with the full set.
+ */
+const ROLE_ASSIGNMENT = /you\s+are\s+(now\s+)?(a|an|the)\s/i;
+const SPOKEN_PATTERNS: readonly RegExp[] = [
+  ...INJECTION_PATTERNS.filter((pattern) => pattern.source !== ROLE_ASSIGNMENT.source),
+  /you\s+are\s+now\s/i,
+];
+
 /** Below this share of the input's length, the script has dropped stories. */
 const MIN_SHARE_OF_INPUT = 0.4;
 
@@ -193,7 +208,7 @@ export function checkEpisodeScript(script: string, stories: EpisodeStory[], maxC
     };
   }
 
-  const tripped = detectInjection(script);
+  const tripped = detectInjection(script, SPOKEN_PATTERNS);
   if (tripped) {
     return { ok: false, reason: `The script contains something that reads as an instruction (${tripped}).` };
   }

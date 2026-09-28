@@ -42,7 +42,7 @@ const MAX_FIELD_CHARS = 1_000;
  * rather than sent — the model is not asked to resist something it does not
  * need to see.
  */
-const INJECTION_PATTERNS = [
+export const INJECTION_PATTERNS: readonly RegExp[] = [
   /ignore\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+instructions?/i,
   /disregard\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)/i,
   /"?approved"?\s*[:=]\s*true/i,
@@ -56,8 +56,11 @@ const INJECTION_PATTERNS = [
  * whose script is also generated from feed-derived text and also reaches a
  * child without an editor.
  */
-export function detectInjection(text: string): string | null {
-  for (const pattern of INJECTION_PATTERNS) {
+export function detectInjection(
+  text: string,
+  patterns: readonly RegExp[] = INJECTION_PATTERNS,
+): string | null {
+  for (const pattern of patterns) {
     if (pattern.test(text)) return pattern.source;
   }
   return null;
