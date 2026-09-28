@@ -98,40 +98,32 @@ describe('StoryCard (§3.3)', () => {
 });
 
 describe('Podcast (§3.5)', () => {
+  const asEpisode = (articles: unknown[]) => ({ date: null, articles, script: null, source: null, audioKey: null });
+
   it('shows the episode title from the PRD', async () => {
-    mockFetch([article()]);
+    mockFetch(asEpisode([article()]));
     renderIn(<Podcast />);
     expect(await screen.findByText(/Today's Curious Kids News/)).toBeInTheDocument();
   });
 
-  it('points at the per-story players, since whole-episode audio is not built yet', async () => {
-    // Per-story text-to-speech is real now; stitching the whole episode into
-    // one file is not, and the notice must not claim otherwise.
-    mockFetch([article()]);
-    renderIn(<Podcast />);
-    expect(await screen.findByText(/press play on a story below/i)).toBeInTheDocument();
-  });
-
   it('builds one segment per published story', async () => {
-    mockFetch([article({ id: 'a1' }), article({ id: 'a2', kidHeadline: 'Second story' })]);
+    mockFetch(asEpisode([article({ id: 'a1' }), article({ id: 'a2', kidHeadline: 'Second story' })]));
     renderIn(<Podcast />);
     expect(await screen.findByText('Story 1')).toBeInTheDocument();
     expect(screen.getByText('Story 2')).toBeInTheDocument();
     expect(screen.getByText('Second story')).toBeInTheDocument();
   });
 
-  it('the placeholder player toggles play and pause', async () => {
-    mockFetch([article()]);
-    renderIn(<Podcast />);
-    const play = await screen.findByRole('button', { name: 'Play' });
-    await userEvent.click(play);
-    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
-  });
-
   it('says so when there is no episode yet', async () => {
-    mockFetch([]);
+    mockFetch(asEpisode([]));
     renderIn(<Podcast />);
     expect(await screen.findByText(/No episode today yet/)).toBeInTheDocument();
+  });
+
+  it('offers one button for the whole episode', async () => {
+    mockFetch(asEpisode([article()]));
+    renderIn(<Podcast />);
+    expect(await screen.findByRole('button', { name: 'Play episode' })).toBeInTheDocument();
   });
 });
 

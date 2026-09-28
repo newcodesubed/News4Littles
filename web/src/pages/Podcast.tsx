@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Headphones, Loader2, MessageCircle, Pause, Play } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/States';
-import { fetchPublishedArticles, storyAudioUrl } from '../lib/api';
+import { episodeAudioUrl, fetchEpisode, storyAudioUrl } from '../lib/api';
 import { useSettings } from '../settings/SettingsContext';
 import { useAsync } from '../lib/useAsync';
 import { useStoryAudio } from '../lib/useStoryAudio';
@@ -10,13 +10,11 @@ import type { KidArticle } from '../lib/types';
 /**
  * Podcast — PRD §3.5, layout matching the prototype.
  *
- * Each story is now really read aloud: the server synthesises it through a
- * configured voice provider and this page plays the file. The page does not
- * know or care which provider that is.
- *
- * The prototype reads a pre-written episode object; here the intro is derived
- * from today's published stories, using the prototype's phrasing. Segment
- * scripts are not derived here — see `Segment` below.
+ * The big button plays the day's whole episode: the latest day's stories,
+ * retold by the server as one script and read aloud as one file
+ * (docs/superpowers/specs/2026-09-28-daily-podcast-episode-design.md). The
+ * script is shown in full under "What you'll hear", so a child still hears
+ * exactly what is on screen. Each story below keeps its own play button.
  */
 
 /**
@@ -104,19 +102,137 @@ function Segment({ article, index, age }: { article: KidArticle; index: number; 
   );
 }
 
-export function Podcast() {
-  const [playing, setPlaying] = useState(false);
-  const { readingAge } = useSettings();
-  const state = useAsync(() => fetchPublishedArticles(readingAge), [readingAge]);
+/** Today as the server writes dates, YYYY-MM-DD, in the reader's own zone. */
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
-  const today = new Date().toLocaleDateString(undefined, {
+/** Noon, so no time zone can move a YYYY-MM-DD onto a neighbouring day. */
+function formatEpisodeDate(iso: string): string {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
+}
 
-  const articles = state.status === 'ready' ? state.data : [];
+type Notice = 'changed' | 'failed' | null;
+
+const NOTICE_TEXT: Record<Exclude<Notice, null>, string> = {
+  changed: 'New stories just arrived! Press play to hear them.',
+  failed: 'The episode could not be played right now. Please try again in a moment.',
+};
+
+/**
+ * The big button. It plays the episode the page is SHOWING, by its audio key,
+ * straight from the click: browsers only let audio start from a click, so it
+ * never waits on a fetch first. When that fails, the page finds out why
+ * (spec §2.1) and says so through `notice`.
+ */
+function EpisodePlayer({
+  audioKey,
+  age,
+  hasStories,
+  notice,
+  onPlay,
+  onFailed,
+}: {
+  audioKey: string | null;
+  age: number;
+  hasStories: boolean;
+  notice: Notice;
+  onPlay: () => void;
+  onFailed: (audioKey: string) => void;
+}) {
+  const audio = useStoryAudio(audioKey ? episodeAudioUrl(audioKey, age) : null);
+
+  useEffect(() => {
+    if (audio.status === 'error' && audioKey) onFailed(audioKey);
+  }, [audio.status, audioKey, onFailed]);
+
+  const busy = audio.playing || audio.loading;
+  const status = notice
+    ? NOTICE_TEXT[notice]
+    : !hasStories
+      ? 'No episode yet.'
+      : !audioKey
+        ? "Listening isn't switched on right now."
+        : audio.loading
+          ? 'Getting today’s episode ready…'
+          : audio.playing
+            ? 'Playing today’s episode.'
+            : 'Press play to hear all of today’s stories in one go.';
+
+  return (
+    <div className="bg-gradient-sun rounded-2xl p-5 flex items-center gap-4">
+      <button
+        onClick={
+          busy
+            ? audio.stop
+            : () => {
+                onPlay();
+                audio.play();
+              }
+        }
+        disabled={!audioKey}
+        aria-label={busy ? 'Stop episode' : 'Play episode'}
+        aria-busy={audio.loading}
+        className="w-14 h-14 rounded-full shadow-pop bg-primary text-primary-foreground grid place-items-center shrink-0 disabled:opacity-60"
+      >
+        {audio.loading ? (
+          <Loader2 className="w-6 h-6 animate-spin" />
+        ) : audio.playing ? (
+          <Pause className="w-6 h-6" />
+        ) : (
+          <Play className="w-6 h-6 ml-0.5" />
+        )}
+      </button>
+
+      <div className="flex-1">
+        <div className="h-2 bg-background/50 rounded-full overflow-hidden">
+          <div
+            data-testid="episode-progress"
+            className="h-full bg-primary rounded-full transition-[width] duration-300"
+            style={{ width: `${Math.round(audio.progress * 100)}%` }}
+          />
+        </div>
+        <p role="status" className="text-xs text-foreground/70 mt-2 font-semibold">
+          {status}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function Podcast() {
+  const { readingAge } = useSettings();
+  /** Bumped to fetch the episode again after it failed to play (spec §2.1). */
+  const [reloads, setReloads] = useState(0);
+  /** The audio key that just failed, while we find out whether it went stale. */
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const state = useAsync(() => fetchEpisode(readingAge), [readingAge, reloads]);
+
+  // Read defensively: a stub that answers with a bare array must not crash
+  // the page (routing.test.tsx does exactly that).
+  const episode = state.status === 'ready' ? state.data : null;
+  const articles: KidArticle[] = episode?.articles ?? [];
   const minutes = articles.reduce((total, a) => total + a.readingMinutes, 0);
+
+  // Same key as before: a real failure. A different one: the stories changed.
+  const notice: Notice =
+    failedKey && episode ? (episode.audioKey === failedKey ? 'failed' : 'changed') : null;
+
+  const date = episode?.date ?? null;
+  const label =
+    date && date !== todayIso()
+      ? `Latest episode · ${formatEpisodeDate(date)}`
+      : `Daily Episode · ${formatEpisodeDate(date ?? todayIso())}`;
+
+  const handleFailed = useCallback((key: string) => {
+    setFailedKey(key);
+    setReloads((n) => n + 1);
+  }, []);
 
   return (
     <div>
@@ -124,7 +240,7 @@ export function Podcast() {
         <div className="container py-12 md:py-16">
           <div className="bg-card rounded-3xl shadow-card border border-border p-6 md:p-10 max-w-3xl mx-auto">
             <div className="flex items-center gap-2 text-xs font-bold text-primary uppercase tracking-wider mb-3">
-              <Headphones className="w-4 h-4" /> Daily Episode · {today}
+              <Headphones className="w-4 h-4" /> {label}
             </div>
 
             <h1 className="font-display text-3xl md:text-4xl leading-tight mb-3">
@@ -136,33 +252,14 @@ export function Podcast() {
               {articles.length === 1 ? 'story' : 'stories'}
             </p>
 
-            <div className="bg-gradient-sun rounded-2xl p-5 flex items-center gap-4">
-              <button
-                onClick={() => setPlaying((p) => !p)}
-                aria-label={playing ? 'Pause' : 'Play'}
-                className="w-14 h-14 rounded-full shadow-pop bg-primary text-primary-foreground grid place-items-center shrink-0"
-              >
-                {playing ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
-              </button>
-
-              <div className="flex-1">
-                <div className="h-2 bg-background/50 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full bg-primary rounded-full transition-all ${
-                      playing ? 'w-1/3 animate-pulse' : 'w-0'
-                    }`}
-                  />
-                </div>
-                {/*
-                  Still a placeholder: this button would play the whole episode
-                  as one piece of audio, which nothing stitches together yet.
-                  The per-story buttons below are real.
-                */}
-                <p className="text-xs text-foreground/70 mt-2 font-semibold">
-                  Whole-episode play is coming — press play on a story below to hear it now.
-                </p>
-              </div>
-            </div>
+            <EpisodePlayer
+              audioKey={episode?.audioKey ?? null}
+              age={readingAge}
+              hasStories={articles.length > 0}
+              notice={notice}
+              onPlay={() => setFailedKey(null)}
+              onFailed={handleFailed}
+            />
           </div>
         </div>
       </section>
@@ -173,16 +270,14 @@ export function Podcast() {
 
         {state.status === 'ready' && (
           <>
-            <div className="bg-card rounded-3xl border border-border p-6 shadow-soft">
-              <h2 className="font-display text-2xl mb-2 inline-flex items-center gap-2">
-                <MessageCircle className="w-5 h-5 text-primary" /> Friendly intro
-              </h2>
-              <p className="text-foreground/80 leading-relaxed">
-                Hi friends! Welcome back to News for Curious Kids. I'm so glad you're here. Today we
-                have {articles.length} short {articles.length === 1 ? 'story' : 'stories'}. Ready?
-                Let's go!
-              </p>
-            </div>
+            {episode?.script && (
+              <div className="bg-card rounded-3xl border border-border p-6 shadow-soft">
+                <h2 className="font-display text-2xl mb-2 inline-flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5 text-primary" /> What you'll hear
+                </h2>
+                <p className="text-foreground/80 leading-relaxed whitespace-pre-line">{episode.script}</p>
+              </div>
+            )}
 
             <div>
               <h2 className="font-display text-2xl mb-4">Today's stories</h2>
@@ -199,15 +294,6 @@ export function Podcast() {
                   ))}
                 </ol>
               )}
-            </div>
-
-            <div className="bg-card rounded-3xl border border-border p-6 shadow-soft">
-              <h2 className="font-display text-2xl mb-2">Closing</h2>
-              <p className="text-foreground/80 leading-relaxed">
-                That's all for today, friends. Remember: it's okay to feel curious, it's okay to ask
-                questions, and it's wonderful to learn something new. Talk to a grown-up about your
-                favorite story today. See you tomorrow!
-              </p>
             </div>
           </>
         )}
