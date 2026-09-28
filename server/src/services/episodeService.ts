@@ -30,6 +30,7 @@ import {
   toEpisodeStory, type EpisodeStory,
 } from '../podcast/episodePrompt.js';
 import { buildFallbackEpisode } from '../podcast/fallbackEpisode.js';
+import { joinMp3 } from '../podcast/joinMp3.js';
 import { audioFromBuffer, audioKey, type AudioCache } from '../tts/audioCache.js';
 import { SPEECH_CONTENT_TYPES, type SpeechProvider } from '../tts/types.js';
 import type { AudioSuccess } from './audioService.js';
@@ -261,8 +262,9 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
     }
 
     // MP3 is a run of self-contained frames, so pieces in the same voice and
-    // format play straight through when joined.
-    const joined = Buffer.concat(audio);
+    // format play straight through when joined — once each piece's own length
+    // header is gone (see joinMp3).
+    const joined = voice.format === 'mp3' ? joinMp3(audio) : Buffer.concat(audio);
     await cache.write(key, joined);
     return {
       ok: true, body: audioFromBuffer(joined), contentType: SPEECH_CONTENT_TYPES[voice.format],

@@ -278,6 +278,43 @@ describe('audioFor', () => {
     expect(audio).toBe(said.map((piece) => `[${piece}]`).join(''));
   });
 
+  it('joins the pieces without their own length headers, so the file reports the whole episode', async () => {
+    // Each real piece is a whole MP3 file whose Xing frame states that piece's
+    // length; glued as-is, the browser would think the episode is one piece long.
+    const piece = (fill: number) => {
+      const xing = Buffer.alloc(417, 0);
+      Buffer.from([0xff, 0xfb, 0x90, 0x00]).copy(xing, 0);
+      xing.write('Xing', 36, 'latin1');
+      const audio = Buffer.alloc(417, fill);
+      Buffer.from([0xff, 0xfb, 0x90, 0x00]).copy(audio, 0);
+      return { xing, audio };
+    };
+    publish('a');
+    let calls = 0;
+    const provider: SpeechProvider = {
+      ...stubVoice().provider,
+      async speak(): Promise<SpeechResult> {
+        const { xing, audio } = piece(0xa0 + calls++);
+        return {
+          ok: true, audio: Buffer.concat([xing, audio]), contentType: 'audio/mpeg', format: 'mp3',
+          model: 'stub-voice-model', voice: 'stub-voice', elapsedMs: 1,
+        };
+      },
+    };
+    const episodes = service({ provider, chunkChars: 120 });
+    const { audioKey: key } = await episodes.episodeFor(8);
+
+    const outcome = await episodes.audioFor(8, key!);
+    if (!outcome.ok) throw new Error('expected audio');
+    const chunks: Buffer[] = [];
+    for await (const chunk of outcome.body.open()) chunks.push(chunk as Buffer);
+    const joined = Buffer.concat(chunks);
+
+    expect(calls).toBeGreaterThan(1);
+    expect(joined.includes(Buffer.from('Xing', 'latin1'))).toBe(false);
+    expect(joined.length).toBe(calls * 417);
+  });
+
   it('pays once: the second listener gets the cached file', async () => {
     publish('a');
     const { provider, said } = stubVoice();
