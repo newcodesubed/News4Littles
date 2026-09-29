@@ -218,6 +218,23 @@ describe('OpenRouterClient', () => {
     expect(result.ok === false && result.reason).toMatch(/cut off.*LLM_MAX_TOKENS/);
   });
 
+  it('retries a reply the provider broke off mid-way, which OpenRouter still sends as 200', async () => {
+    const broken = { ...completion('{"kidHeadline'), choices: [{ message: { content: '{"kidHeadline' }, finish_reason: 'error' }] };
+    const fetchImpl = stubFetch(broken);
+    const result = await client(fetchImpl as unknown as typeof fetch).complete({ prompt: 'p' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.ok === false && result.reason).toMatch(/partway/);
+  });
+
+  it('passes on the provider\'s own error message for a broken-off reply', async () => {
+    const broken = {
+      ...completion(''),
+      choices: [{ message: { content: '{' }, finish_reason: 'error', error: { code: 502, message: 'Provider overloaded' } }],
+    };
+    const result = await client(stubFetch(broken) as unknown as typeof fetch).complete({ prompt: 'p' });
+    expect(result.ok === false && result.reason).toBe('The model failed partway through its reply: Provider overloaded.');
+  });
+
   it('reports a missing key without calling out', async () => {
     const fetchImpl = stubFetch(completion('{}'));
     const result = await new OpenRouterClient({ apiKey: '', fetchImpl: fetchImpl as unknown as typeof fetch })

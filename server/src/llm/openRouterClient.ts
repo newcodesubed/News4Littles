@@ -11,6 +11,7 @@
 import {
   LLM_MAX_RETRIES, LLM_MAX_TOKENS, LLM_MODEL, LLM_TIMEOUT_MS, OPENROUTER_KEY,
 } from '../env.js';
+import { logger } from '../logger.js';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -161,7 +162,15 @@ export class OpenRouterClient {
     }
 
     interface CompletionBody {
-      choices?: { message?: { content?: string }; finish_reason?: string }[];
+      /** OpenRouter's generation id, searchable in its activity dashboard. */
+      id?: string;
+      provider?: string;
+      choices?: {
+        message?: { content?: string };
+        finish_reason?: string;
+        native_finish_reason?: string;
+        error?: { code?: number | string; message?: string };
+      }[];
       usage?: { total_tokens?: number; cost?: number };
       model?: string;
     }
@@ -171,6 +180,29 @@ export class OpenRouterClient {
       body = (await response.json()) as CompletionBody;
     } catch {
       return { ok: false, reason: 'OpenRouter returned a body that was not JSON.', transient: true, elapsedMs: elapsed() };
+    }
+
+    // The provider failed mid-reply; OpenRouter still answers 200 with the partial text.
+    const choice = body.choices?.[0];
+    if (choice?.finish_reason === 'error') {
+      logger.warn(
+        {
+          generationId: body.id,
+          provider: body.provider,
+          model: body.model ?? model,
+          nativeFinishReason: choice.native_finish_reason,
+          error: choice.error,
+          partial: choice.message?.content?.slice(0, 200),
+        },
+        'model failed mid-reply',
+      );
+      const detail = choice.error?.message;
+      return {
+        ok: false,
+        reason: `The model failed partway through its reply${detail ? `: ${detail}` : ''}.`,
+        transient: true,
+        elapsedMs: elapsed(),
+      };
     }
 
     const text = stripCodeFence(body.choices?.[0]?.message?.content ?? '');
