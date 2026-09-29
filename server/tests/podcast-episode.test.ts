@@ -189,10 +189,10 @@ describe('episodeFor', () => {
 
     it('uses it, and says why, when the script fails a check', async () => {
       publish('a');
-      const { llm } = stubLlm(reply(GOOD_SCRIPT.replaceAll('BBC News', 'the news')));
+      const { llm } = stubLlm(reply(GOOD_SCRIPT.replace('See you tomorrow, curious friends!', '')));
 
       expect((await service({ llm }).episodeFor(8)).source).toBe('fallback');
-      expect((await stored()).reason).toMatch(/never names BBC News/);
+      expect((await stored()).reason).toMatch(/goodbye/);
     });
 
     it('retries the model after a temporary failure, once the wait is over', async () => {

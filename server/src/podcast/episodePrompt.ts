@@ -170,12 +170,9 @@ export function checkEpisodeScript(script: string, stories: EpisodeStory[], maxC
     return { ok: false, reason: 'The script contains markup or a speaker label.' };
   }
 
-  const spoken = script.toLowerCase();
-  const missing = [...new Set(stories.map((story) => story.sourceName))].filter(
-    (name) => !spoken.includes(name.toLowerCase()),
-  );
-  if (missing.length > 0) {
-    return { ok: false, reason: `The script never names ${missing.join(', ')}, so a story may be missing.` };
+  // A script cut short or missing its goodbye does not end on the fixed sign-off.
+  if (!/see you tomorrow, curious friends!?\s*$/i.test(script)) {
+    return { ok: false, reason: 'The script does not end with the goodbye, so it may be cut short.' };
   }
 
   return { ok: true };
