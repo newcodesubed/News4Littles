@@ -154,6 +154,18 @@ describe('Podcast', () => {
     expect(card).toHaveClass('bg-card');
     expect(card.querySelector('.sound-bars')).toBeNull();
   });
+
+  it('shows the story playing in its own play bar', async () => {
+    mockFetch(episode({ articles: [article({ audioScript: 'One.' })] }));
+    renderIn(<Podcast />);
+    await userEvent.click(await screen.findByRole('button', { name: /listen to story 1/i }));
+
+    await act(async () => FakeAudio.last.onplaying?.());
+
+    expect(screen.getByText('Playing story 1.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /stop story 1/i }));
+    expect(screen.getByText('Press play to hear this story.')).toBeInTheDocument();
+  });
 });
 
 describe('Podcast — the whole episode', () => {
