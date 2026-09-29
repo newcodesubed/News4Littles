@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Headphones, Loader2, MessageCircle, Pause, Play } from 'lucide-react';
+import { Headphones, MessageCircle } from 'lucide-react';
+import { PlayBar } from '../components/PlayBar';
 import { ErrorState, LoadingState } from '../components/States';
 import { episodeAudioUrl, fetchEpisode, storyAudioUrl } from '../lib/api';
 import { useSettings } from '../settings/SettingsContext';
@@ -46,7 +47,14 @@ function Segment({ article, index, age }: { article: KidArticle; index: number; 
   const audio = useStoryAudio(storyAudioUrl(article.id, age));
   const script = article.audioScript ?? segmentScript(article);
 
-  const label = audio.playing ? `Stop story ${index + 1}` : `Listen to story ${index + 1}`;
+  const busy = audio.playing || audio.loading;
+  const status =
+    audio.error ??
+    (audio.loading
+      ? 'Getting this story ready…'
+      : audio.playing
+        ? `Playing story ${index + 1}.`
+        : 'Press play to hear this story.');
 
   // The whole card warms up rather than the words highlighting: the audio carries no sentence timings.
   return (
@@ -57,45 +65,30 @@ function Segment({ article, index, age }: { article: KidArticle; index: number; 
           : 'bg-card border-border shadow-soft'
       }`}
     >
-      <div className="flex items-start gap-3">
-        <button
-          onClick={audio.playing || audio.loading ? audio.stop : audio.play}
-          disabled={audio.loading}
-          aria-label={label}
-          aria-busy={audio.loading}
-          className="w-10 h-10 shrink-0 rounded-full bg-primary text-primary-foreground grid place-items-center shadow-pop disabled:opacity-70"
-        >
-          {audio.loading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : audio.playing ? (
-            <Pause className="w-4 h-4" />
-          ) : (
-            <Play className="w-4 h-4 ml-0.5" />
-          )}
-        </button>
-
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2 text-xs font-bold text-primary">
-            Story {index + 1}
-            {audio.playing && (
-              <span aria-hidden className="sound-bars">
-                <span />
-                <span />
-                <span />
-                <span />
-              </span>
-            )}
-          </div>
-          <h3 className="font-display text-lg mb-2">{article.kidHeadline}</h3>
-          <p className="text-sm text-foreground/70 leading-relaxed">{script}</p>
-
-          {audio.error && (
-            <p role="status" className="text-sm text-foreground/60 mt-2">
-              {audio.error}
-            </p>
-          )}
-        </div>
+      <div className="mb-1 flex items-center gap-2 text-xs font-bold text-primary">
+        Story {index + 1}
+        {audio.playing && (
+          <span aria-hidden className="sound-bars">
+            <span />
+            <span />
+            <span />
+            <span />
+          </span>
+        )}
       </div>
+      <h3 className="font-display text-lg mb-3">{article.kidHeadline}</h3>
+
+      <PlayBar
+        size="md"
+        label={busy ? `Stop story ${index + 1}` : `Listen to story ${index + 1}`}
+        status={status}
+        progress={audio.progress}
+        playing={audio.playing}
+        loading={audio.loading}
+        onToggle={busy ? audio.stop : audio.play}
+      />
+
+      <p className="text-sm text-foreground/70 leading-relaxed mt-4">{script}</p>
     </li>
   );
 }
@@ -159,43 +152,23 @@ function EpisodePlayer({
               : 'Press play to hear all of today’s stories in one go.';
 
   return (
-    <div className="bg-gradient-sun rounded-2xl p-5 flex items-center gap-4">
-      <button
-        onClick={
-          busy
-            ? audio.stop
-            : () => {
-                onPlay();
-                audio.play();
-              }
-        }
-        disabled={!audioKey}
-        aria-label={busy ? 'Stop episode' : 'Play episode'}
-        aria-busy={audio.loading}
-        className="w-14 h-14 rounded-full shadow-pop bg-primary text-primary-foreground grid place-items-center shrink-0 disabled:opacity-60"
-      >
-        {audio.loading ? (
-          <Loader2 className="w-6 h-6 animate-spin" />
-        ) : audio.playing ? (
-          <Pause className="w-6 h-6" />
-        ) : (
-          <Play className="w-6 h-6 ml-0.5" />
-        )}
-      </button>
-
-      <div className="flex-1">
-        <div className="h-2 bg-background/50 rounded-full overflow-hidden">
-          <div
-            data-testid="episode-progress"
-            className="h-full bg-primary rounded-full transition-[width] duration-300"
-            style={{ width: `${Math.round(audio.progress * 100)}%` }}
-          />
-        </div>
-        <p role="status" data-testid="episode-status" className="text-xs text-foreground/70 mt-2 font-semibold">
-          {status}
-        </p>
-      </div>
-    </div>
+    <PlayBar
+      label={busy ? 'Stop episode' : 'Play episode'}
+      status={status}
+      progress={audio.progress}
+      playing={audio.playing}
+      loading={audio.loading}
+      disabled={!audioKey}
+      testId="episode"
+      onToggle={
+        busy
+          ? audio.stop
+          : () => {
+              onPlay();
+              audio.play();
+            }
+      }
+    />
   );
 }
 
