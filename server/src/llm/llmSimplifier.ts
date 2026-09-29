@@ -127,7 +127,7 @@ export function parseLlmContent(text: string): LlmContent {
     raw = parsed as Record<string, unknown>;
   } catch (error: unknown) {
     if (error instanceof LlmResponseError) throw error;
-    throw new LlmResponseError('Response was not valid JSON.');
+    throw new LlmResponseError(`Response was not valid JSON (${error instanceof Error ? error.message : String(error)}).`);
   }
 
   const content: Partial<LlmContent> = {};

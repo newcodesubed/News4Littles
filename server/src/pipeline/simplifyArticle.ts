@@ -225,7 +225,7 @@ function tryParse(text: string): { content: LlmContent } | { error: string } {
     return { content: parseLlmContent(text) };
   } catch (error: unknown) {
     const reason = error instanceof LlmResponseError ? error.message : 'The response could not be understood.';
-    logger.warn({ reason, reply: text.slice(0, 500) }, 'unusable LLM reply');
+    logger.warn({ reason, chars: text.length, start: text.slice(0, 300), end: text.slice(-300) }, 'unusable LLM reply');
     return { error: reason };
   }
 }
