@@ -117,6 +117,10 @@ describe('response validation', () => {
     expect(parseLlmContent(JSON.stringify(GOOD)).kidHeadline).toBe(GOOD.kidHeadline);
   });
 
+  it.each(['adult_nearby', 'Adult Nearby', 'SKIP_YOUNG'])('accepts the safety level spelled %s', (safety) => {
+    expect(parseLlmContent(JSON.stringify({ ...GOOD, safety })).safety).toMatch(/^(adult-nearby|skip-young)$/);
+  });
+
   it('accepts JSON with a sentence around it', () => {
     const text = `Here is the story:\n${JSON.stringify(GOOD)}\nHope that helps!`;
     expect(parseLlmContent(text).kidHeadline).toBe(GOOD.kidHeadline);

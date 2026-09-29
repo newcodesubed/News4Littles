@@ -135,7 +135,8 @@ export function parseLlmContent(text: string): LlmContent {
 
   // Safety must be one of the three; anything else is treated as unusable
   // rather than silently defaulting to calm.
-  const safety = String(raw.safety ?? '').trim() as Safety;
+  // Models sometimes write 'adult_nearby' or 'Adult Nearby' for 'adult-nearby'.
+  const safety = String(raw.safety ?? '').trim().toLowerCase().replace(/[\s_]+/g, '-') as Safety;
   if (!(SAFETY_VALUES as readonly string[]).includes(safety)) {
     throw new LlmResponseError(`Field 'safety' was '${String(raw.safety)}', which is not a known level.`);
   }
