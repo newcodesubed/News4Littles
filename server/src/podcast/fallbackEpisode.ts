@@ -3,7 +3,7 @@ import type { EpisodeStory } from './episodePrompt.js';
 const CLOSING =
   "That's all for today, friends. Remember: it's okay to feel curious, it's okay to ask " +
   "questions, and it's wonderful to learn something new. Talk to a grown-up about your " +
-  'favorite story today. See you tomorrow!';
+  'favorite story today. See you tomorrow, curious friends!';
 
 function segment(story: EpisodeStory, index: number): string {
   if (!story.hasOwnScript) return `Story ${index + 1}. ${story.script}`;

@@ -177,7 +177,7 @@ describe('buildFallbackEpisode', () => {
         'Something to wonder about... What would you ask the robot?',
     );
     expect(script).toContain('Story 2. This one comes from NPR.');
-    expect(script.endsWith('See you tomorrow!')).toBe(true);
+    expect(script.endsWith('See you tomorrow, curious friends!')).toBe(true);
   });
 
   it('says "one short story" for a day with one', () => {
