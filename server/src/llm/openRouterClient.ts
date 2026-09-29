@@ -161,7 +161,7 @@ export class OpenRouterClient {
     }
 
     interface CompletionBody {
-      choices?: { message?: { content?: string } }[];
+      choices?: { message?: { content?: string }; finish_reason?: string }[];
       usage?: { total_tokens?: number; cost?: number };
       model?: string;
     }
@@ -174,6 +174,16 @@ export class OpenRouterClient {
     }
 
     const text = stripCodeFence(body.choices?.[0]?.message?.content ?? '');
+
+    // A reply cut off mid-JSON would otherwise surface later as "not valid JSON".
+    if (text && body.choices?.[0]?.finish_reason === 'length') {
+      return {
+        ok: false,
+        reason: `The reply was cut off at max_tokens (${request.maxTokens ?? this.maxTokens}); raise LLM_MAX_TOKENS.`,
+        transient: false,
+        elapsedMs: elapsed(),
+      };
+    }
 
     // A reasoning model can spend its whole budget thinking and return nothing
     // — gpt-5-nano does exactly this. Empty content is a failure, not success.

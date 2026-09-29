@@ -106,6 +106,13 @@ function requireText(value: unknown, field: string): string {
   return value.trim();
 }
 
+/** The outermost `{...}`, so a sentence before or after the JSON does not sink it. */
+function extractJsonObject(text: string): string {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  return start !== -1 && end > start ? text.slice(start, end + 1) : text;
+}
+
 /**
  * Parse and validate a model response into content the database will accept.
  * Throws LlmResponseError, which the caller turns into a local fallback.
@@ -113,7 +120,7 @@ function requireText(value: unknown, field: string): string {
 export function parseLlmContent(text: string): LlmContent {
   let raw: Record<string, unknown>;
   try {
-    const parsed: unknown = JSON.parse(text);
+    const parsed: unknown = JSON.parse(extractJsonObject(text));
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       throw new LlmResponseError('Response was not a JSON object.');
     }

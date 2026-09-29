@@ -12,8 +12,9 @@ import { AGE_BANDS, formatAgeBand, type AgeBand, type KidArticle } from '../core
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { OpenRouterClient } from '../llm/openRouterClient.js';
 import {
-  LlmResponseError, parseLlmContent, renderPrompt, selectPrompt,
+  LlmResponseError, parseLlmContent, renderPrompt, selectPrompt, type LlmContent,
 } from '../llm/llmSimplifier.js';
+import { logger } from '../logger.js';
 import { denyListGuard, strictest, type GuardResult } from './guard.js';
 import { runPromptGuard, type PromptGuardOutcome } from './promptGuard.js';
 import { FEELING_NOTE_FALLBACK } from './simplify.js';
@@ -118,10 +119,19 @@ export async function simplifyArticle(
       ? await runPromptGuard(guardConfig.promptGuardText, promptContext, client)
       : undefined);
 
-  const result = await client.complete({
-    prompt: renderPrompt(chosen.template, promptContext),
-    model: options.model,
-  });
+  const request = { prompt: renderPrompt(chosen.template, promptContext), model: options.model };
+  let result = await client.complete(request);
+  let spentUsd = result.ok ? (result.costUsd ?? 0) : 0;
+  let parsed = result.ok ? tryParse(result.text) : undefined;
+
+  // A malformed reply is usually a one-off, so it earns one retry before the fallback.
+  if (parsed && 'error' in parsed) {
+    result = await client.complete(request);
+    if (result.ok) {
+      spentUsd += result.costUsd ?? 0;
+      parsed = tryParse(result.text);
+    }
+  }
 
   if (!result.ok) {
     const { article, guard } = local();
@@ -130,82 +140,93 @@ export async function simplifyArticle(
       fallbackReason: result.reason,
       elapsedMs: result.elapsedMs,
       model: options.model ?? LLM_MODEL,
+      costUsd: spentUsd || undefined,
     };
   }
 
-  try {
-    const content = parseLlmContent(result.text);
-
-    // --- §6: every enabled guard runs; the strictest wins -----------------
-    // The model's own verdict is one input alongside the deny-list, so a model
-    // that calls a war story "calm" cannot publish it as calm.
-    const guards: GuardResult[] = [];
-    if (config.denyListEnabled) {
-      guards.push(denyListGuard(`${raw.headline}\n${raw.body}`, config.denyList));
-    }
-    guards.push({ guard: 'llm-simplifier', safety: content.safety, matches: [] });
-    // A guard that failed contributes nothing rather than a made-up verdict.
-    if (promptGuard?.result) guards.push(promptGuard.result);
-
-    const guard = strictest(guards);
-    const denyMatches = guards.find((g) => g.guard === 'deny-list')?.matches ?? [];
-
-    const article: KidArticle = {
-      id: options.id ?? crypto.randomUUID(),
-      originalId: raw.id,
-      ageTarget: config.ageTarget,
-      kidHeadline: content.kidHeadline,
-      summary: content.summary,
-      whatHappened: content.whatHappened,
-      whyItMatters: content.whyItMatters,
-      vocab: content.vocab,
-      thinkAbout: content.thinkAbout,
-      audioScript: content.audioScript,
-      // §3.4 / §11.1: a feeling note belongs only to a non-calm story. If the
-      // guard raised the level above what the model expected, the model may
-      // not have written one — use the fixed fallback text rather than none.
-      feelingNote:
-        guard.safety === 'calm'
-          ? null
-          : (content.feelingNote ?? FEELING_NOTE_FALLBACK[guard.safety]),
-      safety: guard.safety,
-      contentWarnings:
-        content.contentWarnings ?? (denyMatches.length > 0 ? denyMatches : null),
-      category: (!raw.topicChosenByEditor && content.category) || raw.topic,
-      readingMinutes: content.readingMinutes,
-      sourceName: raw.sourceName,
-      sourceUrl: raw.sourceUrl,
-      // §5.2 step 7: never auto-publish.
-      status: 'pending_review',
-      rejectReason: null,
-      editedByHuman: false,
-      createdAt: options.now ?? new Date().toISOString(),
-      publishedAt: null,
-    };
-
-    return {
-      article,
-      guard: { ...guard, matches: denyMatches },
-      engine: 'llm',
-      model: result.model,
-      // Both calls are billed, so both are reported — but a verdict supplied by
-      // the caller was billed to the caller, not again to every version.
-      costUsd: (result.costUsd ?? 0) + (options.promptGuard ? 0 : (promptGuard?.costUsd ?? 0)),
-      elapsedMs: result.elapsedMs,
-      promptSource: chosen.source,
-      promptGuard,
-    };
-  } catch (error: unknown) {
-    // §9.1 step 4: parsing failed, so fall back and flag it.
+  // §9.1 step 4: parsing failed, so fall back and flag it.
+  if (!parsed || 'error' in parsed) {
     const { article, guard } = local();
     return {
       article, guard, engine: 'local-fallback',
-      fallbackReason:
-        error instanceof LlmResponseError ? error.message : 'The response could not be understood.',
+      fallbackReason: parsed?.error ?? 'The response could not be understood.',
       model: result.model,
-      costUsd: result.costUsd,
+      costUsd: spentUsd,
       elapsedMs: result.elapsedMs,
     };
+  }
+
+  const { content } = parsed;
+
+  // --- §6: every enabled guard runs; the strictest wins -----------------
+  // The model's own verdict is one input alongside the deny-list, so a model
+  // that calls a war story "calm" cannot publish it as calm.
+  const guards: GuardResult[] = [];
+  if (config.denyListEnabled) {
+    guards.push(denyListGuard(`${raw.headline}\n${raw.body}`, config.denyList));
+  }
+  guards.push({ guard: 'llm-simplifier', safety: content.safety, matches: [] });
+  // A guard that failed contributes nothing rather than a made-up verdict.
+  if (promptGuard?.result) guards.push(promptGuard.result);
+
+  const guard = strictest(guards);
+  const denyMatches = guards.find((g) => g.guard === 'deny-list')?.matches ?? [];
+
+  const article: KidArticle = {
+    id: options.id ?? crypto.randomUUID(),
+    originalId: raw.id,
+    ageTarget: config.ageTarget,
+    kidHeadline: content.kidHeadline,
+    summary: content.summary,
+    whatHappened: content.whatHappened,
+    whyItMatters: content.whyItMatters,
+    vocab: content.vocab,
+    thinkAbout: content.thinkAbout,
+    audioScript: content.audioScript,
+    // §3.4 / §11.1: a feeling note belongs only to a non-calm story. If the
+    // guard raised the level above what the model expected, the model may
+    // not have written one — use the fixed fallback text rather than none.
+    feelingNote:
+      guard.safety === 'calm'
+        ? null
+        : (content.feelingNote ?? FEELING_NOTE_FALLBACK[guard.safety]),
+    safety: guard.safety,
+    contentWarnings:
+      content.contentWarnings ?? (denyMatches.length > 0 ? denyMatches : null),
+    category: (!raw.topicChosenByEditor && content.category) || raw.topic,
+    readingMinutes: content.readingMinutes,
+    sourceName: raw.sourceName,
+    sourceUrl: raw.sourceUrl,
+    // §5.2 step 7: never auto-publish.
+    status: 'pending_review',
+    rejectReason: null,
+    editedByHuman: false,
+    createdAt: options.now ?? new Date().toISOString(),
+    publishedAt: null,
+  };
+
+  return {
+    article,
+    guard: { ...guard, matches: denyMatches },
+    engine: 'llm',
+    model: result.model,
+    // Both calls are billed, so both are reported — but a verdict supplied by
+    // the caller was billed to the caller, not again to every version.
+    costUsd: spentUsd + (options.promptGuard ? 0 : (promptGuard?.costUsd ?? 0)),
+    elapsedMs: result.elapsedMs,
+    promptSource: chosen.source,
+    promptGuard,
+  };
+}
+
+/** Parses a model reply, logging the start of any reply that cannot be used. */
+function tryParse(text: string): { content: LlmContent } | { error: string } {
+  try {
+    return { content: parseLlmContent(text) };
+  } catch (error: unknown) {
+    const reason = error instanceof LlmResponseError ? error.message : 'The response could not be understood.';
+    logger.warn({ reason, reply: text.slice(0, 500) }, 'unusable LLM reply');
+    return { error: reason };
   }
 }
 
