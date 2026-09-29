@@ -73,7 +73,7 @@ describe('episodeFor', () => {
     expect(episode.articles.map((a) => a.id)).toEqual(['a']);
 
     const prompt = (complete.mock.calls[0] as unknown as [{ prompt: string }])[0].prompt;
-    expect(prompt).toContain('SCRIPT: The a story is about a little robot');
+    expect(prompt).toContain('TEXT: The a story is about a little robot');
   });
 
   it('gives the audio key of the exact script, when a voice is configured', async () => {

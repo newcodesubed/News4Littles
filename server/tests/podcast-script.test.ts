@@ -58,19 +58,20 @@ describe('renderEpisodePrompt', () => {
   const prompt = renderEpisodePrompt(STORIES, BAND_5_7, 6000);
 
   it('fences every story as data, in order', () => {
-    expect(prompt).toContain('<<<STORY 1>>>\nHEADLINE: A robot visits the reef\nFROM: BBC News');
-    expect(prompt).toContain('WONDER: What can you climb?\n<<<END STORY 2>>>');
+    expect(prompt).toContain('<<<STORY 1>>>\nTEXT: A little robot swam down to a coral reef and counted the fish.\n<<<END STORY 1>>>');
+    expect(prompt).toContain('TEXT: Two baby pandas practised climbing a big tree at the zoo.\n<<<END STORY 2>>>');
     expect(prompt.indexOf('<<<STORY 1>>>')).toBeLessThan(prompt.indexOf('<<<STORY 2>>>'));
   });
 
   it('puts the rules after the stories, so the last thing read is the instruction', () => {
-    expect(prompt.indexOf('STRICT RULES')).toBeGreaterThan(prompt.indexOf('<<<END STORY 2>>>'));
+    expect(prompt.indexOf('BEFORE YOU ANSWER')).toBeGreaterThan(prompt.indexOf('<<<END STORY 2>>>'));
   });
 
   it('pitches it at the band', () => {
     expect(prompt).toContain('children aged 5–7');
-    expect(prompt).toContain('at most 14 words each');
+    expect(prompt).toContain('at most 14 words.');
     expect(prompt).toContain('a 5-year-old knows');
+    expect(prompt).toContain('ABOUT 80 WORDS');
   });
 
   it('leaves no placeholder unfilled', () => {
@@ -87,21 +88,26 @@ describe('renderEpisodePrompt', () => {
   });
 
   it('steers the host away from "you are", which can read as an instruction', () => {
-    expect(prompt).toContain('Never write the words "you are"');
+    expect(prompt).toContain('Never write you are.');
   });
 
-  it('asks for each source exactly as written, even an abbreviation', () => {
-    expect(prompt).toContain('even if it is an abbreviation');
+  it('never sends a story\'s source, which the host must not name', () => {
+    expect(prompt).not.toContain('BBC News');
+    expect(prompt).not.toContain('NPR');
+  });
+
+  it('asks for a literal \\n\\n between parts, not a real line break', () => {
+    expect(prompt).toContain('Use \\n\\n between');
   });
 });
 
 describe('wordBudget', () => {
   it('scales with the number of stories', () => {
-    expect(wordBudget(3, 6000)).toEqual({ minWords: 185, maxWords: 325 });
+    expect(wordBudget(3, 6000)).toEqual({ minWords: 295, maxWords: 450, wordsPerStory: 81 });
   });
 
   it('never allows more words than the character cap can hold', () => {
-    expect(wordBudget(8, 1200)).toEqual({ minWords: 200, maxWords: 200 });
+    expect(wordBudget(8, 1200)).toEqual({ minWords: 200, maxWords: 200, wordsPerStory: 30 });
   });
 });
 
