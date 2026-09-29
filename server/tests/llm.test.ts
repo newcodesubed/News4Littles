@@ -117,6 +117,11 @@ describe('response validation', () => {
     expect(parseLlmContent(JSON.stringify(GOOD)).kidHeadline).toBe(GOOD.kidHeadline);
   });
 
+  it('accepts JSON with a sentence around it', () => {
+    const text = `Here is the story:\n${JSON.stringify(GOOD)}\nHope that helps!`;
+    expect(parseLlmContent(text).kidHeadline).toBe(GOOD.kidHeadline);
+  });
+
   it.each([
     ['not JSON at all', 'hello'],
     ['a JSON array', '[1,2]'],
@@ -200,6 +205,13 @@ describe('OpenRouterClient', () => {
     const result = await client(stubFetch(completion('')) as unknown as typeof fetch).complete({ prompt: 'p' });
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason).toMatch(/no content/);
+  });
+
+  it('says a reply cut off at max_tokens was cut off, not that it was bad JSON', async () => {
+    const body = { ...completion('{"kidHeadline": "A rob'), choices: [{ message: { content: '{"kidHeadline": "A rob' }, finish_reason: 'length' }] };
+    const result = await client(stubFetch(body) as unknown as typeof fetch).complete({ prompt: 'p' });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toMatch(/cut off.*LLM_MAX_TOKENS/);
   });
 
   it('reports a missing key without calling out', async () => {
@@ -304,6 +316,30 @@ describe('simplifyArticle orchestration', () => {
     const out = await simplifyArticle(ctx.db, RAW, { client: withClient(completion('not json')), ageTarget: 8 });
     expect(out.engine).toBe('local-fallback');
     expect(out.fallbackReason).toMatch(/not valid JSON/);
+  });
+
+  it('retries an unparseable reply once and uses the second one', async () => {
+    const replies = [completion('not json'), completion(JSON.stringify(GOOD))];
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 200, json: async () => replies.shift() }) as unknown as Response);
+    const client = new OpenRouterClient({ apiKey: 'test-key', fetchImpl: fetchImpl as unknown as typeof fetch, maxRetries: 0 });
+
+    const out = await simplifyArticle(ctx.db, RAW, { client, ageTarget: 8 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(out.engine).toBe('llm');
+    expect(out.article.kidHeadline).toBe(GOOD.kidHeadline);
+    // Both replies were billed.
+    expect(out.costUsd).toBeCloseTo(0.00034);
+  });
+
+  it('gives up after one retry', async () => {
+    const fetchImpl = stubFetch(completion('not json'));
+    const client = new OpenRouterClient({ apiKey: 'test-key', fetchImpl: fetchImpl as unknown as typeof fetch, maxRetries: 0 });
+
+    const out = await simplifyArticle(ctx.db, RAW, { client, ageTarget: 8 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(out.engine).toBe('local-fallback');
   });
 
   it('forceLocal skips the provider entirely', async () => {
