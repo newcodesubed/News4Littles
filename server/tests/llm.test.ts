@@ -206,9 +206,11 @@ describe('OpenRouterClient', () => {
 
   it('treats empty content as a failure, not a success', async () => {
     // A reasoning model can spend its whole budget thinking; gpt-5-nano does.
-    const result = await client(stubFetch(completion('')) as unknown as typeof fetch).complete({ prompt: 'p' });
+    const fetchImpl = stubFetch(completion(''));
+    const result = await client(fetchImpl as unknown as typeof fetch).complete({ prompt: 'p' });
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason).toMatch(/no content/);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('retries a reply cut off at max_tokens, and says it was cut off rather than bad JSON', async () => {
@@ -291,6 +293,17 @@ describe('OpenRouterClient', () => {
     const fetchImpl = vi.fn(async () => { throw new TypeError('fetch failed'); });
     const result = await client(fetchImpl as unknown as typeof fetch).complete({ prompt: 'p' });
     expect(result.ok === false && result.transient).toBe(true);
+  });
+
+  it('reports a timeout while reading the body as a timeout, not bad JSON', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); },
+    }) as unknown as Response);
+    const result = await client(fetchImpl as unknown as typeof fetch, { timeoutMs: 3000 }).complete({ prompt: 'p' });
+    expect(result.ok === false && result.reason).toBe('The model did not respond within 3000ms.');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('caps max_tokens on the request', async () => {
