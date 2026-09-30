@@ -79,7 +79,6 @@ function Segment({ article, index, age }: { article: KidArticle; index: number; 
       <h3 className="font-display text-lg mb-3">{article.kidHeadline}</h3>
 
       <PlayBar
-        size="md"
         label={busy ? `Stop story ${index + 1}` : `Listen to story ${index + 1}`}
         status={status}
         progress={audio.progress}
