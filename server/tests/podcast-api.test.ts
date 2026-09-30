@@ -41,6 +41,22 @@ const startWithStubVoice = () => {
   return { server, base: `http://127.0.0.1:${port}` };
 };
 
+describe('GET /api/podcast/stories', () => {
+  it('serves the day\'s published stories, without writing the episode', async () => {
+    const response = await ctx.anon('/api/podcast/stories?age=8');
+    const day = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(day.date).toBe('2026-09-28');
+    expect(day.articles.map((a: { id: string }) => a.id)).toEqual(['pub-1']);
+    expect(day).not.toHaveProperty('script');
+  });
+
+  it('answers an empty day for a band with no stories', async () => {
+    expect(await (await ctx.anon('/api/podcast/stories?age=12')).json()).toEqual({ date: null, articles: [] });
+  });
+});
+
 describe('GET /api/podcast', () => {
   it('serves the day\'s episode, published stories only', async () => {
     const response = await ctx.anon('/api/podcast?age=8');

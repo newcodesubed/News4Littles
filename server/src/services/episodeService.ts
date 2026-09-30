@@ -23,9 +23,13 @@ import { audioFromBuffer, audioKey, type AudioCache } from '../tts/audioCache.js
 import { SPEECH_CONTENT_TYPES, type SpeechProvider } from '../tts/types.js';
 import type { AudioSuccess } from './audioService.js';
 
-export interface EpisodeView {
+/** The day's stories alone: a database read, so a page can show them before the episode is written. */
+export interface EpisodeDay {
   date: string | null;
   articles: KidArticle[];
+}
+
+export interface EpisodeView extends EpisodeDay {
   script: string | null;
   source: EpisodeSource | null;
   audioKey: string | null;
@@ -40,6 +44,7 @@ export interface EpisodeAudioFailure {
 export type EpisodeAudioOutcome = AudioSuccess | EpisodeAudioFailure;
 
 export interface EpisodeService {
+  dayFor(ageTarget: number): EpisodeDay;
   episodeFor(ageTarget: number): Promise<EpisodeView>;
   audioFor(ageTarget: number, audioKey: string): Promise<EpisodeAudioOutcome>;
 }
@@ -113,8 +118,11 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
   const writing = new Map<string, Promise<StoredEpisode>>();
   const speaking = new Map<string, Promise<EpisodeAudioOutcome>>();
 
+  const dayFor = (ageTarget: number): EpisodeDay =>
+    articles.listLatestPublishedDayForAge(ageTarget, timeZone, maxStories);
+
   const inputsFor = (ageTarget: number) => {
-    const day = articles.listLatestPublishedDayForAge(ageTarget, timeZone, maxStories);
+    const day = dayFor(ageTarget);
     if (!day.date || day.articles.length === 0) return null;
 
     const stories = day.articles.map(toEpisodeStory);
@@ -251,6 +259,8 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
   };
 
   return {
+    dayFor,
+
     async episodeFor(ageTarget) {
       const inputs = inputsFor(ageTarget);
       if (!inputs) return EMPTY;

@@ -26,6 +26,11 @@ export function createPodcastRouter(db: Database, options: PodcastRouterOptions 
       cache: provider ? createFileAudioCache(AUDIO_CACHE_DIR) : createMemoryAudioCache(),
     });
 
+  // Answers at once, while /podcast may wait on the model for the first visitor of a new episode.
+  router.get('/podcast/stories', (req, res) => {
+    res.json(service.dayFor(readAgeTarget(req.query.age)));
+  });
+
   router.get('/podcast', async (req, res) => {
     res.json(await service.episodeFor(readAgeTarget(req.query.age)));
   });
