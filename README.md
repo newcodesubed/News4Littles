@@ -53,6 +53,15 @@ npm run build        # static site in web/dist
 `.env` and `data/` are still read from `/server`, so the built API uses the
 same database and settings as `npm start`.
 
+The server does not migrate its database on start. After pulling new code, run
+`npm run db:backup` (a copy in `data/backups/`, newest ten kept) and then
+`npm run db:init` before restarting.
+
+**Deploys** are automatic: `.github/workflows/server.yml` tests every change to
+`/server`, and a push to `main` that passes is deployed to the VPS — backup,
+migrate, `pm2 restart`, then a health check. The secrets and variables it needs
+are listed at the top of that file.
+
 ---
 
 ## The pages

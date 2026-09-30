@@ -1,0 +1,134 @@
+# The API in /server: tested on every change, deployed to the VPS from main.
+#
+#   pull request touching server/  → test
+#   push to main touching server/  → test, then deploy (only if the tests pass)
+#   Actions tab → Run workflow     → the same, by hand
+#
+# Deploy SSHes into the VPS and, in the server's clone of this repo: checks out
+# the exact commit that was tested, installs, builds, backs up the database,
+# migrates it, restarts the pm2 process and waits for /api/health to answer.
+#
+# Settings → Secrets and variables → Actions:
+#   secrets   DEPLOY_HOST         the VPS address
+#             DEPLOY_USER         the user that owns the clone and runs pm2
+#             DEPLOY_SSH_KEY      a private key whose public half is in that
+#                                 user's ~/.ssh/authorized_keys
+#             DEPLOY_KNOWN_HOSTS  output of `ssh-keyscan -p <port> <host>`, so
+#                                 the runner knows it is talking to your VPS
+#   variables DEPLOY_PATH         the clone on the VPS, e.g. /home/app/news-for-little
+#             DEPLOY_PORT         SSH port (default 22)
+#             PM2_APP             pm2 process name (default news4littles-server)
+#             HEALTH_URL          checked after the restart
+#                                 (default http://localhost:4000/api/health)
+
+name: Server
+
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/server.yml']
+  pull_request:
+    paths: ['server/**', '.github/workflows/server.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with the Node version on the VPS.
+  NODE_VERSION: '20'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      # No .env here, so the tests run on the defaults, as they are written to.
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    # One deploy at a time; a newer push waits rather than cutting one off halfway.
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+    steps:
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          SSH_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          PM2_APP: ${{ vars.PM2_APP || 'news4littles-server' }}
+          HEALTH_URL: ${{ vars.HEALTH_URL || 'http://localhost:4000/api/health' }}
+        run: |
+          test -n "$DEPLOY_PATH" || { echo "::error::Set the DEPLOY_PATH variable."; exit 1; }
+          args=$(printf '%q ' "$GITHUB_SHA" "$DEPLOY_PATH" "$PM2_APP" "$HEALTH_URL")
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" -o BatchMode=yes "$SSH_USER@$SSH_HOST" "bash -s -- $args" <<'REMOTE'
+          set -euo pipefail
+          sha=$1 path=$2 app=$3 health=$4
+
+          # A non-interactive SSH shell skips ~/.bashrc, so Node installed with
+          # nvm is not on PATH unless loaded here.
+          export NVM_DIR="$HOME/.nvm"
+          if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; fi
+
+          cd "$path"
+          # The tested commit, not whatever main is by now. .env and data/ are
+          # ignored by git, so this leaves them alone.
+          git fetch --quiet origin
+          git reset --hard "$sha"
+
+          cd server
+          npm ci --no-audit --no-fund
+          npm run build
+          # The server does not migrate on start; do it here, after a backup.
+          npm run db:backup
+          npm run db:init
+
+          if pm2 describe "$app" > /dev/null 2>&1; then
+            pm2 restart "$app" --update-env
+          else
+            pm2 start dist/server.js --name "$app"
+          fi
+          pm2 save
+
+          for attempt in $(seq 1 15); do
+            if curl -fs "$health" > /dev/null; then
+              echo "Deployed ${sha:0:7}; $health answers."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The server did not answer $health after the restart:"
+          pm2 logs "$app" --lines 40 --nostream
+          exit 1
+          REMOTE
