@@ -128,6 +128,9 @@ export class OpenRouterClient {
     const model = backup ? this.fallbackModel : (request.model ?? this.model);
 
     // AbortSignal.timeout keeps a hung provider from stalling the scheduler.
+    const timedOut = (error: unknown) => error instanceof Error && error.name === 'TimeoutError';
+    const timeoutReason = `The model did not respond within ${this.timeoutMs}ms.`;
+
     let response: Response;
     try {
       response = await this.fetchImpl(ENDPOINT, {
@@ -147,12 +150,9 @@ export class OpenRouterClient {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error: unknown) {
-      const aborted = error instanceof Error && error.name === 'TimeoutError';
       return {
         ok: false,
-        reason: aborted
-          ? `The model did not respond within ${this.timeoutMs}ms.`
-          : 'Could not reach OpenRouter.',
+        reason: timedOut(error) ? timeoutReason : 'Could not reach OpenRouter.',
         transient: true,
         elapsedMs: elapsed(),
       };
@@ -192,8 +192,10 @@ export class OpenRouterClient {
     let body: CompletionBody;
     try {
       body = (await response.json()) as CompletionBody;
-    } catch {
-      return { ok: false, reason: 'OpenRouter returned a body that was not JSON.', transient: true, elapsedMs: elapsed() };
+    } catch (error: unknown) {
+      // OpenRouter sends its 200 headers at once, so the timeout usually fires while the body is still coming.
+      const reason = timedOut(error) ? timeoutReason : 'OpenRouter returned a body that was not JSON.';
+      return { ok: false, reason, transient: true, elapsedMs: elapsed() };
     }
 
     // The provider failed mid-reply; OpenRouter still answers 200 with the partial text.
