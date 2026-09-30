@@ -211,11 +211,29 @@ describe('OpenRouterClient', () => {
     expect(result.ok === false && result.reason).toMatch(/no content/);
   });
 
-  it('says a reply cut off at max_tokens was cut off, not that it was bad JSON', async () => {
+  it('retries a reply cut off at max_tokens, and says it was cut off rather than bad JSON', async () => {
     const body = { ...completion('{"kidHeadline": "A rob'), choices: [{ message: { content: '{"kidHeadline": "A rob' }, finish_reason: 'length' }] };
-    const result = await client(stubFetch(body) as unknown as typeof fetch).complete({ prompt: 'p' });
-    expect(result.ok).toBe(false);
+    const fetchImpl = stubFetch(body);
+    const result = await client(fetchImpl as unknown as typeof fetch).complete({ prompt: 'p' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(result.ok === false && result.reason).toMatch(/cut off.*LLM_MAX_TOKENS/);
+  });
+
+  it('retries on the backup model, with thinking off', async () => {
+    const fetchImpl = stubFetch({ error: { message: 'busy' } }, 503);
+    await client(fetchImpl as unknown as typeof fetch, { model: 'main/model', fallbackModel: 'backup/model' })
+      .complete({ prompt: 'p' });
+    const [first, second] = vi.mocked(fetchImpl).mock.calls.map((call) => JSON.parse(String(call[1]!.body)));
+    expect(first.model).toBe('main/model');
+    expect(first.reasoning).toBeUndefined();
+    expect(second).toMatchObject({ model: 'backup/model', reasoning: { enabled: false }, provider: { ignore: ['Together'] } });
+  });
+
+  it('waits before retrying', async () => {
+    const started = Date.now();
+    await client(stubFetch({ error: { message: 'busy' } }, 503) as unknown as typeof fetch, { retryDelayMs: 40 })
+      .complete({ prompt: 'p' });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(35);
   });
 
   it('retries a reply the provider broke off mid-way, which OpenRouter still sends as 200', async () => {
@@ -342,11 +360,14 @@ describe('simplifyArticle orchestration', () => {
   it('retries an unparseable reply once and uses the second one', async () => {
     const replies = [completion('not json'), completion(JSON.stringify(GOOD))];
     const fetchImpl = vi.fn(async () => ({ ok: true, status: 200, json: async () => replies.shift() }) as unknown as Response);
-    const client = new OpenRouterClient({ apiKey: 'test-key', fetchImpl: fetchImpl as unknown as typeof fetch, maxRetries: 0 });
+    const client = new OpenRouterClient({
+      apiKey: 'test-key', fetchImpl: fetchImpl as unknown as typeof fetch, maxRetries: 0, fallbackModel: 'backup/model',
+    });
 
     const out = await simplifyArticle(ctx.db, RAW, { client, ageTarget: 8 });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(vi.mocked(fetchImpl).mock.calls[1]![1]!.body)).model).toBe('backup/model');
     expect(out.engine).toBe('llm');
     expect(out.article.kidHeadline).toBe(GOOD.kidHeadline);
     // Both replies were billed.
