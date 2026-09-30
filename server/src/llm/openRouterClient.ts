@@ -240,7 +240,8 @@ export class OpenRouterClient {
       return {
         ok: false,
         reason: 'The model returned no content, which usually means max_tokens was too low.',
-        transient: false,
+        // Same cause as a cut-off, so the backup, which does not think, can still answer.
+        transient: true,
         elapsedMs: elapsed(),
       };
     }
