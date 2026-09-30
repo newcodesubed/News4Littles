@@ -482,9 +482,14 @@ show: a hook, a lead-in and a wonder question per story, a recap, and a
 goodbye.
 
 ```
+GET /api/podcast/stories?age=N          → the day's stories, at once (no model call)
 GET /api/podcast?age=N                  → the day's stories, the script, and its audioKey
 GET /api/podcast/audio/:audioKey?age=N  → that exact script, read aloud
 ```
+
+The page asks for both at once. The stories show straight away; the episode
+may wait on the model for its first visitor, so only the play bar spins. The
+script itself isn't shown: each story's reviewed script is already on the page.
 
 - **Paid once per set of stories.** The script is stored in `podcast_episodes`
   under a hash of the day's stories and their scripts, and the audio is cached
