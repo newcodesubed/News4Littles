@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Headphones, MessageCircle } from 'lucide-react';
+import { Headphones } from 'lucide-react';
 import { PlayBar } from '../components/PlayBar';
 import { ErrorState, LoadingState } from '../components/States';
-import { episodeAudioUrl, fetchEpisode, storyAudioUrl } from '../lib/api';
+import { episodeAudioUrl, fetchEpisode, fetchPodcastStories, storyAudioUrl } from '../lib/api';
 import { useSettings } from '../settings/SettingsContext';
 import { useAsync } from '../lib/useAsync';
 import { useStoryAudio } from '../lib/useStoryAudio';
@@ -113,10 +113,13 @@ const NOTICE_TEXT: Record<Exclude<Notice, null>, string> = {
   failed: 'The episode could not be played right now. Please try again in a moment.',
 };
 
+const EPISODE_UNAVAILABLE = 'The episode could not be loaded right now. Please try again in a moment.';
+
 function EpisodePlayer({
   audioKey,
   age,
   episodeLoading,
+  episodeFailed,
   hasStories,
   notice,
   onPlay,
@@ -125,6 +128,7 @@ function EpisodePlayer({
   audioKey: string | null;
   age: number;
   episodeLoading: boolean;
+  episodeFailed: boolean;
   hasStories: boolean;
   notice: Notice;
   onPlay: () => void;
@@ -141,7 +145,9 @@ function EpisodePlayer({
     ? NOTICE_TEXT[notice]
     : episodeLoading
       ? 'Getting today’s episode ready…'
-      : !hasStories
+      : episodeFailed
+        ? EPISODE_UNAVAILABLE
+        : !hasStories
         ? 'No episode yet.'
         : !audioKey
           ? "Listening isn't switched on right now."
@@ -157,7 +163,8 @@ function EpisodePlayer({
       status={status}
       progress={audio.progress}
       playing={audio.playing}
-      loading={audio.loading}
+      // The first visitor of a new episode waits while it is written; the bar spins, the stories below don't.
+      loading={audio.loading || episodeLoading}
       disabled={!audioKey}
       testId="episode"
       onToggle={
@@ -176,16 +183,20 @@ export function Podcast() {
   const { readingAge } = useSettings();
   const [reloads, setReloads] = useState(0);
   const [failedKey, setFailedKey] = useState<string | null>(null);
+  // Two requests: the stories are a quick read, the episode may wait on the model.
+  const stories = useAsync(() => fetchPodcastStories(readingAge), [readingAge]);
   const state = useAsync(() => fetchEpisode(readingAge), [readingAge, reloads]);
 
   const episode = state.status === 'ready' ? state.data : null;
-  const articles: KidArticle[] = episode?.articles ?? [];
+  // Once the episode arrives its own list wins: it is the set of stories the audio was made from.
+  const day = episode ?? (stories.status === 'ready' ? stories.data : null);
+  const articles: KidArticle[] = day?.articles ?? [];
   const minutes = articles.reduce((total, a) => total + a.readingMinutes, 0);
 
   const notice: Notice =
     failedKey && episode ? (episode.audioKey === failedKey ? 'failed' : 'changed') : null;
 
-  const date = episode?.date ?? null;
+  const date = day?.date ?? null;
   const label =
     date && date !== todayIso()
       ? `Latest episode · ${formatEpisodeDate(date)}`
@@ -218,6 +229,7 @@ export function Podcast() {
               audioKey={episode?.audioKey ?? null}
               age={readingAge}
               episodeLoading={state.status === 'loading'}
+              episodeFailed={state.status === 'error'}
               hasStories={articles.length > 0}
               notice={notice}
               onPlay={() => setFailedKey(null)}
@@ -228,37 +240,26 @@ export function Podcast() {
       </section>
 
       <div className="container max-w-3xl py-10 space-y-8">
-        {state.status === 'loading' && <LoadingState label="Building today’s episode…" />}
-        {state.status === 'error' && <ErrorState message={state.message} />}
+        {!day && stories.status === 'loading' && <LoadingState label="Getting today’s stories…" />}
+        {!day && stories.status === 'error' && <ErrorState message={stories.message} />}
 
-        {state.status === 'ready' && (
-          <>
-            {episode?.script && (
-              <div className="bg-card rounded-3xl border border-border p-6 shadow-soft">
-                <h2 className="font-display text-2xl mb-2 inline-flex items-center gap-2">
-                  <MessageCircle className="w-5 h-5 text-primary" /> What you'll hear
-                </h2>
-                <p className="text-foreground/80 leading-relaxed whitespace-pre-line">{episode.script}</p>
-              </div>
+        {day && (
+          <div>
+            <h2 className="font-display text-2xl mb-4">Today's stories</h2>
+
+            {articles.length === 0 ? (
+              <p className="text-center text-muted-foreground py-12">
+                No episode today yet. Once today's stories are published, they'll appear here as
+                segments.
+              </p>
+            ) : (
+              <ol className="space-y-4">
+                {articles.map((article, index) => (
+                  <Segment key={article.id} article={article} index={index} age={readingAge} />
+                ))}
+              </ol>
             )}
-
-            <div>
-              <h2 className="font-display text-2xl mb-4">Today's stories</h2>
-
-              {articles.length === 0 ? (
-                <p className="text-center text-muted-foreground py-12">
-                  No episode today yet. Once today's stories are published, they'll appear here as
-                  segments.
-                </p>
-              ) : (
-                <ol className="space-y-4">
-                  {articles.map((article, index) => (
-                    <Segment key={article.id} article={article} index={index} age={readingAge} />
-                  ))}
-                </ol>
-              )}
-            </div>
-          </>
+          </div>
         )}
       </div>
     </div>

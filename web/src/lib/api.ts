@@ -1,4 +1,4 @@
-import type { KidArticle, PodcastEpisode } from './types';
+import type { KidArticle, PodcastDay, PodcastEpisode } from './types';
 
 /**
  * Base URL of the /server API. Configured in web/.env as VITE_API_BASE_URL —
@@ -65,6 +65,10 @@ export function fetchArticle(id: string, age: number): Promise<KidArticle> {
   return getJson<KidArticle>(
     `/api/articles/${encodeURIComponent(id)}?age=${encodeURIComponent(age)}`,
   );
+}
+
+export function fetchPodcastStories(age: number): Promise<PodcastDay> {
+  return getJson<PodcastDay>(`/api/podcast/stories?age=${encodeURIComponent(age)}`);
 }
 
 export function fetchEpisode(age: number): Promise<PodcastEpisode> {

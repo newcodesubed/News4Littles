@@ -47,9 +47,13 @@ export function needsFeelingNote(article: Pick<KidArticle, 'safety'>): boolean {
   return article.safety !== 'calm';
 }
 
-export interface PodcastEpisode {
+/** The day's stories, served at once — the episode itself can take a while to write. */
+export interface PodcastDay {
   date: string | null;
   articles: KidArticle[];
+}
+
+export interface PodcastEpisode extends PodcastDay {
   script: string | null;
   source: 'llm' | 'fallback' | null;
   audioKey: string | null;

@@ -31,11 +31,15 @@ const episode = (o: Partial<PodcastEpisode> = {}): PodcastEpisode => ({
   source: 'llm', audioKey: EPISODE_KEY, ...o,
 });
 
-const mockFetchSequence = (...payloads: unknown[]) => {
-  const fetchMock = vi.fn(async () => {
-    const payload = payloads.length > 1 ? payloads.shift() : payloads[0];
-    return { ok: true, status: 200, json: async () => payload } as unknown as Response;
-  });
+const ok = (payload: unknown) => ({ ok: true, status: 200, json: async () => payload }) as unknown as Response;
+const isStories = (url: string) => url.includes('/api/podcast/stories');
+
+/** The stories answer with the first episode's; each episode fetch takes the next payload, the last repeating. */
+const mockFetchSequence = (...payloads: PodcastEpisode[]) => {
+  const first = payloads[0];
+  const fetchMock = vi.fn(async (url: string) =>
+    ok(isStories(url) ? first : payloads.length > 1 ? payloads.shift() : payloads[0]),
+  );
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 };
@@ -169,13 +173,41 @@ describe('Podcast', () => {
 });
 
 describe('Podcast — the whole episode', () => {
-  it('shows what the child will hear', async () => {
+  it('shows the stories while the episode is still being written, and spins the play bar', async () => {
+    vi.stubGlobal('fetch', vi.fn((url: string) =>
+      isStories(url)
+        ? Promise.resolve(ok({ date: TODAY, articles: [article({ audioScript: 'A robot swam.' })] }))
+        : new Promise(() => {}),
+    ));
+    renderIn(<Podcast />);
+
+    expect(await screen.findByText('A secret coral garden was found')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /listen to story 1/i })).toBeEnabled();
+    const play = screen.getByRole('button', { name: 'Play episode' });
+    expect(play).toBeDisabled();
+    expect(play).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByTestId('episode-status')).toHaveTextContent(/Getting today’s episode ready/);
+  });
+
+  it('does not show the episode script as text', async () => {
     mockFetch(episode({ script: 'Did you know a robot can swim? Welcome to News for Curious Kids!' }));
     renderIn(<Podcast />);
 
-    expect(await screen.findByRole('heading', { name: /What you'll hear/ })).toBeInTheDocument();
-    expect(screen.getByText(/Did you know a robot can swim\?/)).toBeInTheDocument();
-    expect(screen.queryByText(/Friendly intro/)).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Play episode' })).toBeEnabled();
+    expect(screen.queryByText(/Did you know a robot can swim\?/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the stories, and says so in the play bar, when the episode cannot be loaded', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      isStories(url)
+        ? ok({ date: TODAY, articles: [article()] })
+        : ({ ok: false, status: 500, json: async () => ({ error: 'Boom.' }) } as unknown as Response),
+    ));
+    renderIn(<Podcast />);
+
+    expect(await screen.findByTestId('episode-status')).toHaveTextContent(/could not be loaded/);
+    expect(screen.getByText('A secret coral garden was found')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play episode' })).toBeDisabled();
   });
 
   it('plays this exact episode straight from the click, with no fetch first', async () => {
@@ -208,7 +240,10 @@ describe('Podcast — the whole episode', () => {
   it('picks up new stories when the episode changed after the page loaded', async () => {
     mockFetchSequence(
       episode(),
-      episode({ audioKey: `${'f'.repeat(64)}.mp3`, script: 'Welcome! Today we have two stories.' }),
+      episode({
+        audioKey: `${'f'.repeat(64)}.mp3`,
+        articles: [article(), article({ id: 'a2', kidHeadline: 'A second story arrived' })],
+      }),
     );
     renderIn(<Podcast />);
     await userEvent.click(await screen.findByRole('button', { name: 'Play episode' }));
@@ -216,7 +251,7 @@ describe('Podcast — the whole episode', () => {
     await act(async () => episodeAudio().onerror?.());
 
     expect(await screen.findByText(/New stories just arrived! Press play to hear them\./)).toBeInTheDocument();
-    expect(screen.getByText(/Today we have two stories\./)).toBeInTheDocument();
+    expect(screen.getByText('A second story arrived')).toBeInTheDocument();
   });
 
   it('says so, gently, when the episode really could not be played', async () => {
@@ -238,12 +273,11 @@ describe('Podcast — the whole episode', () => {
   });
 
   it('says the episode is on its way while it is fetched again after a failed play', async () => {
-    let calls = 0;
-    vi.stubGlobal('fetch', vi.fn(() => {
-      calls += 1;
-      return calls === 1
-        ? Promise.resolve({ ok: true, status: 200, json: async () => episode() } as unknown as Response)
-        : new Promise(() => {});
+    let episodeCalls = 0;
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      if (isStories(url)) return Promise.resolve(ok(episode()));
+      episodeCalls += 1;
+      return episodeCalls === 1 ? Promise.resolve(ok(episode())) : new Promise(() => {});
     }));
     renderIn(<Podcast />);
     await userEvent.click(await screen.findByRole('button', { name: 'Play episode' }));
