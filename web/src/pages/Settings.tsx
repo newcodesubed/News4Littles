@@ -1,9 +1,9 @@
-import { Rss } from 'lucide-react';
+import { BookOpen, Rss } from 'lucide-react';
 import { ErrorState, LoadingState } from '../components/States';
 import { fetchPublishedArticles } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import { MAX_AGE, MIN_AGE, useSettings } from '../settings/SettingsContext';
-import { AGE_BANDS, formatAgeBand } from '../lib/ageBands';
+import { AGE_BANDS, bandForAge, formatAgeBand } from '../lib/ageBands';
 
 /**
  * Settings — PRD §3.6 (public settings only: reading age + source toggles).
@@ -45,6 +45,94 @@ function Switch({
   );
 }
 
+/** Where an age sits along the slider, as a percentage of the distance between the end stops. */
+const along = (age: number) => ((age - MIN_AGE) / (MAX_AGE - MIN_AGE)) * 100;
+
+const AGES = Array.from({ length: MAX_AGE - MIN_AGE + 1 }, (_, i) => MIN_AGE + i);
+
+/**
+ * The reading-age slider, with every age marked under its stop and the three
+ * reading groups under those, so the choice reads off the control itself.
+ *
+ * The marks sit in a row inset by half a thumb (mx-3 = the age-slider's
+ * --thumb / 2), which is exactly the span the thumb's centre travels.
+ */
+function ReadingAge({ age, onChange }: { age: number; onChange: (age: number) => void }) {
+  const band = bandForAge(age);
+
+  return (
+    <div className="bg-card rounded-3xl border border-border p-6 shadow-soft mb-6">
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h2 className="font-display text-xl mb-1 inline-flex items-center gap-2">
+            <BookOpen className="w-5 h-5" /> Reading age
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Younger readers get shorter sentences and simpler words.
+          </p>
+        </div>
+        <span className="font-display text-3xl text-primary shrink-0">Age {age}</span>
+      </div>
+
+      <input
+        type="range"
+        min={MIN_AGE}
+        max={MAX_AGE}
+        step={1}
+        value={age}
+        onChange={(event) => onChange(Number(event.target.value))}
+        aria-label="Reading age"
+        aria-valuetext={`Age ${age}, reading group ${formatAgeBand(band)}`}
+        className="age-slider"
+        style={{ '--fill': along(age) / 100 } as React.CSSProperties}
+      />
+
+      <div aria-hidden className="relative mx-3 mt-3 h-6">
+        {AGES.map((mark) => (
+          <span
+            key={mark}
+            className={`absolute top-0 -translate-x-1/2 text-sm tabular-nums transition-colors ${
+              mark === age ? 'font-bold text-primary' : 'text-muted-foreground'
+            }`}
+            style={{ left: `${along(mark)}%` }}
+          >
+            {mark}
+          </span>
+        ))}
+      </div>
+
+      <div aria-hidden className="relative mx-3 mt-2 h-8">
+        {AGE_BANDS.map((group) => {
+          // A group ends halfway to the next age; the end groups reach the track's ends, past the inset.
+          const first = group.minAge === MIN_AGE;
+          const last = group.maxAge === MAX_AGE;
+          const start = first ? 0 : along(group.minAge - 0.5);
+          const end = last ? 100 : along(group.maxAge + 0.5);
+          const current = group === band;
+          return (
+            <span
+              key={group.minAge}
+              className={`absolute inset-y-0 ${first ? 'pr-0.5' : last ? 'pl-0.5' : 'px-0.5'}`}
+              style={{
+                left: first ? '-0.75rem' : `${start}%`,
+                width: `calc(${end - start}% + ${(first ? 0.75 : 0) + (last ? 0.75 : 0)}rem)`,
+              }}
+            >
+              <span
+                className={`flex h-full items-center justify-center rounded-full text-xs font-bold transition-colors ${
+                  current ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                Ages {formatAgeBand(group)}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function Settings() {
   const { readingAge, setReadingAge, isSourceEnabled, toggleSource } = useSettings();
   const state = useAsync(() => fetchPublishedArticles(readingAge), [readingAge]);
@@ -58,40 +146,10 @@ export function Settings() {
     <div className="container max-w-3xl py-10">
       <h1 className="font-display text-4xl mb-2">Settings</h1>
       <p className="text-muted-foreground mb-8">
-        Choose a reading age and which news sources appear. Saved in this browser only — there are
-        no accounts and nothing is sent to us.
+        Saved in this browser only — no account, and nothing is sent to us.
       </p>
 
-      <div className="bg-card rounded-3xl border border-border p-6 shadow-soft mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <span className="font-bold text-base">Default reading age</span>
-          <span className="font-display text-2xl text-primary">Age {readingAge}</span>
-        </div>
-
-        <input
-          type="range"
-          min={MIN_AGE}
-          max={MAX_AGE}
-          step={1}
-          value={readingAge}
-          onChange={(event) => setReadingAge(Number(event.target.value))}
-          aria-label="Default reading age"
-          aria-valuetext={`Age ${readingAge}`}
-          className="w-full h-2 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-        />
-
-        <div className="flex justify-between text-xs text-muted-foreground mt-1.5">
-          <span>{MIN_AGE}</span>
-          <span>6 (default)</span>
-          <span>{MAX_AGE}</span>
-        </div>
-
-        <p className="mt-3 text-sm text-muted-foreground">
-          Every story is rewritten for three reading groups — ages{' '}
-          {AGE_BANDS.map(formatAgeBand).join(', ')} — so moving this between groups changes
-          the words: shorter sentences and simpler words for younger readers.
-        </p>
-      </div>
+      <ReadingAge age={readingAge} onChange={setReadingAge} />
 
       <div className="bg-card rounded-3xl border border-border p-6 shadow-soft">
         <h2 className="font-display text-xl mb-1 inline-flex items-center gap-2">

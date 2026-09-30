@@ -131,15 +131,31 @@ describe('public Settings (§3.6)', () => {
   it('defaults the reading age to 6', async () => {
     mockFetch([article()]);
     renderIn(<Settings />);
-    expect(await screen.findByLabelText('Default reading age')).toHaveValue('6');
+    expect(await screen.findByLabelText('Reading age')).toHaveValue('6');
   });
 
   it('the slider spans 5 to 14', async () => {
     mockFetch([article()]);
     renderIn(<Settings />);
-    const slider = await screen.findByLabelText('Default reading age');
+    const slider = await screen.findByLabelText('Reading age');
     expect(slider).toHaveAttribute('min', '5');
     expect(slider).toHaveAttribute('max', '14');
+  });
+
+  it('marks every age, and lights up the chosen one and its reading group', async () => {
+    mockFetch([article()]);
+    renderIn(<Settings />);
+    const slider = await screen.findByLabelText('Reading age');
+
+    fireEvent.change(slider, { target: { value: '9' } });
+
+    for (let age = 5; age <= 14; age += 1) expect(screen.getByText(String(age))).toBeInTheDocument();
+    expect(screen.getByText('9')).toHaveClass('text-primary');
+    expect(screen.getByText('6')).not.toHaveClass('text-primary');
+    expect(screen.getByText('Ages 8–10')).toHaveClass('bg-primary');
+    expect(screen.getByText('Ages 5–7')).not.toHaveClass('bg-primary');
+    expect(slider).toHaveAttribute('aria-valuetext', 'Age 9, reading group 8–10');
+    expect(screen.queryByText(/default/i)).not.toBeInTheDocument();
   });
 
   it('lists a toggle per source, on by default', async () => {
@@ -226,7 +242,7 @@ describe('the reading-age slider changes the story (§6)', () => {
     storeAge(6);
 
     renderIn(<Settings />);
-    const slider = await screen.findByLabelText('Default reading age');
+    const slider = await screen.findByLabelText('Reading age');
 
     // fireEvent.change, not userEvent: jsdom does not implement range-input
     // dragging or arrow-key stepping, so a keyboard press never reaches
