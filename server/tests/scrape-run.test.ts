@@ -280,6 +280,19 @@ describe('the simplification budget in a run', () => {
     });
   });
 
+  it('records the stories it deleted because the model failed', () => {
+    itemCount = 2;
+    stubModel(() => 'not json');
+
+    startScrapeRun(ctx.db, { budget: 2 });
+    return waitForRun().then(() => {
+      const run = createScrapeRunRepository(ctx.db).latestPerSource().bbc;
+      expect(run.simplified).toBe(0);
+      expect(run.dropped).toHaveLength(2);
+      expect(run.dropped[0]).toMatch(/not valid JSON/);
+    });
+  });
+
   it('summarises a run by what it stored and what it spent', () => {
     itemCount = 5;
 

@@ -246,6 +246,12 @@ describe('POST /prompts/test — §7.4: writes nothing', () => {
     expect(body.draft.article).toBeUndefined();
   });
 
+  it('shows the model error and no story when the model fails', async () => {
+    stubModel(() => 'not json');
+    const body = await (await post('/api/admin/prompts/test', testBody())).json();
+    expect(body.draft.error).toMatch(/not valid JSON/);
+    expect(body.draft.article).toBeUndefined();
+  });
 });
 
 describe('promotion (§7.4, §7.5)', () => {

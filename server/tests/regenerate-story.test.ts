@@ -13,7 +13,7 @@ import {
   type RegenerateJobState, type RegenerateOptions,
 } from '../src/services/regenerateStory.js';
 import {
-  createTestContext, getKidArticle, insertKidArticle, insertRawArticle, stubModel, type TestContext,
+  createTestContext, getKidArticle, insertKidArticle, insertRawArticle, MODEL_STORY, stubModel, type TestContext,
 } from './helpers.js';
 
 // Every story in this file is written by the fake model from stubModel.
@@ -606,5 +606,23 @@ describe('the regenerate endpoints (§4.2)', () => {
     seedStory('r1', [5]);
     const res = await ctx.api('/api/admin/articles/r1-v5/regenerate/apply', { method: 'POST' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('when the model cannot rewrite a band', () => {
+  it('keeps the old version and refuses to apply it', async () => {
+    seedStory('r1', [5, 8]);
+    stubModel((prompt) => (prompt.includes('aged 8 to 10') ? 'not json' : MODEL_STORY));
+
+    const job = await runJob('r1-v5');
+    const failed = job.versions.find((version) => version.ageTarget === 8)!;
+    expect(failed.generated).toBeUndefined();
+    expect(failed.error).toMatch(/not valid JSON/);
+
+    expect(() => applyRegeneratedVersions(ctx.db, job.id, [8])).toThrow(/could not be regenerated/);
+    expect(getKidArticle(ctx.db, 'r1-v8')!.kidHeadline).toBe('Stored headline for age 8');
+
+    applyRegeneratedVersions(ctx.db, job.id, [5]);
+    expect(getKidArticle(ctx.db, 'r1-v5')!.kidHeadline).toBe(MODEL_STORY.kidHeadline);
   });
 });

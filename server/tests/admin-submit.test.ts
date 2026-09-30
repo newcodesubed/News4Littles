@@ -175,3 +175,20 @@ describe('POST /articles (§4.3 save)', () => {
     expect(countRows(ctx.db, 'raw_articles')).toBe(before);
   });
 });
+
+describe('when the model cannot write the story', () => {
+  beforeEach(() => { stubModel(() => 'not json'); });
+
+  it('the preview says why, with a 502', async () => {
+    const res = await post('/api/admin/simplify', SUBMISSION);
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toMatch(/could not be simplified/);
+  });
+
+  it('saving stores nothing', async () => {
+    const before = [countRows(ctx.db, 'raw_articles'), countRows(ctx.db, 'kid_articles')];
+    const res = await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' });
+    expect(res.status).toBe(502);
+    expect([countRows(ctx.db, 'raw_articles'), countRows(ctx.db, 'kid_articles')]).toEqual(before);
+  });
+});

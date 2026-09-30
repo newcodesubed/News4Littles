@@ -15,14 +15,15 @@ import {
   type SimplifyJobState,
 } from '../src/services/simplifyService.js';
 import {
-  countRows, createTestContext, insertRawArticle, stubModel, type TestContext,
+  countRows, createTestContext, insertRawArticle, MODEL_STORY, stubModel, type TestContext,
 } from './helpers.js';
 
-// Every story in this file is written by the fake model from stubModel.
+// Every story in this file is written by the fake model from stubModel; a test can switch the LLM off.
+const llm = vi.hoisted(() => ({ on: true }));
 vi.mock('../src/env.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+  ...(await importOriginal<object>()), get LLM_ENABLED() { return llm.on; }, OPENROUTER_KEY: 'test-key',
 }));
-beforeEach(() => { stubModel(); });
+beforeEach(() => { llm.on = true; stubModel(); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('jobLock', () => {
@@ -380,5 +381,40 @@ describe('startSimplifyJob', () => {
     expect(() => startSimplifyJob(ctx.db, [])).toThrow(/no articles/i);
     // A rejected start must not leave the lock held.
     expect(activeJob()).toBeNull();
+  });
+});
+
+describe('when the model cannot write a story', () => {
+  let ctx: TestContext;
+  beforeEach(() => { ctx = createTestContext(); resetSimplifyJob(); });
+  afterEach(() => { ctx.close(); resetSimplifyJob(); });
+
+  const seed = () => insertRawArticle(ctx.db, {
+    id: 'r1', headline: 'Adult headline', body: 'A rover surveyed the reef.',
+    url: 'https://example.com/r1', simplifiedAt: null,
+  });
+
+  it('saves no version and deletes the article when any band fails', async () => {
+    seed();
+    stubModel((prompt) => (prompt.includes('aged 8 to 10') ? 'not json' : MODEL_STORY));
+
+    const report = await simplifyRawArticles(ctx.db, ['r1']);
+
+    expect(report.simplified).toEqual([]);
+    expect(report.dropped).toHaveLength(1);
+    expect(report.dropped[0]!.reason).toContain('ages 8–10');
+    expect(countRows(ctx.db, 'kid_articles')).toBe(0);
+    expect(createRawArticleRepository(ctx.db).findById('r1')!.dismissedAt).not.toBeNull();
+  });
+
+  it('leaves the articles waiting when the LLM is off', async () => {
+    seed();
+    llm.on = false;
+
+    const report = await simplifyRawArticles(ctx.db, ['r1']);
+
+    expect(report.failures[0]!.error).toMatch(/turned off/);
+    const raw = createRawArticleRepository(ctx.db).findById('r1')!;
+    expect([raw.simplifiedAt, raw.dismissedAt]).toEqual([null, null]);
   });
 });
