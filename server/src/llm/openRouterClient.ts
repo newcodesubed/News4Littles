@@ -9,17 +9,23 @@
  * constructor argument so tests can pin them.
  */
 import {
-  LLM_MAX_RETRIES, LLM_MAX_TOKENS, LLM_MODEL, LLM_TIMEOUT_MS, OPENROUTER_KEY,
+  LLM_FALLBACK_MODEL, LLM_MAX_RETRIES, LLM_MAX_TOKENS, LLM_MODEL, LLM_RETRY_DELAY_MS, LLM_TIMEOUT_MS,
+  OPENROUTER_KEY,
 } from '../env.js';
 import { logger } from '../logger.js';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+
+// Thinking off keeps the backup fast; Together writes DeepSeek's thinking into the reply.
+const BACKUP_OPTIONS = { reasoning: { enabled: false }, provider: { ignore: ['Together'] } };
 
 export interface CompletionRequest {
   prompt: string;
   /** Overrides the configured model; used by the sandbox to compare. */
   model?: string;
   maxTokens?: number;
+  /** Go straight to the backup model, after the main one sent an unusable reply. */
+  backup?: boolean;
 }
 
 export interface CompletionSuccess {
@@ -50,6 +56,8 @@ export interface OpenRouterOptions {
   maxTokens?: number;
   timeoutMs?: number;
   maxRetries?: number;
+  fallbackModel?: string;
+  retryDelayMs?: number;
   /** Injectable for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -76,6 +84,8 @@ export class OpenRouterClient {
   private readonly maxTokens: number;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
+  private readonly fallbackModel: string;
+  private readonly retryDelayMs: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: OpenRouterOptions = {}) {
@@ -84,6 +94,8 @@ export class OpenRouterClient {
     this.maxTokens = options.maxTokens ?? LLM_MAX_TOKENS;
     this.timeoutMs = options.timeoutMs ?? LLM_TIMEOUT_MS;
     this.maxRetries = options.maxRetries ?? LLM_MAX_RETRIES;
+    this.fallbackModel = options.fallbackModel ?? LLM_FALLBACK_MODEL;
+    this.retryDelayMs = options.retryDelayMs ?? LLM_RETRY_DELAY_MS;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -99,7 +111,8 @@ export class OpenRouterClient {
     };
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
-      const result = await this.attempt(request, startedAt);
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
+      const result = await this.attempt(request, startedAt, request.backup || attempt > 0);
       if (result.ok) return result;
 
       last = result;
@@ -110,9 +123,9 @@ export class OpenRouterClient {
     return last;
   }
 
-  private async attempt(request: CompletionRequest, startedAt: number): Promise<CompletionResult> {
+  private async attempt(request: CompletionRequest, startedAt: number, backup: boolean): Promise<CompletionResult> {
     const elapsed = () => Date.now() - startedAt;
-    const model = request.model ?? this.model;
+    const model = backup ? this.fallbackModel : (request.model ?? this.model);
 
     // AbortSignal.timeout keeps a hung provider from stalling the scheduler.
     let response: Response;
@@ -129,6 +142,7 @@ export class OpenRouterClient {
           // Asks for JSON. Not every model honours it, hence stripCodeFence.
           response_format: { type: 'json_object' },
           max_tokens: request.maxTokens ?? this.maxTokens,
+          ...(backup && BACKUP_OPTIONS),
         }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -212,7 +226,8 @@ export class OpenRouterClient {
       return {
         ok: false,
         reason: `The reply was cut off at max_tokens (${request.maxTokens ?? this.maxTokens}); raise LLM_MAX_TOKENS.`,
-        transient: false,
+        // The backup does not think, so it fits where the main model ran out.
+        transient: true,
         elapsedMs: elapsed(),
       };
     }

@@ -115,6 +115,12 @@ export const LLM_TIMEOUT_MS = readInt('LLM_TIMEOUT_MS', 30_000);
 /** Retries are for transient failures only (429, 5xx); never a retry storm. */
 export const LLM_MAX_RETRIES = readInt('LLM_MAX_RETRIES', 1);
 
+/** The model a retry switches to. */
+export const LLM_FALLBACK_MODEL = readString('LLM_FALLBACK_MODEL', 'deepseek/deepseek-v4.1-flash');
+
+/** A busy provider is usually still busy a moment later. */
+export const LLM_RETRY_DELAY_MS = readInt('LLM_RETRY_DELAY_MS', 1500);
+
 /** Admin credentials, used by the seed to create the account (PRD §4.1). */
 export const ADMIN_USERNAME = readString('ADMIN_USERNAME', 'admin');
 export const ADMIN_PASSWORD = readString('ADMIN_PASSWORD', 'admin123');

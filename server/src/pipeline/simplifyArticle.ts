@@ -124,9 +124,9 @@ export async function simplifyArticle(
   let spentUsd = result.ok ? (result.costUsd ?? 0) : 0;
   let parsed = result.ok ? tryParse(result.text) : undefined;
 
-  // A malformed reply is usually a one-off, so it earns one retry before the fallback.
+  // A malformed reply is usually a one-off, so it earns one retry on the backup model.
   if (parsed && 'error' in parsed) {
-    result = await client.complete(request);
+    result = await client.complete({ ...request, backup: true });
     if (result.ok) {
       spentUsd += result.costUsd ?? 0;
       parsed = tryParse(result.text);
