@@ -28,14 +28,14 @@ const ARTICLE = {
 };
 
 const okRun = {
-  target: 'simplification', age: null, engine: 'llm',
+  target: 'simplification', age: null,
   model: 'google/gemini-2.5-flash-lite', elapsedMs: 2100, costUsd: 0.00017,
   article: ARTICLE,
   validation: { schemaValid: true, ageLimit: 14, longestSentenceWords: 9, withinAgeLimit: true, overLongSentences: [] },
 };
 
 function mockApi() {
-  testResponse = { subject: { headline: 'Survey team documents a coral reef', body: 'b', sourceName: 'BBC News', category: 'World' }, draft: okRun, usingLocalFallback: false };
+  testResponse = { subject: { headline: 'Survey team documents a coral reef', body: 'b', sourceName: 'BBC News', category: 'World' }, draft: okRun, llmOff: false };
 
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, '');
@@ -227,7 +227,7 @@ describe('running a test (§7.4)', () => {
       subject: { headline: 'h', body: 'b', sourceName: 's', category: 'World' },
       draft: { ...okRun, article: { ...ARTICLE, kidHeadline: 'Draft headline' } },
       production: { ...okRun, article: { ...ARTICLE, kidHeadline: 'Production headline' } },
-      usingLocalFallback: false,
+      llmOff: false,
     };
     renderSandbox();
     await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');
@@ -290,11 +290,11 @@ describe('promotion (§7.4)', () => {
     expect(screen.getByRole('button', { name: 'Promote to production' })).toBeEnabled();
   });
 
-  it('stays disabled when the run fell back', async () => {
+  it('stays disabled when the run failed', async () => {
     testResponse = {
       subject: { headline: 'h', body: 'b', sourceName: 's', category: 'World' },
-      draft: { ...okRun, engine: 'local-fallback', fallbackReason: 'Response was not valid JSON.' },
-      usingLocalFallback: true,
+      draft: { ...okRun, article: undefined, validation: undefined, error: 'Response was not valid JSON.' },
+      llmOff: false,
     };
     renderSandbox();
     await screen.findByDisplayValue('PRODUCTION GENERIC PROMPT');

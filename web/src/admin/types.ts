@@ -60,6 +60,8 @@ export interface SimplifyJob {
   running: boolean;
   report: {
     simplified: { rawId: string; kidHeadline: string }[];
+    /** Stories the model could not write, so their articles were deleted. */
+    dropped: { rawId: string; headline: string; reason: string }[];
     failures: { rawId: string; error: string }[];
     skipped: string[];
   };
@@ -70,11 +72,10 @@ export interface RegeneratedVersion {
   ageTarget: number;
   /** The stored row this age would replace. */
   current: AdminArticle;
-  generated: AdminArticle;
-  engine: string;
+  /** Missing when the model could not rewrite this age; the stored version then stays. */
+  generated?: AdminArticle;
   model?: string;
-  /** Set when this age fell back to the rule-based pipeline (§9.2). */
-  fallbackReason?: string;
+  error?: string;
 }
 
 /**

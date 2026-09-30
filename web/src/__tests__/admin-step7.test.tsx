@@ -37,7 +37,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
     const json = (body: unknown, status = 200) =>
       ({ ok: status < 400, status, json: async () => body, headers: new Headers() }) as unknown as Response;
 
-    if (path.includes('/simplify')) return json({ article: GENERATED, guard: { matches: ['conflict', 'attack'], safety: 'adult-nearby', denyListEnabled: true, engine: 'local-fallback' } });
+    if (path.includes('/simplify')) return json({ article: GENERATED, guard: { matches: ['conflict', 'attack'], safety: 'adult-nearby', denyListEnabled: true, model: 'test/model' } });
     if (path === '/api/admin/articles' && init.method === 'POST') {
       // Saving is ten model calls server-side, so tests can hold it open.
       if (releaseSave === null) return json({ ...GENERATED, id: 'new' }, 201);
@@ -53,7 +53,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
           finishedAt: '2026-09-08T06:01:00.000Z', ok: true, error: null,
           itemsInFeed: 45, inserted: 41, simplified: 10, versions: 100, leftWaiting: 31,
           skippedNotNew: 4, skippedAlreadyStored: 0,
-          skippedUnusable: 0, costUsd: 0.0007, fallbacks: [], trigger: 'manual',
+          skippedUnusable: 0, costUsd: 0.0007, dropped: [], trigger: 'manual',
         },
       },
     });
@@ -109,12 +109,10 @@ describe('editor portal — §4.3 form', () => {
     expect(screen.getByRole('button', { name: /Simplify with AI/ })).toBeEnabled();
   });
 
-  it('does not claim there is no AI key; the preview says what ran', () => {
-    // The shared pipeline uses the model whenever a key is set, so a fixed
-    // "no key" line is wrong on any deployment that has one.
+  it('says a failed simplification will explain itself', () => {
     renderIn(<AdminSubmit />);
     expect(screen.queryByText(/No AI key is configured/)).not.toBeInTheDocument();
-    expect(screen.getByText(/the preview says which/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot write the story, you will see why/i)).toBeInTheDocument();
   });
 
   it('has no Save draft button — §8.3 has no draft status', async () => {
@@ -148,11 +146,11 @@ describe('Simplify with AI — requirement 3', () => {
     expect(await screen.findByText(/matched 2 deny-list word\(s\): conflict, attack/)).toBeInTheDocument();
   });
 
-  it('labels the engine as local-fallback, not an LLM', async () => {
+  it('names the model that wrote the preview', async () => {
     renderIn(<AdminSubmit />);
     await fillForm();
     await userEvent.click(screen.getByRole('button', { name: /Simplify with AI/ }));
-    expect(await screen.findByText('model: local-fallback')).toBeInTheDocument();
+    expect(await screen.findByText('model: test/model')).toBeInTheDocument();
   });
 
   it('shows the feeling note for a non-calm story', async () => {

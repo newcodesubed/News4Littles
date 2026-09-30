@@ -39,7 +39,7 @@ function mockApi() {
         simplified: running
           ? []
           : (simplifyBody?.ids ?? []).map((rawId) => ({ rawId, kidHeadline: 'A kid headline' })),
-        failures: [], skipped: [],
+        dropped: [], failures: [], skipped: [],
       },
     });
 

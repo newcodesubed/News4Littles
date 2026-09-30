@@ -67,7 +67,6 @@ function mockApi() {
             ageTarget: v.ageTarget,
             current: v,
             generated: { ...v, kidHeadline: `Fresh age ${v.ageTarget}` },
-            engine: 'llm',
           })),
     });
 

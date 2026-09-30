@@ -14,14 +14,13 @@ import { AGE_BANDS, DEFAULT_AGE, ageBandLabel, bandForAge, formatAgeBand } from 
  * Editor portal — PRD §4.3.
  *
  * "Simplify with AI" calls POST /api/admin/simplify, which runs the same
- * pipeline as a scrape: the model when a key is configured, the local
- * rule-based simplifier (§9.2) otherwise. The preview names which one ran.
+ * pipeline as a scrape. The preview names the model that wrote it.
  */
 interface GuardInfo {
   matches: string[];
   safety: string;
   denyListEnabled: boolean;
-  engine: string;
+  model?: string;
 }
 
 
@@ -181,8 +180,8 @@ export function AdminSubmit() {
           {busy ? 'Working…' : 'Simplify with AI'}
         </Button>
         <p className="text-xs text-muted-foreground">
-          Uses the AI model when one is configured, and the local rule-based simplifier
-          otherwise; the preview says which. Nothing is saved until you choose an action below.
+          If the AI model cannot write the story, you will see why. Nothing is saved until you
+          choose an action below.
         </p>
       </Card>
 
@@ -194,7 +193,7 @@ export function AdminSubmit() {
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h2 className="font-display text-2xl">Review output</h2>
             <span className="rounded-full bg-muted px-3 py-1 text-xs font-bold">
-              model: {guard?.engine ?? 'local-fallback'}
+              model: {guard?.model ?? 'unknown'}
             </span>
           </div>
 

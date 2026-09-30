@@ -30,8 +30,10 @@ export function LastRunSummary({ run }: { run: ScrapeRun | undefined }) {
       {run.skippedUnusable > 0 && `, ${run.skippedUnusable} unusable`}
       {run.costUsd > 0 && ` · $${run.costUsd.toFixed(5)}`}
       {run.trigger === 'scheduled' && ' · scheduled'}
-      {run.fallbacks.length > 0 && (
-        <span className="text-amber-700"> · {run.fallbacks.length} fell back to the local pipeline</span>
+      {run.dropped.length > 0 && (
+        <span className="text-amber-700" title={run.dropped.join('\n')}>
+          {' '}· {run.dropped.length} deleted because the model failed
+        </span>
       )}
     </span>
   );

@@ -142,8 +142,9 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
   const version = (age: number, over: Partial<AdminArticle> = {}, current: Partial<AdminArticle> = {}) => ({
     ageTarget: age,
     current: article({ id: `v${age}`, ageTarget: age, kidHeadline: `Stored age ${age}`, ...current }),
-    generated: article({ id: `v${age}`, ageTarget: age, kidHeadline: `Fresh age ${age}`, ...over }),
-    engine: 'llm',
+    generated: article({ id: `v${age}`, ageTarget: age, kidHeadline: `Fresh age ${age}`, ...over }) as
+      AdminArticle | undefined,
+    error: undefined as string | undefined,
   });
 
   const job = (versions: ReturnType<typeof version>[]): RegenerateJob => ({
@@ -241,10 +242,15 @@ describe('RegenerateDialog (§4.2, story-scoped)', () => {
     expect(screen.getByText(/\$0\.0043/)).toBeInTheDocument();
   });
 
-  it('says which versions fell back to the rule-based pipeline', () => {
-    const fell = { ...version(5), fallbackReason: 'upstream exploded' };
-    open(job([fell]));
-    expect(screen.getByText(/rule-based pipeline: upstream exploded/)).toBeInTheDocument();
+  it('says which versions could not be regenerated, and will not apply them', () => {
+    const failed = { ...version(8), generated: undefined, error: 'upstream exploded' };
+    open(job([version(5), failed]));
+    expect(screen.getByRole('checkbox', { name: 'Apply ages 8–10' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Apply ages 8–10' })).not.toBeChecked();
+
+    return userEvent.click(screen.getByRole('tab', { name: /ages 8–10/i })).then(() => {
+      expect(screen.getByText(/so the current one stays: upstream exploded/)).toBeInTheDocument();
+    });
   });
 
   it('ignores Escape too, for the same reason', async () => {

@@ -103,10 +103,12 @@ export function WaitingPanel({
           if (body.running || !body.job) return;
 
           const done = body.job.report.simplified.length;
+          const dropped = body.job.report.dropped.length;
           const failed = body.job.report.failures.length;
           setNotice(
             <>
               {`${done} article(s) simplified and waiting in Pending review` +
+                (dropped > 0 ? `, ${dropped} deleted because the model could not write them` : '') +
                 (failed > 0 ? `, ${failed} could not be simplified and are still here.` : '.')}
               {done > 0 && (
                 <>{' '}<Link to="/admin/review" className="underline">Open Pending review</Link></>

@@ -23,14 +23,13 @@ export function RegenerateDialog({
   onApply: (ages: number[]) => void;
 }) {
   const [active, setActive] = useState(job.versions[0].ageTarget);
+  const usable = job.versions.filter((v) => v.generated);
   const [ticked, setTicked] = useState<Set<number>>(
-    () => new Set(
-      job.versions.filter((v) => !v.current.editedByHuman).map((v) => v.ageTarget),
-    ),
+    () => new Set(usable.filter((v) => !v.current.editedByHuman).map((v) => v.ageTarget)),
   );
 
   const version = job.versions.find((v) => v.ageTarget === active) ?? job.versions[0];
-  const changed = changedFields(version.current, version.generated);
+  const changed = version.generated ? changedFields(version.current, version.generated) : [];
   const plural = job.versions.length === 1 ? '' : 's';
 
   const toggle = (age: number) =>
@@ -52,7 +51,7 @@ export function RegenerateDialog({
       <div className="mt-4 flex items-start justify-between gap-3">
         <div className="flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Reading group versions">
           {job.versions.map((v) => {
-            const count = changedFields(v.current, v.generated).length;
+            const count = v.generated ? changedFields(v.current, v.generated).length : 0;
             const isActive = v.ageTarget === active;
             return (
               <span
@@ -65,13 +64,14 @@ export function RegenerateDialog({
                   type="checkbox"
                   aria-label={`Apply ${ageBandLabel(v.ageTarget).toLowerCase()}`}
                   checked={ticked.has(v.ageTarget)}
+                  disabled={!v.generated}
                   onChange={() => toggle(v.ageTarget)}
                 />
                 <button role="tab" aria-selected={isActive} onClick={() => setActive(v.ageTarget)}>
                   {ageBandLabel(v.ageTarget)}
                   {v.current.editedByHuman && <span aria-hidden="true"> ✎</span>}
                   <span className="ml-1 text-xs text-muted-foreground">
-                    {count === 0 ? '—' : `•${count}`}
+                    {!v.generated ? '✕' : count === 0 ? '—' : `•${count}`}
                   </span>
                 </button>
               </span>
@@ -84,7 +84,7 @@ export function RegenerateDialog({
           size="sm"
           onClick={() =>
             setTicked(
-              ticked.size === 0 ? new Set(job.versions.map((v) => v.ageTarget)) : new Set(),
+              ticked.size === 0 ? new Set(usable.map((v) => v.ageTarget)) : new Set(),
             )
           }
         >
@@ -96,18 +96,20 @@ export function RegenerateDialog({
         {ageBandLabel(version.ageTarget)}
         {version.current.editedByHuman && ' · edited by a person'}
         {' · '}
-        {changed.length === 0
-          ? 'no differences — applying this version would change nothing'
-          : `${changed.length} field(s) would change`}
+        {!version.generated
+          ? 'could not be regenerated'
+          : changed.length === 0
+            ? 'no differences — applying this version would change nothing'
+            : `${changed.length} field(s) would change`}
       </p>
 
-      {version.fallbackReason && (
-        <p className="mt-2 rounded-2xl bg-surface-sun px-4 py-3 text-sm font-semibold">
-          This version fell back to the rule-based pipeline: {version.fallbackReason}
+      {version.generated ? (
+        <VersionDiff current={version.current} generated={version.generated} />
+      ) : (
+        <p role="alert" className="mt-2 rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">
+          The model could not rewrite this version, so the current one stays: {version.error}
         </p>
       )}
-
-      <VersionDiff current={version.current} generated={version.generated} />
 
       {version.current.editedByHuman && (
         <p className="mt-4 rounded-2xl bg-surface-sun px-4 py-3 text-sm font-semibold">

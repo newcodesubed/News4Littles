@@ -7,18 +7,18 @@ const DIFF_FIELDS = [
   'thinkAbout', 'audioScript', 'feelingNote', 'safety', 'readingMinutes',
 ] as const;
 
-/** §7.4: elapsed time, and which engine produced the output. */
+/** §7.4: elapsed time, and which model produced the output. */
 function RunMeta({ run }: { run: SandboxRun }) {
   return (
     <p className="text-xs text-muted-foreground">
-      model: <strong>{run.engine === 'llm' ? (run.model ?? 'llm') : 'local-fallback'}</strong>
+      model: <strong>{run.model ?? 'none'}</strong>
       {run.elapsedMs !== undefined && ` · ${run.elapsedMs}ms`}
       {run.costUsd !== undefined && ` · $${run.costUsd.toFixed(5)}`}
     </p>
   );
 }
 
-/** §7.3: schema validity, parse errors, and words per sentence vs the age. */
+/** §7.3: schema validity and words per sentence vs the age. */
 function Validation({ run }: { run: SandboxRun }) {
   if (!run.validation) return null;
   const v = run.validation;
@@ -32,7 +32,6 @@ function Validation({ run }: { run: SandboxRun }) {
           ? `sentences within the age limit (${v.longestSentenceWords}/${v.ageLimit} words)`
           : `longest sentence is ${v.longestSentenceWords} words, over the ${v.ageLimit}-word limit`}
       </p>
-      {v.parseError && <p className="mt-1 text-muted-foreground">{v.parseError}</p>}
       {v.overLongSentences.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
           {v.overLongSentences.slice(0, 3).map((sentence) => (
@@ -50,7 +49,6 @@ function GuardResult({ run }: { run: SandboxRun }) {
       <p className="font-display text-2xl">
         Verdict: {run.guardVerdict ?? <span className="text-destructive">unreadable</span>}
       </p>
-      {run.fallbackReason && <Notice tone="warn">{run.fallbackReason}</Notice>}
       <div>
         <p className="text-sm font-bold mb-1">The guard's raw response</p>
         <pre className="overflow-x-auto rounded-xl bg-muted px-4 py-3 font-mono text-xs">
@@ -66,9 +64,7 @@ function Run({ run, label }: { run: SandboxRun; label?: string }) {
     <div className="space-y-4">
       {label && <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</p>}
       <RunMeta run={run} />
-      {run.fallbackReason && run.target === 'simplification' && (
-        <Notice tone="warn">Fell back to the rule-based pipeline: {run.fallbackReason}</Notice>
-      )}
+      {run.error && <Notice tone="warn">{run.error}</Notice>}
       <Validation run={run} />
       {run.target === 'guard' ? (
         <GuardResult run={run} />
@@ -151,12 +147,9 @@ export function ResultsPanel({ result }: { result: TestResult | null }) {
     <Card>
       <h2 className="font-display text-xl mb-3">3. Result</h2>
 
-      {result.usingLocalFallback && (
+      {result.llmOff && (
         <div className="mb-4">
-          <Notice tone="warn">
-            No LLM is answering, so this ran the local rule-based pipeline. The prompt had no effect
-            on this output.
-          </Notice>
+          <Notice tone="warn">No LLM is configured, so nothing was run.</Notice>
         </div>
       )}
 

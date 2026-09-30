@@ -32,7 +32,7 @@ export function RunHistory({
                 <span className="block text-xs text-muted-foreground">
                   {entry.subjectHeadline.slice(0, 60)}
                   {' · '}
-                  {entry.result.draft.engine === 'llm' ? (entry.result.draft.model ?? 'llm') : 'local-fallback'}
+                  {entry.result.draft.error ? 'failed' : (entry.result.draft.model ?? 'llm')}
                   {entry.result.draft.costUsd !== undefined && ` · $${entry.result.draft.costUsd.toFixed(5)}`}
                 </span>
               </button>

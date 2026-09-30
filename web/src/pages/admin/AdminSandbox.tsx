@@ -187,8 +187,8 @@ export function AdminSandbox() {
   const promoteBlocker =
     result === null
       ? 'Promotion needs one successful test run first, so nothing reaches readers untried.'
-      : result.draft.fallbackReason
-        ? 'The last run fell back to the rule-based pipeline, so it does not count. Run it again.'
+      : result.draft.error
+        ? 'The last run failed, so it does not count. Run it again.'
         : testedText !== promptText
           ? 'The prompt has changed since the last test. Run it again before promoting.'
           : null;
@@ -214,8 +214,7 @@ export function AdminSandbox() {
       {!config.llm.enabled && (
         <div className="mb-5">
           <Notice tone="warn" role="alert">
-            No LLM key is configured, so runs use the local rule-based pipeline and prompts have no
-            effect on the output. Set OPENROUTER_KEY to test prompts for real.
+            No LLM key is configured, so nothing can be tested. Set OPENROUTER_KEY to test prompts.
           </Notice>
         </div>
       )}
@@ -227,7 +226,7 @@ export function AdminSandbox() {
           Live version: <strong>{currentVersion ? `v${currentVersion}` : 'never promoted'}</strong>
         </span>
         <span>·</span>
-        <span>Model: <strong>{config.llm.enabled ? config.llm.model : 'local-fallback'}</strong></span>
+        <span>Model: <strong>{config.llm.enabled ? config.llm.model : 'none'}</strong></span>
         {sessionCost > 0 && (
           <>
             <span>·</span>

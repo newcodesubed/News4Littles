@@ -42,7 +42,6 @@ export interface RawArticleSummary {
 
 export interface ValidationReport {
   schemaValid: boolean;
-  parseError?: string;
   ageLimit: number;
   longestSentenceWords: number;
   withinAgeLimit: boolean;
@@ -52,11 +51,11 @@ export interface ValidationReport {
 export interface SandboxRun {
   target: PromptTarget;
   age: number | null;
-  engine: 'llm' | 'local-fallback';
   model?: string;
   elapsedMs?: number;
   costUsd?: number;
-  fallbackReason?: string;
+  /** Why the model gave nothing usable; there is then no article or verdict. */
+  error?: string;
   article?: KidArticle;
   guardVerdict?: string;
   guardRaw?: string;
@@ -67,7 +66,7 @@ export interface TestResult {
   subject: { headline: string; body: string; sourceName: string; category: string };
   draft: SandboxRun;
   production?: SandboxRun;
-  usingLocalFallback: boolean;
+  llmOff: boolean;
 }
 
 /** §7.3: one run in the session history (see useRunHistory). */

@@ -50,7 +50,8 @@ export interface ScrapeRun {
   skippedAlreadyStored: number;
   skippedUnusable: number;
   costUsd: number;
-  fallbacks: string[];
+  /** Stories the model could not write, so their articles were deleted. */
+  dropped: string[];
   trigger: 'manual' | 'scheduled';
 }
 
@@ -69,7 +70,7 @@ export interface ScrapeStatus {
     results: {
       sourceId: string; sourceName: string; ok: boolean; error?: string;
       inserted: number; leftWaiting: number;
-      simplified: { rawId: string; kidHeadline: string; safety: string; engine: string }[];
+      simplified: { rawId: string; kidHeadline: string; safety: string }[];
     }[];
     summary: {
       inserted: number; simplified: number; leftWaiting: number; failed: number; costUsd: number;
