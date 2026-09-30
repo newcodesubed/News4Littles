@@ -390,8 +390,10 @@ it that way — the budget in `/admin/settings`, and these in `.env`:
 | `LLM_ENABLED`        | `true`                         | Set to `false` to fall back to the free local path instantly            |
 | `LLM_MODEL`          | `google/gemini-2.5-flash-lite` | Any OpenRouter model id                                                 |
 | `LLM_MAX_BODY_CHARS` | `6000`                         | Article text is truncated first, so one huge paste cannot run up a bill |
-| `LLM_MAX_TOKENS`     | `1500`                         | Caps the priced half of each response                                   |
+| `LLM_MAX_TOKENS`     | `3000`                         | Caps the priced half of each response                                   |
 | `LLM_MAX_RETRIES`    | `1`                            | Transient failures only (429, 5xx) — never a retry storm                |
+| `LLM_FALLBACK_MODEL` | `deepseek/deepseek-v4.1-flash` | The model a retry uses, with thinking off                               |
+| `LLM_RETRY_DELAY_MS` | `1500`                         | Wait before a retry, so a busy provider can recover                     |
 
 If a call fails or the response cannot be parsed, the article falls back to the
 local pipeline and the reason is recorded, so a dead API degrades rather than
