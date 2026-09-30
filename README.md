@@ -35,8 +35,8 @@ Open <http://localhost:5173>. For the editor side, go to
 <http://localhost:5173/admin/review> and sign in with **`admin` / `admin123`**
 (change it — see [Admin account](#admin-account)).
 
-No API key is needed. Without one the app runs a local rule-based simplifier,
-and everything works end to end — just with plainer output. See
+Stories are written by an LLM, so simplifying needs an OpenRouter key. Without
+one the app still runs and scrapes, but new articles wait unsimplified. See
 [Turning on the LLM](#turning-on-the-llm).
 
 ### Building for production
@@ -181,8 +181,7 @@ The BBC front-page feed carries no category, so a story's category is decided
 in two steps:
 
 1. **At scrape time, a keyword guess** (`pipeline/categorize.ts`). Free, no API
-   key needed, and it is the category the rule-based pipeline keeps. Anything
-   that matches no keywords is `World`.
+   key needed. Anything that matches no keywords is `World`.
 2. **When the model rewrites the story, the model picks** from the same list
    the site has badges for (`CATEGORIES` in `core/article.ts`, mirrored in
    `web/src/components/Badges.tsx`). The keyword guess is only the hint it sees
@@ -190,7 +189,7 @@ in two steps:
    stands.
 
 A story has **one category across its three versions**: the youngest group's
-pick, or the next group's if that one fell back to the rule-based pipeline.
+pick.
 A story an editor pasted in `/admin/submit` keeps the category the editor
 chose, including through Regenerate. Stories simplified before this change
 stay `World` until an editor edits or regenerates them.
@@ -251,8 +250,8 @@ A story is rewritten once for each of **three reading groups — ages 5–7, 8�
 and 11–14** — so the reading-age slider on `/settings` selects real content
 rather than relabelling a single version. Three `kid_articles` rows share one
 `originalId`, and each carries its group's **youngest age** as `ageTarget`
-(5, 8 or 11). The groups are the same three bands §9.2 already uses for the
-rule-based pipeline, and they live in one place: `AGE_BANDS` in
+(5, 8 or 11). The groups are the same three bands §9.2 uses for its
+words-per-sentence limits, and they live in one place: `AGE_BANDS` in
 `server/src/core/article.ts` (mirrored for the UI in `web/src/lib/ageBands.ts`).
 
 Each group gets its own model call, using that group's prompt override if one
@@ -271,8 +270,11 @@ JSON envelope, so combining them means sending the article once per group
 anyway, or mangling the templates and losing per-group prompt control and the
 sandbox's fidelity to production (§7.4).
 
-Failures are per group: if the 8–10 call fails, that group falls back to the
-rule-based pipeline (§9.2) and the other two keep their model versions.
+A story is all or nothing. If any group's call still fails after the retry on
+the backup model, none of its versions are saved and the article is deleted
+from the waiting list, because by the next run there is fresher news. The run
+records why. Regenerate is the exception: a group that fails keeps its current
+version, and the others can still be applied.
 
 **The queue is grouped by story.** One row covers all three versions, and its
 safety badge shows the strictest verdict across them — a story that is
@@ -345,27 +347,16 @@ group's anchor.
 The §6 guards run **once per story** — they judge the source article, which does
 not vary by group — so the prompt guard costs one call, not three.
 
-Without an API key the rule-based pipeline handles every group, using §9.2's
-words-per-sentence limits as written: 14 for ages 5–7, 20 for 8–10, 28 for
-11–14. So the slider still changes the text offline, exactly at the group
-boundaries.
+The sandbox checks each group's output against §9.2's words-per-sentence
+limits: 14 for ages 5–7, 20 for 8–10, 28 for 11–14.
 
 ---
 
 ## Turning on the LLM
 
-Without a key, articles go through the local rule-based simplifier (§9.2):
-sentences truncated by age, a few filler words removed, vocabulary from a fixed
-dictionary. Truthful, and quite plain.
-
-With a key, an LLM rewrites the story properly (§9.1) and the difference is
-large:
-
-|          |                                                           |
-| -------- | --------------------------------------------------------- |
-| Original | Volkswagen board approves plan to cut another 50,000 jobs |
-| Local    | Volkswagen board approves plan to cut another 50,000 jobs |
-| LLM      | Car Company Plans Big Changes                             |
+An LLM rewrites every story (§9.1). Without a key nothing is simplified:
+scraped articles wait until one is added, and the sandbox and "Simplify with
+AI" say the LLM is off.
 
 Put an [OpenRouter](https://openrouter.ai) key in `server/.env`:
 
@@ -377,7 +368,7 @@ Then check it:
 
 ```bash
 cd server
-npm run llm:check    # runs 3 real articles through both paths and reports the cost
+npm run llm:check    # runs 3 real articles through the model and reports the cost
 ```
 
 Roughly **$0.0002 per article version** on the default model. A run costs the
@@ -387,7 +378,7 @@ it that way — the budget in `/admin/settings`, and these in `.env`:
 
 | Setting              | Default                        | Why                                                                     |
 | -------------------- | ------------------------------ | ----------------------------------------------------------------------- |
-| `LLM_ENABLED`        | `true`                         | Set to `false` to fall back to the free local path instantly            |
+| `LLM_ENABLED`        | `true`                         | Set to `false` to pause simplification; articles wait                   |
 | `LLM_MODEL`          | `google/gemini-2.5-flash-lite` | Any OpenRouter model id                                                 |
 | `LLM_MAX_BODY_CHARS` | `6000`                         | Article text is truncated first, so one huge paste cannot run up a bill |
 | `LLM_MAX_TOKENS`     | `3000`                         | Caps the priced half of each response                                   |
@@ -395,9 +386,8 @@ it that way — the budget in `/admin/settings`, and these in `.env`:
 | `LLM_FALLBACK_MODEL` | `deepseek/deepseek-v4.1-flash` | The model a retry uses, with thinking off                               |
 | `LLM_RETRY_DELAY_MS` | `1500`                         | Wait before a retry, so a busy provider can recover                     |
 
-If a call fails or the response cannot be parsed, the article falls back to the
-local pipeline and the reason is recorded, so a dead API degrades rather than
-breaks.
+If the model and then the backup still fail, nothing is saved for that story
+and the reason is recorded (see [One version per reading group](#one-version-per-reading-group)).
 
 **The key belongs in `server/.env` and nowhere else** — never in the database,
 never in seed data, never committed (§13.2). `.env` is gitignored.
@@ -712,7 +702,7 @@ server/src/
   core/               domain types and errors — no express, no sqlite
   db/                 schema.sql, connection, seeds, repositories (all SQL lives here)
   http/               middleware (auth, request logging, errors) and validation
-  pipeline/           the safety guard and rule-based simplification
+  pipeline/           the safety guard and the simplification entry point
   llm/                the OpenRouter client and response parsing
   ingestion/          RSS fetching, parsing, scheduling
   services/           use cases: submit, regenerate, sandbox, scrape runs,
