@@ -272,9 +272,7 @@ const describeBand = (band: AgeBand) => `ages ${formatAgeBand(band)}`;
  * The §6.2 prompt guard runs ONCE and is shared, because it judges the source
  * article and that does not vary by band.
  *
- * Sequential on purpose. A run is already a background job that warns it takes
- * minutes, and limited concurrency is a later change that has to consider the
- * provider's rate limits.
+ * The bands run at once: three calls per story is well within rate limits.
  */
 export async function simplifyStory(
   db: Database,
@@ -304,25 +302,26 @@ export async function simplifyStory(
     );
   }
 
-  const versions: SimplifyOutcome[] = [];
-  const fallbacks: string[] = [];
-  let costUsd = promptGuard?.costUsd ?? 0;
-
   let done = 0;
-  for (const band of bands) {
-    const outcome = await simplifyArticle(db, raw, {
-      ...perCall, ...perBand?.(band), ageTarget: band.minAge, promptGuard,
-    });
+  const versions = await Promise.all(
+    bands.map(async (band) => {
+      const outcome = await simplifyArticle(db, raw, {
+        ...perCall, ...perBand?.(band), ageTarget: band.minAge, promptGuard,
+      });
+      done += 1;
+      onProgress?.(done);
+      return outcome;
+    }),
+  );
 
-    versions.push(outcome);
+  let costUsd = promptGuard?.costUsd ?? 0;
+  const fallbacks: string[] = [];
+  versions.forEach((outcome, i) => {
     costUsd += outcome.costUsd ?? 0;
     // Prefixed with the band: a reviewer needs to know WHICH version is weaker,
     // and with per-band calls a story can be two parts LLM and one part local.
-    if (outcome.fallbackReason) fallbacks.push(`${describeBand(band)}: ${outcome.fallbackReason}`);
-
-    done += 1;
-    onProgress?.(done);
-  }
+    if (outcome.fallbackReason) fallbacks.push(`${describeBand(bands[i]!)}: ${outcome.fallbackReason}`);
+  });
 
   // One category per story, like one status: the versions are one story at
   // three reading levels, and the Home filter should not show it under Science

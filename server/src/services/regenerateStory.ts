@@ -7,7 +7,7 @@
  * a person reads what a child will: nothing here writes a row the editor has
  * not seen.
  *
- * Job-shaped for the same reason the manual simplify batch is: one sequential
+ * Job-shaped for the same reason the manual simplify batch is: one
  * model call per band is tens of seconds — too long to hold an HTTP request
  * open. The client polls instead.
  *
