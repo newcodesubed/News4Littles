@@ -24,21 +24,19 @@ export interface ScrapeRun {
   skippedAlreadyStored: number;
   skippedUnusable: number;
   costUsd: number;
-  fallbacks: string[];
+  /** Stories the model could not write, so their articles were deleted. */
+  dropped: string[];
   trigger: ScrapeTrigger;
 }
 
-interface ScrapeRunRow extends Omit<ScrapeRun, 'ok' | 'fallbacks'> {
+// `dropped` lives in the old `fallbacks` column, so no migration is needed.
+interface ScrapeRunRow extends Omit<ScrapeRun, 'ok' | 'dropped'> {
   ok: number;
   fallbacks: string;
 }
 
-function toScrapeRun(row: ScrapeRunRow): ScrapeRun {
-  return {
-    ...row,
-    ok: row.ok === 1,
-    fallbacks: JSON.parse(row.fallbacks) as string[],
-  };
+function toScrapeRun({ ok, fallbacks, ...row }: ScrapeRunRow): ScrapeRun {
+  return { ...row, ok: ok === 1, dropped: JSON.parse(fallbacks) as string[] };
 }
 
 export interface ScrapeRunRepository {
@@ -90,11 +88,12 @@ export function createScrapeRunRepository(db: Database): ScrapeRunRepository {
         skippedAlreadyStored: result.skippedAlreadyStored,
         skippedUnusable: result.skippedUnusable,
         costUsd: result.costUsd,
-        fallbacks: result.fallbacks,
+        dropped: result.dropped,
         trigger: meta.trigger,
       };
 
-      insert.run({ ...run, ok: run.ok ? 1 : 0, fallbacks: JSON.stringify(run.fallbacks) });
+      const { dropped, ...columns } = run;
+      insert.run({ ...columns, ok: run.ok ? 1 : 0, fallbacks: JSON.stringify(dropped) });
       return run;
     },
 

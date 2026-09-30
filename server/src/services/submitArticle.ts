@@ -2,18 +2,19 @@
  * Manual submission — PRD §4.3.
  *
  * "Simplify with AI" runs the same function the scraper calls, reading the
- * same guard config: the LLM when a key is configured, the local rule-based
- * pipeline (§9.2) otherwise.
+ * same guard config. When the model cannot write it, the editor gets the reason
+ * and nothing is saved.
  */
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
-import { BadRequestError } from '../core/errors.js';
+import { BadRequestError, ModelFailedError } from '../core/errors.js';
 import type { ArticleStatus, KidArticle, VocabEntry } from '../core/article.js';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository } from '../db/repositories/sourceRepository.js';
-import { loadLocalPipelineConfig } from '../pipeline/localPipeline.js';
-import { simplifyArticle, simplifyStory, type SimplifyOutcome } from '../pipeline/simplifyArticle.js';
+import {
+  loadPipelineConfig, simplifyArticle, simplifyStory, type SimplifySuccess,
+} from '../pipeline/simplifyArticle.js';
 import type { GuardResult } from '../pipeline/guard.js';
 
 /** §4.2's source dropdown includes 'manual'; §4.3 submissions belong to it. */
@@ -44,12 +45,10 @@ export interface SimplifyPreview {
   article: KidArticle;
   guard: GuardResult & {
     denyListEnabled: boolean;
-    /** Which engine produced this — §7.4 requires the UI to say so. */
-    engine: SimplifyOutcome['engine'];
+    /** Which model produced this — §7.4 requires the UI to say so. */
     model?: string;
     costUsd?: number;
     elapsedMs?: number;
-    fallbackReason?: string;
   };
 }
 
@@ -75,17 +74,16 @@ export async function simplifySubmission(
     ageTarget: submission.ageTarget,
     id: 'preview',
   });
+  if (!outcome.ok) throw new ModelFailedError(`The story could not be simplified: ${outcome.reason}`);
 
   return {
     article: outcome.article,
     guard: {
       ...outcome.guard,
-      denyListEnabled: loadLocalPipelineConfig(db, submission.ageTarget).denyListEnabled,
-      engine: outcome.engine,
+      denyListEnabled: loadPipelineConfig(db, submission.ageTarget).denyListEnabled,
       model: outcome.model,
       costUsd: outcome.costUsd,
       elapsedMs: outcome.elapsedMs,
-      fallbackReason: outcome.fallbackReason,
     },
   };
 }
@@ -125,12 +123,16 @@ export async function createManualArticle(
   const now = new Date().toISOString();
   const rawId = randomUUID();
   const outcome = await simplifyStory(db, toRawInput(submission, rawId), { now });
+  if (outcome.failures.length > 0) {
+    throw new ModelFailedError(`The story could not be simplified: ${outcome.failures.join('; ')}`);
+  }
+  const versions = outcome.versions as SimplifySuccess[];
 
   // The band the form previewed. Falls back to the youngest only if the anchor
   // vanished from AGE_BANDS between validation and here, which it cannot.
   const reviewed =
-    outcome.versions.find((version) => version.article.ageTarget === submission.ageTarget)
-    ?? outcome.versions[0];
+    versions.find((version) => version.article.ageTarget === submission.ageTarget)
+    ?? versions[0]!;
 
   // Apply the editor's edits on top of the generated output, tracking whether
   // anything actually changed so editedByHuman stays truthful.
@@ -164,7 +166,7 @@ export async function createManualArticle(
   } as const;
 
   const stored: KidArticle = { ...final, ...lifecycle, editedByHuman: edited };
-  const rows: KidArticle[] = outcome.versions.map((version) =>
+  const rows: KidArticle[] = versions.map((version) =>
     version === reviewed
       ? stored
       : { ...version.article, ...lifecycle, editedByHuman: false },

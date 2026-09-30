@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
 import type { Database } from 'better-sqlite3';
+import { vi } from 'vitest';
 import { openDatabase } from '../src/db/connection.js';
 import { initialiseSchema } from '../src/db/init.js';
 import { seed } from '../src/db/seed.js';
@@ -176,3 +177,35 @@ export const getKidArticle = (db: Database, id: string) =>
 
 export const countRows = (db: Database, table: string) =>
   db.prepare(`SELECT COUNT(*) FROM ${table}`).pluck().get() as number;
+
+/** A reply the pipeline accepts as a whole story. */
+export const MODEL_STORY = {
+  kidHeadline: 'A robot looked at a reef',
+  summary: 'A robot explored a reef under the sea.',
+  whatHappened: 'A robot with lights went down to the reef.',
+  whyItMatters: 'Reefs are home to lots of sea animals.',
+  vocab: [{ word: 'reef', definition: 'A ridge of rock under the sea.' }],
+  thinkAbout: 'What would you look for down there?',
+  feelingNote: null,
+  safety: 'calm',
+  contentWarnings: [],
+  readingMinutes: 2,
+};
+
+/** Answers OpenRouter calls from `reply` and passes other requests through; the file must also mock env.ts. */
+export function stubModel(reply: (prompt: string) => unknown = () => MODEL_STORY) {
+  const realFetch = globalThis.fetch;
+  const prompts: string[] = [];
+  vi.stubGlobal('fetch', async (url: string | URL, init?: RequestInit) => {
+    if (!String(url).startsWith('https://openrouter.ai/')) return realFetch(url, init);
+    const prompt = JSON.parse(String(init?.body)).messages[0].content as string;
+    prompts.push(prompt);
+    const content = reply(prompt);
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) } }],
+      usage: { total_tokens: 10, cost: 0.00001 },
+      model: 'test/model',
+    }));
+  });
+  return { prompts };
+}

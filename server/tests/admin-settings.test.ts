@@ -1,7 +1,16 @@
 /** Admin settings — PRD §4.4, §5.1, §6, §8.5, §8.7. */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestContext, insertRawArticle, type TestContext } from './helpers.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createTestContext, insertRawArticle, stubModel, type TestContext,
+} from './helpers.js';
 import { loadLocalPipelineConfig } from '../src/pipeline/localPipeline.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });

@@ -1,14 +1,16 @@
 /**
  * The one entry point for turning a raw article into a KidArticle.
  *
- * Tries the LLM path (§9.1) and falls back to the rule-based one (§9.2) on any
- * failure, flagging which ran. Scraping, the editor portal and Regenerate all
- * call this, so they cannot drift apart — §7.4 requires the sandbox to use the
- * same code path as production, and this is that path.
+ * Uses the LLM (§9.1) and reports a failure when it cannot, rather than writing
+ * a weaker story. Scraping, the editor portal and Regenerate all call this, so
+ * they cannot drift apart — §7.4 requires the sandbox to use the same code path
+ * as production, and this is that path.
  */
 import type { Database } from 'better-sqlite3';
 import { LLM_ENABLED, LLM_MODEL } from '../env.js';
-import { AGE_BANDS, formatAgeBand, type AgeBand, type KidArticle } from '../core/article.js';
+import {
+  AGE_BANDS, DEFAULT_AGE, bandForAge, formatAgeBand, type AgeBand, type KidArticle,
+} from '../core/article.js';
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { OpenRouterClient } from '../llm/openRouterClient.js';
 import {
@@ -18,38 +20,92 @@ import { logger } from '../logger.js';
 import { denyListGuard, strictest, type GuardResult } from './guard.js';
 import { runPromptGuard, type PromptGuardOutcome } from './promptGuard.js';
 import { FEELING_NOTE_FALLBACK } from './simplify.js';
-import {
-  loadLocalPipelineConfig, simplifyLocally,
-  type LocalPipelineOptions, type RawArticleInput,
-} from './localPipeline.js';
 
-export type Engine = 'llm' | 'local-fallback';
+/** The RawArticle fields the pipeline reads (PRD §8.2). */
+export interface RawArticleInput {
+  id: string;
+  headline: string;
+  body: string;
+  topic: string;
+  /**
+   * True when a person chose `topic` — an editor's manual submission — so the
+   * model's category pick must not replace it. Otherwise `topic` is only the
+   * scraper's keyword guess, and the model's pick wins.
+   */
+  topicChosenByEditor?: boolean;
+  sourceName: string;
+  sourceUrl: string;
+}
 
-export interface SimplifyOutcome {
+export interface PipelineConfig {
+  /** From guard_config.denyList (§6.1) — editor-managed, never hardcoded here. */
+  denyList: string[];
+  /** From guard_config.denyListEnabled. A disabled guard does not run (§6). */
+  denyListEnabled: boolean;
+  /** The band anchor written to kid_articles.ageTarget (§3.6). */
+  ageTarget: number;
+}
+
+/** The editor-managed deny-list, and the band a version is written for. */
+export function loadPipelineConfig(db: Database, ageTarget?: number): PipelineConfig {
+  const guardRow = db
+    .prepare(`SELECT denyList, denyListEnabled FROM guard_config WHERE id = 'default'`)
+    .get() as { denyList: string; denyListEnabled: number } | undefined;
+
+  const settingsRow = db
+    .prepare(`SELECT defaultAge FROM app_settings WHERE id = 'default'`)
+    .get() as { defaultAge: number } | undefined;
+
+  return {
+    denyList: guardRow ? (JSON.parse(guardRow.denyList) as string[]) : [],
+    denyListEnabled: guardRow ? guardRow.denyListEnabled === 1 : true,
+    // The default age is a READER age (any of 5-14); a version is written for the band it falls in.
+    ageTarget: ageTarget ?? bandForAge(settingsRow?.defaultAge ?? DEFAULT_AGE).minAge,
+  };
+}
+
+export interface SimplifySuccess {
+  ok: true;
   article: KidArticle;
   /** The winning guard verdict and which deny-list terms fired. */
   guard: GuardResult;
-  engine: Engine;
   model?: string;
   costUsd?: number;
   elapsedMs?: number;
-  /** Set when the LLM was tried and did not work (§9.1 step 4). */
-  fallbackReason?: string;
   /** Which prompt was used, for the sandbox and the editor portal. */
   promptSource?: string;
   /** Present when §6.2's prompt guard ran. Off by default. */
   promptGuard?: PromptGuardOutcome;
 }
 
-export interface SimplifyOptions extends LocalPipelineOptions {
+export interface SimplifyFailure {
+  ok: false;
+  /** Safe to show an editor. */
+  reason: string;
+  model?: string;
+  /** A failed call can still have been billed. */
+  costUsd?: number;
+  elapsedMs?: number;
+}
+
+export type SimplifyOutcome = SimplifySuccess | SimplifyFailure;
+
+export const LLM_OFF_REASON = 'The LLM is turned off, so nothing was simplified.';
+
+/** A caller that supplies its own client has a provider by definition; that is how tests drive the LLM path. */
+export const llmAvailable = (client?: OpenRouterClient) => LLM_ENABLED || client !== undefined;
+
+export interface SimplifyOptions {
+  /** Injectable so tests are deterministic; defaults to a random UUID. */
+  id?: string;
+  /** Injectable so tests are deterministic; defaults to now. */
+  now?: string;
   /**
    * A band's anchor (AGE_BAND_ANCHORS) for anything that will be stored;
    * callers that only preview may pass any age. Defaults to the band the
    * configured default age falls in.
    */
   ageTarget?: number;
-  /** Force the rule-based path — used to produce a comparison. */
-  forceLocal?: boolean;
   /** Overrides the stored prompt; the sandbox passes a draft here. */
   promptOverride?: string;
   /** Overrides the configured model. */
@@ -69,21 +125,9 @@ export async function simplifyArticle(
   raw: RawArticleInput,
   options: SimplifyOptions = {},
 ): Promise<SimplifyOutcome> {
-  const config = loadLocalPipelineConfig(db, options.ageTarget);
-  const local = () => {
-    const { article, guard } = simplifyLocally(raw, config, options);
-    return { article, guard };
-  };
+  if (!llmAvailable(options.client)) return { ok: false, reason: LLM_OFF_REASON };
 
-  // A caller that supplies its own client has a provider by definition — that
-  // is how tests and the sandbox drive the LLM path without depending on the
-  // ambient LLM_ENABLED flag. forceLocal always wins.
-  const useLlm = (LLM_ENABLED || options.client !== undefined) && !options.forceLocal;
-
-  if (!useLlm) {
-    const { article, guard } = local();
-    return { article, guard, engine: 'local-fallback' };
-  }
+  const config = loadPipelineConfig(db, options.ageTarget);
 
   const settings = createSettingsRepository(db);
   const prompts = settings.getPromptConfig();
@@ -92,11 +136,7 @@ export async function simplifyArticle(
     : selectPrompt(prompts.genericPrompt, prompts.ageOverrides, config.ageTarget);
 
   if (!chosen.template.trim()) {
-    const { article, guard } = local();
-    return {
-      article, guard, engine: 'local-fallback',
-      fallbackReason: 'No prompt is configured, so there was nothing to send.',
-    };
+    return { ok: false, reason: 'No prompt is configured, so there was nothing to send.' };
   }
 
   const client = options.client ?? new OpenRouterClient({ model: options.model });
@@ -134,22 +174,19 @@ export async function simplifyArticle(
   }
 
   if (!result.ok) {
-    const { article, guard } = local();
     return {
-      article, guard, engine: 'local-fallback',
-      fallbackReason: result.reason,
+      ok: false,
+      reason: result.reason,
       elapsedMs: result.elapsedMs,
       model: options.model ?? LLM_MODEL,
       costUsd: spentUsd || undefined,
     };
   }
 
-  // §9.1 step 4: parsing failed, so fall back and flag it.
   if (!parsed || 'error' in parsed) {
-    const { article, guard } = local();
     return {
-      article, guard, engine: 'local-fallback',
-      fallbackReason: parsed?.error ?? 'The response could not be understood.',
+      ok: false,
+      reason: parsed?.error ?? 'The response could not be understood.',
       model: result.model,
       costUsd: spentUsd,
       elapsedMs: result.elapsedMs,
@@ -206,9 +243,9 @@ export async function simplifyArticle(
   };
 
   return {
+    ok: true,
     article,
     guard: { ...guard, matches: denyMatches },
-    engine: 'llm',
     model: result.model,
     // Both calls are billed, so both are reported — but a verdict supplied by
     // the caller was billed to the caller, not again to every version.
@@ -231,14 +268,14 @@ function tryParse(text: string): { content: LlmContent } | { error: string } {
 }
 
 export interface StoryOutcome {
-  /** One per band, ascending by band. */
+  /** One per band, ascending by band; a band the model could not write is a failure. */
   versions: SimplifyOutcome[];
   /** The shared §6.2 verdict, present only when the guard ran. */
   promptGuard?: PromptGuardOutcome;
   /** Summed across every version plus the one guard call. */
   costUsd: number;
-  /** One entry per band that fell back, already prefixed with its ages. */
-  fallbacks: string[];
+  /** One entry per band that failed, already prefixed with its ages. */
+  failures: string[];
 }
 
 /**
@@ -257,7 +294,7 @@ export interface StoryOptions extends Omit<SimplifyOptions, 'ageTarget' | 'promp
   onProgress?: (done: number) => void;
 }
 
-/** "ages 5–7", for a fallback reason a reviewer reads. */
+/** "ages 5–7", for a failure reason a reviewer reads. */
 const describeBand = (band: AgeBand) => `ages ${formatAgeBand(band)}`;
 
 /**
@@ -287,7 +324,7 @@ export async function simplifyStory(
   // render the guard prompt's {{age}} variable; the verdict is about the
   // source text, which does not vary by band.
   let promptGuard: PromptGuardOutcome | undefined;
-  if (guardConfig.promptGuardEnabled && !options.forceLocal && bands.length > 0) {
+  if (guardConfig.promptGuardEnabled && llmAvailable(options.client) && bands.length > 0) {
     const client = options.client ?? new OpenRouterClient({ model: options.model });
     promptGuard = await runPromptGuard(
       guardConfig.promptGuardText,
@@ -315,21 +352,19 @@ export async function simplifyStory(
   );
 
   let costUsd = promptGuard?.costUsd ?? 0;
-  const fallbacks: string[] = [];
+  const failures: string[] = [];
   versions.forEach((outcome, i) => {
     costUsd += outcome.costUsd ?? 0;
-    // Prefixed with the band: a reviewer needs to know WHICH version is weaker,
-    // and with per-band calls a story can be two parts LLM and one part local.
-    if (outcome.fallbackReason) fallbacks.push(`${describeBand(bands[i]!)}: ${outcome.fallbackReason}`);
+    // Prefixed with the band: a reviewer needs to know WHICH version failed.
+    if (!outcome.ok) failures.push(`${describeBand(bands[i]!)}: ${outcome.reason}`);
   });
 
   // One category per story, like one status: the versions are one story at
   // three reading levels, and the Home filter should not show it under Science
-  // at 5-7 and World at 11-14. The first version that moved off the hint came
-  // from the model — the rule-based path always keeps raw.topic — and bands
-  // ascend, so that is the youngest band's pick.
-  const category = versions.find((v) => v.article.category !== raw.topic)?.article.category ?? raw.topic;
-  for (const version of versions) version.article.category = category;
+  // at 5-7 and World at 11-14. Bands ascend, so this is the youngest band's pick.
+  const written = versions.filter((v): v is SimplifySuccess => v.ok);
+  const category = written.find((v) => v.article.category !== raw.topic)?.article.category ?? raw.topic;
+  for (const version of written) version.article.category = category;
 
-  return { versions, promptGuard, costUsd, fallbacks };
+  return { versions, promptGuard, costUsd, failures };
 }

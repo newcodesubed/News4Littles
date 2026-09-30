@@ -2,7 +2,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '../src/db/connection.js';
 import { initialiseSchema, SCHEMA_VERSION } from '../src/db/init.js';
 import { seed } from '../src/db/seed.js';
@@ -10,7 +10,16 @@ import { createApp } from '../src/app.js';
 import { isArticleStatus, toKidArticle, type KidArticleRow } from '../src/core/article.js';
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
 import { createManualArticle } from '../src/services/submitArticle.js';
-import { countRows } from './helpers.js';
+import {
+  countRows, stubModel,
+} from './helpers.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 let dir: string;
 let path: string;

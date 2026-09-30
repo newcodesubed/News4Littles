@@ -352,22 +352,20 @@ describe('simplifyArticle orchestration', () => {
 
   it('uses the LLM output when the response is good', async () => {
     const out = await simplifyArticle(ctx.db, RAW, { client: withClient(completion(JSON.stringify(GOOD))), ageTarget: 8 });
-    expect(out.engine).toBe('llm');
+    expect(out.ok).toBe(true);
     expect(out.article.kidHeadline).toBe(GOOD.kidHeadline);
     expect(out.costUsd).toBe(0.00017);
   });
 
-  it('falls back and flags the reason when the provider fails', async () => {
+  it('fails with the reason when the provider fails', async () => {
     const out = await simplifyArticle(ctx.db, RAW, { client: withClient({ error: { message: 'boom' } }, 500), ageTarget: 8 });
-    expect(out.engine).toBe('local-fallback');
-    expect(out.fallbackReason).toContain('boom');
-    expect(out.article.kidHeadline.length).toBeGreaterThan(0);
+    expect(out.ok).toBe(false);
+    expect(out.ok === false && out.reason).toContain('boom');
   });
 
-  it('falls back when the response is unparseable (§9.1 step 4)', async () => {
+  it('fails when the response is unparseable (§9.1 step 4)', async () => {
     const out = await simplifyArticle(ctx.db, RAW, { client: withClient(completion('not json')), ageTarget: 8 });
-    expect(out.engine).toBe('local-fallback');
-    expect(out.fallbackReason).toMatch(/not valid JSON/);
+    expect(out.ok === false && out.reason).toMatch(/not valid JSON/);
   });
 
   it('retries an unparseable reply once and uses the second one', async () => {
@@ -381,7 +379,7 @@ describe('simplifyArticle orchestration', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(JSON.parse(String(vi.mocked(fetchImpl).mock.calls[1]![1]!.body)).model).toBe('backup/model');
-    expect(out.engine).toBe('llm');
+    expect(out.ok).toBe(true);
     expect(out.article.kidHeadline).toBe(GOOD.kidHeadline);
     // Both replies were billed.
     expect(out.costUsd).toBeCloseTo(0.00034);
@@ -394,20 +392,10 @@ describe('simplifyArticle orchestration', () => {
     const out = await simplifyArticle(ctx.db, RAW, { client, ageTarget: 8 });
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(out.engine).toBe('local-fallback');
+    expect(out.ok).toBe(false);
   });
 
-  it('forceLocal skips the provider entirely', async () => {
-    const fetchImpl = stubFetch(completion(JSON.stringify(GOOD)));
-    const out = await simplifyArticle(ctx.db, RAW, {
-      client: new OpenRouterClient({ apiKey: 'k', fetchImpl: fetchImpl as unknown as typeof fetch }),
-      forceLocal: true,
-    });
-    expect(out.engine).toBe('local-fallback');
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it('never auto-publishes, whichever engine ran (§5.2 step 7)', async () => {
+  it('never auto-publishes (§5.2 step 7)', async () => {
     const out = await simplifyArticle(ctx.db, RAW, { client: withClient(completion(JSON.stringify(GOOD))) });
     expect(out.article.status).toBe('pending_review');
     expect(out.article.publishedAt).toBeNull();
@@ -440,7 +428,7 @@ describe('simplifyArticle orchestration', () => {
       const out = await simplifyArticle(ctx.db, WAR, {
         client: withClient(completion(JSON.stringify({ ...GOOD, safety: 'calm', feelingNote: null }))),
       });
-      expect(out.engine).toBe('llm');
+      expect(out.ok).toBe(true);
       // Three deny-list terms -> skip-young, and that wins.
       expect(out.article.safety).toBe('skip-young');
     });
@@ -476,14 +464,13 @@ describe('simplifyArticle orchestration', () => {
     });
   });
 
-  it('falls back when no prompt is configured', async () => {
+  it('fails when no prompt is configured', async () => {
     // Both must go: the seed ships an age-6 override, and 6 is the default age.
     ctx.db.prepare(
       `UPDATE translation_prompt_config SET genericPrompt = '', ageOverrides = '{}' WHERE id='default'`,
     ).run();
     const out = await simplifyArticle(ctx.db, RAW, { client: withClient(completion(JSON.stringify(GOOD))) });
-    expect(out.engine).toBe('local-fallback');
-    expect(out.fallbackReason).toMatch(/No prompt/);
+    expect(out.ok === false && out.reason).toMatch(/No prompt/);
   });
 
   it('reports which prompt was used', async () => {
@@ -743,7 +730,7 @@ describe('simplifyStory', () => {
     expect(calls()).toBe(1 + AGE_BANDS.length);
   });
 
-  it('falls back only for the band whose call failed', async () => {
+  it('fails only the band whose call failed', async () => {
     // Every attempt for the 8-10 band fails; the other two succeed. The seeded
     // generic prompt renders "{{ageRange}}", so the band is in the prompt.
     const { client } = scriptedClient((prompt) =>
@@ -754,13 +741,10 @@ describe('simplifyStory', () => {
 
     const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
 
-    const engines = new Map(outcome.versions.map((v) => [v.article.ageTarget, v.engine]));
-    expect(engines.get(8)).toBe('local-fallback');
-    expect(engines.get(5)).toBe('llm');
-    expect(engines.get(11)).toBe('llm');
-    // The reason names the band, so a reviewer knows which version is weaker.
-    expect(outcome.fallbacks.some((reason) => reason.includes('ages 8–10'))).toBe(true);
-    expect(outcome.fallbacks).toHaveLength(1);
+    expect(outcome.versions.map((v) => v.ok)).toEqual([true, false, true]);
+    // The reason names the band, so a reviewer knows which version failed.
+    expect(outcome.failures).toHaveLength(1);
+    expect(outcome.failures[0]).toContain('ages 8–10');
   });
 
   const replyIn = (category: string) =>
@@ -778,7 +762,7 @@ describe('simplifyStory', () => {
     expect(outcome.versions.map((v) => v.article.category)).toEqual(['Science', 'Science', 'Science']);
   });
 
-  it('takes the next band\u2019s pick when the youngest band fell back', async () => {
+  it('takes the next band\u2019s pick when the youngest band failed', async () => {
     const { client } = scriptedClient((prompt) =>
       prompt.includes('aged 5 to 7')
         ? { ok: false, body: 'upstream exploded' }
@@ -787,7 +771,7 @@ describe('simplifyStory', () => {
 
     const outcome = await simplifyStory(ctx.db, RAW_INPUT, { client });
 
-    expect(outcome.versions.map((v) => v.article.category)).toEqual(['Sports', 'Sports', 'Sports']);
+    expect(outcome.versions.filter((v) => v.ok).map((v) => v.article.category)).toEqual(['Sports', 'Sports']);
   });
 
   it('sums the cost across every version', async () => {

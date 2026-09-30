@@ -52,13 +52,8 @@ function seedStory(rawId: string, safety = 'calm') {
   return raw;
 }
 
-/**
- * A story the simplifier finished on the LLM path. `engine` matters: auto mode
- * refuses a story where any age fell back (§9.2), so the default here is the
- * healthy case and a test opts into the degraded one.
- */
-const candidate = (originalId: string, engine = 'llm', fallbackReason?: string) =>
-  ({ originalId, engine, fallbackReason });
+/** A story the simplifier just finished. */
+const candidate = (originalId: string) => ({ originalId });
 
 const statuses = (rawId: string) =>
   ctx.db.prepare(`SELECT DISTINCT status FROM kid_articles WHERE originalId = ?`).pluck().all(rawId);
@@ -279,36 +274,6 @@ describe('autoApproveStories', () => {
 
     // Still human-published: approvedBy stays NULL and no call was wasted.
     expect(approvedBy('s1')).toEqual([null]);
-    expect(calls()).toBe(0);
-  });
-
-  it('never publishes a story where any age fell back, and never even asks', async () => {
-    // §9.2: the judge only reads the age-5 version, so a fallback at another
-    // age would publish text neither the judge nor a person ever read — and
-    // the rule-based fallback echoes the adult wording.
-    const raw = seedStory('s1');
-    const { client, calls } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
-
-    const report = await autoApproveStories(
-      ctx.db,
-      [candidate(raw, 'mixed', 'age 11: the response could not be understood')],
-      { client },
-    );
-
-    expect(statuses('s1')).toEqual(['pending_review']);
-    expect(approvedBy('s1')).toEqual([null]);
-    // No call spent: the gate is decided before the judge is asked.
-    expect(calls()).toBe(0);
-    expect(report.held[0].reason).toContain('age 11');
-  });
-
-  it('holds a story where every age fell back', async () => {
-    const raw = seedStory('s1');
-    const { client, calls } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
-
-    await autoApproveStories(ctx.db, [candidate(raw, 'local-fallback')], { client });
-
-    expect(statuses('s1')).toEqual(['pending_review']);
     expect(calls()).toBe(0);
   });
 

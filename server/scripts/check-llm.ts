@@ -51,20 +51,17 @@ async function main(): Promise<void> {
       console.log(`ORIGINAL  ${raw.headline}`);
 
       const llm = await simplifyArticle(db, raw, { ageTarget: 8 });
-      const local = await simplifyArticle(db, raw, { ageTarget: 8, forceLocal: true });
+      spent += llm.costUsd ?? 0;
 
       console.log(`${RULE}`);
-      console.log(`  local     ${local.article.kidHeadline}`);
-      console.log(`            safety ${local.article.safety} · vocab ${local.article.vocab.map((v) => v.word).join(', ')}`);
-      console.log(`  ${llm.engine === 'llm' ? 'LLM      ' : 'FELL BACK'} ${llm.article.kidHeadline}`);
+      if (!llm.ok) {
+        console.log(`  FAILED    ${llm.reason}`);
+        continue;
+      }
+      console.log(`  LLM       ${llm.article.kidHeadline}`);
       console.log(`            safety ${llm.article.safety} · vocab ${llm.article.vocab.map((v) => v.word).join(', ')}`);
       console.log(`            summary: ${llm.article.summary}`);
-      if (llm.engine === 'llm') {
-        spent += llm.costUsd ?? 0;
-        console.log(`            ${llm.elapsedMs}ms · prompt ${llm.promptSource} · $${(llm.costUsd ?? 0).toFixed(5)}`);
-      } else {
-        console.log(`            reason: ${llm.fallbackReason}`);
-      }
+      console.log(`            ${llm.elapsedMs}ms · prompt ${llm.promptSource} · $${(llm.costUsd ?? 0).toFixed(5)}`);
       console.log(`  status    ${llm.article.status} (never auto-published)`);
     }
 

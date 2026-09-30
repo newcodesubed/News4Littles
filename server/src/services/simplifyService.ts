@@ -15,7 +15,7 @@ import { BadRequestError } from '../core/errors.js';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
-import { simplifyStory } from '../pipeline/simplifyArticle.js';
+import { LLM_OFF_REASON, llmAvailable, simplifyStory, type SimplifySuccess } from '../pipeline/simplifyArticle.js';
 import { strictestSafety } from '../pipeline/guard.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 
@@ -27,12 +27,19 @@ export interface SimplifiedRow {
   kidHeadline: string;
   /** The strictest safety across every version — what an editor must see first. */
   safety: string;
-  /** 'llm', 'local-fallback', or 'mixed' when the bands disagree. */
-  engine: string;
   /** How many versions were written: one per reading band. */
   versions: number;
   costUsd: number;
-  fallbackReason?: string;
+}
+
+/** A story the model could not write, so its article was deleted rather than retried. */
+export interface DroppedRow {
+  rawId: string;
+  sourceId: string;
+  headline: string;
+  /** Every band that failed, prefixed with its ages. */
+  reason: string;
+  costUsd: number;
 }
 
 export interface SimplifyFailure {
@@ -42,6 +49,7 @@ export interface SimplifyFailure {
 
 export interface SimplifyReport {
   simplified: SimplifiedRow[];
+  dropped: DroppedRow[];
   failures: SimplifyFailure[];
   /** Ids that were already simplified — a double submit, not an error. */
   skipped: string[];
@@ -75,8 +83,14 @@ export async function simplifyRawArticles(
   const articles = createArticleRepository(db);
   const clock = options.now ?? (() => new Date().toISOString());
 
-  const report: SimplifyReport = { simplified: [], failures: [], skipped: [] };
+  const report: SimplifyReport = { simplified: [], dropped: [], failures: [], skipped: [] };
   let done = 0;
+
+  // Nothing is lost: the articles stay waiting until the model is back.
+  if (!llmAvailable(options.client)) {
+    report.failures.push({ rawId: '(batch)', error: LLM_OFF_REASON });
+    return report;
+  }
 
   for (const rawId of rawIds) {
     try {
@@ -93,8 +107,7 @@ export async function simplifyRawArticles(
       }
 
       const now = clock();
-      // One version per reading band (§3.6). simplifyArticle never throws: it
-      // falls back to the rule-based pipeline (§9.2) per band and flags why.
+      // One version per reading band (§3.6). simplifyArticle never throws: a band it cannot write is a failure.
       const outcome = await simplifyStory(
         db,
         {
@@ -111,11 +124,25 @@ export async function simplifyRawArticles(
         { now, client: options.client },
       );
 
+      // All or nothing: a story missing a reading level cannot be reviewed or
+      // published coherently. News goes stale, so it is deleted, not retried.
+      if (outcome.failures.length > 0) {
+        raws.dismiss([raw.id], now);
+        report.dropped.push({
+          rawId: raw.id,
+          sourceId: raw.sourceId,
+          headline: raw.headline,
+          reason: outcome.failures.join('; '),
+          costUsd: outcome.costUsd,
+        });
+        continue;
+      }
+      const versions = outcome.versions as SimplifySuccess[];
+
       const claimed = db.transaction(() => {
-        // The claim and every version commit together: a story holding two of
-        // three versions cannot be reviewed or published coherently.
+        // The claim and every version commit together.
         if (!raws.markSimplified(raw.id, now)) return false;
-        for (const version of outcome.versions) {
+        for (const version of versions) {
           articles.insert({
             ...version.article,
             originalId: raw.id,
@@ -132,19 +159,15 @@ export async function simplifyRawArticles(
         continue;
       }
 
-      const engines = new Set(outcome.versions.map((version) => version.engine));
-
       report.simplified.push({
         rawId: raw.id,
         sourceId: raw.sourceId,
-        kidHeadline: outcome.versions[0].article.kidHeadline,
+        kidHeadline: versions[0]!.article.kidHeadline,
         // The strictest across bands, so the queue cannot show 'calm' for a
         // story that is 'skip-young' for ages 5-7.
-        safety: strictestSafety(outcome.versions.map((version) => version.article.safety)),
-        engine: engines.size === 1 ? [...engines][0] : 'mixed',
-        versions: outcome.versions.length,
+        safety: strictestSafety(versions.map((version) => version.article.safety)),
+        versions: versions.length,
         costUsd: outcome.costUsd,
-        fallbackReason: outcome.fallbacks.length > 0 ? outcome.fallbacks.join('; ') : undefined,
       });
     } catch (error: unknown) {
       // A database failure on one article leaves simplifiedAt NULL, so the row
@@ -207,7 +230,7 @@ export function startSimplifyJob(
     rawIds,
     done: 0,
     running: true,
-    report: { simplified: [], failures: [], skipped: [] },
+    report: { simplified: [], dropped: [], failures: [], skipped: [] },
   };
   current = state;
 

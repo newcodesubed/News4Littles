@@ -8,7 +8,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenRouterClient } from '../src/llm/openRouterClient.js';
 import { readVerdict } from '../src/pipeline/promptGuard.js';
 import { createPromptRepository } from '../src/db/repositories/promptRepository.js';
-import { countRows, createTestContext, insertRawArticle, type TestContext } from './helpers.js';
+import {
+  countRows, createTestContext, insertRawArticle, stubModel, type TestContext,
+} from './helpers.js';
+
+// Every story in this file is written by the fake model from stubModel; a test can switch the LLM off.
+const llm = vi.hoisted(() => ({ on: true }));
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), get LLM_ENABLED() { return llm.on; }, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { llm.on = true; stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 const GOOD = {
   kidHeadline: 'A robot looked at a reef',
@@ -80,8 +90,8 @@ describe('GET /prompts', () => {
   });
 
   it('says whether an LLM is configured (§7.4)', async () => {
+    llm.on = false;
     const body = await (await ctx.api('/api/admin/prompts')).json();
-    // Tests force LLM_ENABLED=false, so the sandbox must report that honestly.
     expect(body.llm.enabled).toBe(false);
     expect(body.llm.model).toBeTruthy();
   });
@@ -228,12 +238,14 @@ describe('POST /prompts/test — §7.4: writes nothing', () => {
     expect(body.production).toBeUndefined();
   });
 
-  it('says when it fell back to the local pipeline (§7.4)', async () => {
+  it('says when the LLM is off, and shows no story (§7.4)', async () => {
+    llm.on = false;
     const body = await (await post('/api/admin/prompts/test', testBody())).json();
-    // LLM_ENABLED is false in tests, so every run is the local fallback.
-    expect(body.usingLocalFallback).toBe(true);
-    expect(body.draft.engine).toBe('local-fallback');
+    expect(body.llmOff).toBe(true);
+    expect(body.draft.error).toMatch(/turned off/);
+    expect(body.draft.article).toBeUndefined();
   });
+
 });
 
 describe('promotion (§7.4, §7.5)', () => {
@@ -388,7 +400,7 @@ describe('guard target end to end', () => {
       client: stubClient('no idea'),
     });
     expect(result.draft.guardVerdict).toBeUndefined();
-    expect(result.draft.fallbackReason).toMatch(/recognisable verdict/);
+    expect(result.draft.error).toMatch(/recognisable verdict/);
   });
 });
 

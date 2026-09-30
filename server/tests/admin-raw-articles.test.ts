@@ -1,13 +1,20 @@
 /**
  * The raw-article backlog API: what is waiting, and simplifying it on demand.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
 import { acquireJob, releaseJob } from '../src/services/jobLock.js';
 import { resetSimplifyJob, type SimplifyJobState } from '../src/services/simplifyService.js';
 import {
-  countRows, createTestContext, insertRawArticle, type TestContext,
+  countRows, createTestContext, insertRawArticle, stubModel, type TestContext,
 } from './helpers.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 let ctx: TestContext;
 

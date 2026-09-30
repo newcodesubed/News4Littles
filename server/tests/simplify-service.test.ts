@@ -5,7 +5,7 @@
  * both write kid_articles for raw rows, so running them together could write
  * two kid articles for one raw article.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AGE_BANDS, AGE_BAND_ANCHORS } from '../src/core/article.js';
 import { createRawArticleRepository } from '../src/db/repositories/rawArticleRepository.js';
 import { OpenRouterClient } from '../src/llm/openRouterClient.js';
@@ -15,8 +15,15 @@ import {
   type SimplifyJobState,
 } from '../src/services/simplifyService.js';
 import {
-  countRows, createTestContext, insertRawArticle, type TestContext,
+  countRows, createTestContext, insertRawArticle, stubModel, type TestContext,
 } from './helpers.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('jobLock', () => {
   beforeEach(() => releaseJob());
@@ -289,7 +296,6 @@ describe('simplifyRawArticles', () => {
 
       const report = await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(SCRIPT) });
 
-      expect(report.simplified[0].engine).toBe('llm');
       // Stored on every band: one call per band, each writing its own script.
       expect(ctx.db.prepare(`SELECT audioScript FROM kid_articles`).pluck().all())
         .toEqual(Array(AGE_BANDS.length).fill(SCRIPT));
@@ -318,7 +324,6 @@ describe('simplifyRawArticles', () => {
       const report = await simplifyRawArticles(ctx.db, ['r1'], { client: modelWriting(null) });
 
       // §9.1: a missing script is a much smaller loss than a lost story.
-      expect(report.simplified[0].engine).toBe('llm');
       expect(ctx.db.prepare(`SELECT DISTINCT audioScript FROM kid_articles`).pluck().all())
         .toEqual([null]);
     });

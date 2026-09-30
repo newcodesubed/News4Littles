@@ -39,15 +39,15 @@ export interface ScrapeResult {
   /** What was stored, for the CLI to print. Raw rows: no kid headline yet. */
   stored: { rawId: string; headline: string; url: string; publishedAt: string | null }[];
   /** Filled by the run's simplification phase, not by this module. */
-  simplified: { rawId: string; kidHeadline: string; safety: string; engine: string }[];
+  simplified: { rawId: string; kidHeadline: string; safety: string }[];
   /** Age versions written for this source's stories, filled by phase 2. */
   versionsCreated: number;
   /** This source's raws still waiting after the run, filled by phase 2. */
   leftWaiting: number;
   /** Total USD spent on this run, so cost is visible rather than a surprise. */
   costUsd: number;
-  /** One entry per article that had to fall back, with the reason (§9.1 step 4). */
-  fallbacks: string[];
+  /** One entry per story the model could not write, so its article was deleted. */
+  dropped: string[];
 }
 
 export interface ScrapeOptions {
@@ -78,7 +78,7 @@ function emptyResult(source: SourceRow): ScrapeResult {
     versionsCreated: 0,
     leftWaiting: 0,
     costUsd: 0,
-    fallbacks: [],
+    dropped: [],
   };
 }
 

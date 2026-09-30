@@ -38,3 +38,8 @@ export class NotFoundError extends AppError {
 export class ConflictError extends AppError {
   readonly status = 409;
 }
+
+/** 502 — the model could not produce a usable story. */
+export class ModelFailedError extends AppError {
+  readonly status = 502;
+}

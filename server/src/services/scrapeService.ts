@@ -107,7 +107,7 @@ function failedResult(source: SourceRow, error: unknown): ScrapeResult {
     versionsCreated: 0,
     leftWaiting: 0,
     costUsd: 0,
-    fallbacks: [],
+    dropped: [],
   };
 }
 
@@ -199,11 +199,15 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
           rawId: row.rawId,
           kidHeadline: row.kidHeadline,
           safety: row.safety,
-          engine: row.engine,
         });
         result.costUsd += row.costUsd;
         result.versionsCreated += row.versions;
-        if (row.fallbackReason) result.fallbacks.push(row.fallbackReason);
+      }
+      for (const row of report.dropped) {
+        const result = state.results.find((r) => r.sourceId === row.sourceId);
+        if (!result) continue;
+        result.costUsd += row.costUsd;
+        result.dropped.push(`${row.headline}: ${row.reason}`);
       }
 
       // ─── Auto mode, only when explicitly enabled ───────────────────────
@@ -217,13 +221,7 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
         // LLM_ENABLED, so a key exists whenever this runs.
         const judged = await autoApproveStories(
           db,
-          // engine and fallbackReason come along: auto mode refuses a story
-          // where any age fell back (§9.2).
-          report.simplified.map((row) => ({
-            originalId: row.rawId,
-            engine: row.engine,
-            fallbackReason: row.fallbackReason,
-          })),
+          report.simplified.map((row) => ({ originalId: row.rawId })),
           { client: options.client ?? new OpenRouterClient({}) },
         );
         state.autoPublished = judged.published.length;

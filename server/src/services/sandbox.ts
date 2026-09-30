@@ -15,7 +15,7 @@ import {
 } from '../db/repositories/promptRepository.js';
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { maxWordsForAge, splitSentences } from '../pipeline/simplify.js';
-import { simplifyArticle, type SimplifyOutcome } from '../pipeline/simplifyArticle.js';
+import { LLM_OFF_REASON, simplifyArticle } from '../pipeline/simplifyArticle.js';
 import { runPromptGuard } from '../pipeline/promptGuard.js';
 import { LLM_ENABLED } from '../env.js';
 import { OpenRouterClient } from '../llm/openRouterClient.js';
@@ -29,7 +29,6 @@ export interface TestSubject {
 
 export interface ValidationReport {
   schemaValid: boolean;
-  parseError?: string;
   /** §7.3: word count per sentence against the age target. */
   ageLimit: number;
   longestSentenceWords: number;
@@ -40,11 +39,11 @@ export interface ValidationReport {
 export interface SandboxRun {
   target: PromptTarget;
   age: number | null;
-  engine: SimplifyOutcome['engine'];
   model?: string;
   elapsedMs?: number;
   costUsd?: number;
-  fallbackReason?: string;
+  /** Why the model gave nothing usable; there is then no article or verdict. */
+  error?: string;
   /** Rendered like the story detail page (§7.3), not raw JSON. */
   article?: KidArticle;
   /** For a guard run: the verdict plus the raw response (§7.3). */
@@ -59,7 +58,7 @@ export interface TestResult {
   /** Present when compareWithProduction was asked for (§7.3 comparison mode). */
   production?: SandboxRun;
   /** True when no key is configured, so the UI can say so (§7.4). */
-  usingLocalFallback: boolean;
+  llmOff: boolean;
 }
 
 /**
@@ -151,14 +150,7 @@ export async function runSandboxTest(db: Database, options: TestOptions): Promis
   const runOnce = async (promptText: string): Promise<SandboxRun> => {
     if (options.target === 'guard') {
       if (!client) {
-        return {
-          target: 'guard',
-          age: options.age,
-          engine: 'local-fallback',
-          guardRaw: '',
-          fallbackReason:
-            'The guard prompt needs an LLM. Set OPENROUTER_KEY to try it — the rule-based deny-list still runs.',
-        };
+        return { target: 'guard', age: options.age, guardRaw: '', error: LLM_OFF_REASON };
       }
 
       const outcome = await runPromptGuard(
@@ -172,11 +164,10 @@ export async function runSandboxTest(db: Database, options: TestOptions): Promis
       return {
         target: 'guard',
         age: options.age,
-        engine: outcome.ok ? 'llm' : 'local-fallback',
         model: outcome.model,
         elapsedMs: outcome.elapsedMs,
         costUsd: outcome.costUsd,
-        fallbackReason: outcome.ok ? undefined : outcome.reason,
+        error: outcome.ok ? undefined : outcome.reason,
         guardVerdict: outcome.result?.safety,
         guardRaw: outcome.raw,
       };
@@ -187,22 +178,15 @@ export async function runSandboxTest(db: Database, options: TestOptions): Promis
       ageTarget, promptOverride: promptText, client, id: 'sandbox', now: new Date().toISOString(),
     });
 
-    return {
-      target: 'simplification',
+    const run = {
+      target: 'simplification' as const,
       age: options.age,
-      engine: outcome.engine,
       model: outcome.model,
       elapsedMs: outcome.elapsedMs,
       costUsd: outcome.costUsd,
-      fallbackReason: outcome.fallbackReason,
-      article: outcome.article,
-      validation: {
-        ...validate(outcome.article, ageTarget),
-        // A fallback means the response could not be used as-is.
-        schemaValid: outcome.engine === 'llm',
-        parseError: outcome.fallbackReason,
-      },
     };
+    if (!outcome.ok) return { ...run, error: outcome.reason };
+    return { ...run, article: outcome.article, validation: validate(outcome.article, ageTarget) };
   };
 
   const draft = await runOnce(options.promptText);
@@ -220,7 +204,7 @@ export async function runSandboxTest(db: Database, options: TestOptions): Promis
     },
     draft,
     production,
-    usingLocalFallback: draft.engine === 'local-fallback',
+    llmOff: !client,
   };
 }
 

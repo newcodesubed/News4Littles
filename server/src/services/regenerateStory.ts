@@ -37,11 +37,11 @@ export interface RegeneratedVersion {
    * onto the anchor.
    */
   current: AdminArticle;
-  generated: AdminArticle;
-  engine: string;
+  /** Missing when the model could not write this band; the stored version then stays. */
+  generated?: AdminArticle;
   model?: string;
-  /** Set when THIS band fell back to the rule-based pipeline (§9.2). */
-  fallbackReason?: string;
+  /** Why THIS band could not be regenerated. */
+  error?: string;
 }
 
 export interface RegenerateJobState {
@@ -62,7 +62,7 @@ export interface RegenerateJobState {
   versions: RegeneratedVersion[];
   /** Spent whether or not the editor applies. */
   costUsd: number;
-  /** A thrown failure. A single weak age is a fallbackReason, not this. */
+  /** A thrown failure. A single failed age is that version's error, not this. */
   error?: string;
   /** Set once applied. The server refuses a second apply of the same preview
    *  once this is set, rather than relying on the client to stop offering
@@ -193,6 +193,7 @@ export function startRegenerateJob(
   // Deliberately not awaited: the caller gets the state back straight away.
   void (async () => {
     try {
+      const bands = [...targets.keys()];
       const outcome = await simplifyStory(
         db,
         {
@@ -208,7 +209,7 @@ export function startRegenerateJob(
         },
         {
           client: options.client,
-          bands: [...targets.keys()],
+          bands,
           // Each band is built as the row it will replace, so the diff and the
           // update both address the version the editor is looking at.
           perBand: (band) => {
@@ -220,15 +221,16 @@ export function startRegenerateJob(
       );
 
       job.costUsd = outcome.costUsd;
-      job.versions = outcome.versions.map((version) => {
-        // Non-null: perBand built this band from exactly this map.
-        const stored = targets.get(bandForAge(version.article.ageTarget))!;
+      job.versions = outcome.versions.map((version, i) => {
+        const band = bands[i]!;
+        const stored = targets.get(band)!;
+        if (!version.ok) {
+          return { ageTarget: band.minAge, current: stored, model: version.model, error: version.reason };
+        }
         return {
-          ageTarget: version.article.ageTarget,
+          ageTarget: band.minAge,
           current: stored,
-          engine: version.engine,
           model: version.model,
-          fallbackReason: version.fallbackReason,
           // Identity and lifecycle fields are carried over, so the diff shows
           // only what regeneration would actually change.
           generated: {
@@ -296,14 +298,13 @@ export function applyRegeneratedVersions(
   const chosen = ages.map((age) => {
     const version = byAge.get(age);
     if (!version) throw new BadRequestError(`This preview does not include age ${age}.`);
-    return version;
+    if (!version.generated) throw new BadRequestError(`Age ${age} could not be regenerated, so it cannot be applied.`);
+    return version.generated;
   });
 
   const articles = createArticleRepository(db);
   db.transaction(() => {
-    for (const version of chosen) {
-      articles.applyRegeneration(version.generated.id, version.generated);
-    }
+    for (const generated of chosen) articles.applyRegeneration(generated.id, generated);
   })();
 
   // A story deleted while the dialog was open updates nothing, so saying so

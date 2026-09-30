@@ -8,11 +8,6 @@
  *  - a story is published ONLY on an explicit `approved === true`
  *  - a skip-young story is never published and never even judged (§6, §4.2 —
  *    the content most likely to upset a child stays human-only)
- *  - a story where ANY band fell back to the rule-based pipeline is never
- *    published and never judged (§9.2): the judge reads only the youngest
- *    band's version, so a fallback elsewhere would publish text neither it nor
- *    a person ever read — and the fallback echoes the adult wording rather
- *    than writing for a child
  *  - an already-published story is left alone, so a human's decision is never
  *    relabelled as the judge's
  *  - every publish records `approvedBy = 'auto'`, so a story no person read is
@@ -38,10 +33,6 @@ export interface AutoApproveReport {
 /** One story the simplifier just finished, as the caller already knows it. */
 export interface AutoApproveCandidate {
   originalId: string;
-  /** 'llm', 'local-fallback', or 'mixed' when the bands disagree. */
-  engine: string;
-  /** Present when at least one band fell back (§9.2); already band-prefixed. */
-  fallbackReason?: string;
 }
 
 export interface AutoApproveOptions {
@@ -83,18 +74,6 @@ export async function autoApproveStories(
       // Not judged at all: §6 makes these an explicit human decision, so there
       // is no verdict here for the judge to get wrong.
       report.held.push({ originalId, reason: 'held: skip-young needs a person (§6)' });
-      continue;
-    }
-
-    if (candidate.engine !== 'llm') {
-      // §9.2: one verdict on the youngest version only covers every band while
-      // they all came from the same path. A story that needed the rule-based
-      // fallback anywhere is exactly the one a person should read, so it is
-      // held before the judge is even asked.
-      report.held.push({
-        originalId,
-        reason: `held: ${candidate.fallbackReason ?? 'a version fell back to the rule-based pipeline'} (§9.2)`,
-      });
       continue;
     }
 

@@ -304,7 +304,7 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
   skippedAlreadyStored INTEGER NOT NULL DEFAULT 0,
   skippedUnusable      INTEGER NOT NULL DEFAULT 0,
   costUsd              REAL    NOT NULL DEFAULT 0,                -- USD spent on the LLM
-  fallbacks            TEXT    NOT NULL DEFAULT '[]',             -- JSON: string[] (§9.1 step 4)
+  fallbacks            TEXT    NOT NULL DEFAULT '[]',             -- JSON: string[], stories dropped because the model failed
   trigger              TEXT    NOT NULL
                        CHECK (trigger IN ('manual', 'scheduled')),
 

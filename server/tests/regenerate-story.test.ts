@@ -5,7 +5,7 @@
  * nothing, apply writes ONLY the ticked bands, and apply never spends another
  * model call — the text applied is the text that was shown.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenRouterClient } from '../src/llm/openRouterClient.js';
 import { activeJob, acquireJob, releaseJob } from '../src/services/jobLock.js';
 import {
@@ -13,8 +13,15 @@ import {
   type RegenerateJobState, type RegenerateOptions,
 } from '../src/services/regenerateStory.js';
 import {
-  createTestContext, getKidArticle, insertKidArticle, insertRawArticle, type TestContext,
+  createTestContext, getKidArticle, insertKidArticle, insertRawArticle, stubModel, type TestContext,
 } from './helpers.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); resetRegenerateJob(); });
@@ -271,7 +278,7 @@ describe('startRegenerateJob', () => {
     seedStory('r1', [5]);
     // guard_config is read inside the job rather than before it, so dropping
     // the table fails the job itself — the only path where job.error is how an
-    // editor hears about it. A single weak age is a fallbackReason, not this.
+    // editor hears about it. A single failed age is that version's error, not this.
     ctx.db.prepare('DROP TABLE guard_config').run();
 
     const job = await runJob('r1-v5');

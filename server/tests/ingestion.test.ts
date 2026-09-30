@@ -5,14 +5,23 @@
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getSource, scrapeSource, type SourceRow } from '../src/ingestion/rssScraper.js';
 import { canonicalUrl } from '../src/ingestion/feedParser.js';
 import { readScrapeTimes, timeToCron } from '../src/ingestion/scheduler.js';
 import {
   resetRunState, startScrapeRun, summarise, type RunState,
 } from '../src/services/scrapeService.js';
-import { countRows, createTestContext, type TestContext } from './helpers.js';
+import {
+  countRows, createTestContext, stubModel, type TestContext,
+} from './helpers.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 interface FeedItem { title?: string; link?: string; pubDate?: string; description?: string }
 

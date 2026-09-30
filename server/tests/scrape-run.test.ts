@@ -5,10 +5,19 @@
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createScrapeRunRepository } from '../src/db/repositories/scrapeRunRepository.js';
 import { getRunState, resetRunState, startScrapeRun, summarise } from '../src/services/scrapeService.js';
-import { countRows, createTestContext, type TestContext } from './helpers.js';
+import {
+  countRows, createTestContext, stubModel, type TestContext,
+} from './helpers.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 let feedStatus = 200;
 let itemCount = 2;

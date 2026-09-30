@@ -1,7 +1,16 @@
-/** Editor portal — PRD §4.3. No LLM: "Simplify with AI" is the local pipeline. */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { countRows, createTestContext, type TestContext } from './helpers.js';
+/** Editor portal — PRD §4.3. */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  countRows, createTestContext, stubModel, type TestContext,
+} from './helpers.js';
 import { AGE_BANDS, AGE_BAND_ANCHORS } from '../src/core/article.js';
+
+// Every story in this file is written by the fake model from stubModel.
+vi.mock('../src/env.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()), LLM_ENABLED: true, OPENROUTER_KEY: 'test-key',
+}));
+beforeEach(() => { stubModel(); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 let ctx: TestContext;
 beforeEach(() => { ctx = createTestContext(); });
@@ -33,9 +42,9 @@ describe('POST /simplify (§4.3 "Simplify with AI")', () => {
     expect([countRows(ctx.db, 'raw_articles'), countRows(ctx.db, 'kid_articles')]).toEqual(before);
   });
 
-  it('labels the engine as the local fallback, not a model', async () => {
+  it('names the model that wrote the preview', async () => {
     const { guard } = await (await post('/api/admin/simplify', SUBMISSION)).json();
-    expect(guard.engine).toBe('local-fallback');
+    expect(guard.model).toBe('test/model');
   });
 
   it('applies the same guard as the scraper', async () => {
@@ -45,11 +54,6 @@ describe('POST /simplify (§4.3 "Simplify with AI")', () => {
     expect(article.feelingNote).toBeTruthy();
   });
 
-  it('applies §9.2 simplification', async () => {
-    const { article } = await (await post('/api/admin/simplify', SUBMISSION)).json();
-    expect(article.whatHappened).not.toMatch(/\bactually\b/i);
-    expect(article.vocab.map((v: any) => v.word)).toContain('reef');
-  });
 });
 
 describe('POST /articles (§4.3 save)', () => {
@@ -140,14 +144,13 @@ describe('POST /articles (§4.3 save)', () => {
     expect(row.editedByHuman).toBe(0);
   });
 
-  it('stores a null audioScript when the local pipeline wrote the version', async () => {
+  it('stores a null audioScript when the model wrote none', async () => {
     await post('/api/admin/articles', { ...SUBMISSION, status: 'pending_review' });
 
     const rows = ctx.db
       .prepare('SELECT audioScript FROM kid_articles')
       .all() as { audioScript: string | null }[];
 
-    // No LLM in this test, so §9.2 ran: a story, but nothing to speak.
     expect(rows).toHaveLength(AGE_BANDS.length);
     expect(rows.every((r) => r.audioScript === null)).toBe(true);
   });
