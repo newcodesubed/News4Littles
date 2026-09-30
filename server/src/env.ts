@@ -105,7 +105,7 @@ export const AUTO_APPROVE_ENABLED =
 export const LLM_MODEL = readString('LLM_MODEL', 'google/gemini-2.5-flash-lite');
 
 /** Upper bound on the priced half of a response. */
-export const LLM_MAX_TOKENS = readInt('LLM_MAX_TOKENS', 1500);
+export const LLM_MAX_TOKENS = readInt('LLM_MAX_TOKENS', 3000);
 
 /** Article text is truncated to this before being sent, to bound input cost. */
 export const LLM_MAX_BODY_CHARS = readInt('LLM_MAX_BODY_CHARS', 6000);
