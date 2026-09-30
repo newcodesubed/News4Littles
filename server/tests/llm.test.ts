@@ -691,6 +691,22 @@ describe('simplifyStory', () => {
     expect(calls()).toBe(3);
   });
 
+  it('runs the bands at the same time', async () => {
+    let inFlight = 0;
+    let most = 0;
+    const fetchImpl = (async () => {
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      inFlight -= 1;
+      return { ok: true, status: 200, json: async () => completion(reply('A kid headline')) };
+    }) as unknown as typeof fetch;
+
+    await simplifyStory(ctx.db, RAW_INPUT, { client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl }) });
+
+    expect(most).toBe(AGE_BANDS.length);
+  });
+
   it('gives every version its own id but the same originalId source', async () => {
     const { client } = scriptedClient(() => ({ ok: true, body: reply('A kid headline') }));
 
