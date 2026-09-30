@@ -502,11 +502,23 @@ GET /api/podcast/audio/:audioKey?age=N  → that exact script, read aloud
 - **Long scripts** are spoken in sentence-sized pieces (`TTS_MAX_CHARS` each)
   and joined into one MP3.
 
-| Setting                  | Default | Why                                                        |
-| ------------------------ | ------- | ---------------------------------------------------------- |
-| `PODCAST_MAX_STORIES`    | `8`     | The newest this-many stories of the day go in              |
-| `PODCAST_MAX_CHARS`      | `6000`  | A longer script from the model is replaced by the fallback |
-| `PODCAST_LLM_TIMEOUT_MS` | `12000` | A page is waiting; past this, the fallback plays for now   |
+The limits are sized from real calls (see `src/env.ts`), so a healthy call is
+never the one that fails. A full day of eight stories took 28–33s and
+3,246–4,140 tokens, most of it the model thinking, for a 4,000–4,200 character
+script.
+
+| Setting                   | Default | Why                                                                     |
+| ------------------------- | ------- | ----------------------------------------------------------------------- |
+| `PODCAST_MAX_STORIES`     | `8`     | The newest this-many stories of the day go in                           |
+| `PODCAST_MAX_CHARS`       | `7000`  | A longer script is rejected; a quarter above the most the prompt asks   |
+| `PODCAST_LLM_MAX_TOKENS`  | `8000`  | The priced cap on one call; about twice the most measured               |
+| `PODCAST_LLM_TIMEOUT_MS`  | `90000` | Enough to write the token cap at the slowest speed seen; the first visitor waits |
+| `PODCAST_LLM_MAX_RETRIES` | `1`     | One retry on the backup model, for a timeout, cut-off or 5xx            |
+| `PODCAST_MAX_ATTEMPTS`    | `3`     | After this many failed tries, ten minutes apart, the fallback stays     |
+
+At most `PODCAST_MAX_ATTEMPTS × (1 + PODCAST_LLM_MAX_RETRIES)` paid calls are
+made for one set of stories, however long the model keeps failing. A newly
+published or edited story is a new set.
 
 ```bash
 npm run podcast:check    # builds the real episode and writes podcast-check.mp3

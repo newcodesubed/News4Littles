@@ -166,6 +166,43 @@ export const TTS_MAX_CHARS = readInt('TTS_MAX_CHARS', 2000);
  */
 export const AUDIO_CACHE_DIR = resolve(SERVER_ROOT, readString('AUDIO_CACHE_DIR', 'data/audio'));
 
+/**
+ * The daily podcast episode. Sized from real calls to openai/gpt-6-luna with
+ * the v3 host prompt (2026-09-30), so a healthy call is never the one that
+ * fails. Measured, for one story / a full day of eight:
+ *
+ *   time     9.9–18.1s   / 28.0–33.3s
+ *   tokens   1,006–2,007 / 3,246–4,140  (of which thinking: 768–1,797 / 2,375–3,234)
+ *   script   984–1,139   / 3,982–4,232 characters
+ */
 export const PODCAST_MAX_STORIES = readInt('PODCAST_MAX_STORIES', 8);
-export const PODCAST_MAX_CHARS = readInt('PODCAST_MAX_CHARS', 6000);
-export const PODCAST_LLM_TIMEOUT_MS = readInt('PODCAST_LLM_TIMEOUT_MS', 12_000);
+
+/**
+ * A longer script is rejected. Eight stories ask for at most 950 words, about
+ * 5,600 characters at the 5.9 per word measured; 7,000 leaves a quarter on top.
+ * Also bounds the text-to-speech bill for one episode.
+ */
+export const PODCAST_MAX_CHARS = readInt('PODCAST_MAX_CHARS', 7000);
+
+/**
+ * The priced cap on one call. About twice the most measured (4,140): a script
+ * at PODCAST_MAX_CHARS is ~1,500 tokens, plus up to 3,234 of thinking.
+ */
+export const PODCAST_LLM_MAX_TOKENS = readInt('PODCAST_LLM_MAX_TOKENS', 8000);
+
+/**
+ * Long enough to write PODCAST_LLM_MAX_TOKENS at the slowest speed measured
+ * (~100 tokens a second), so the token cap binds first and this only catches a
+ * provider that has hung. The first visitor of a new episode waits this long.
+ */
+export const PODCAST_LLM_TIMEOUT_MS = readInt('PODCAST_LLM_TIMEOUT_MS', 90_000);
+
+/** One retry, on the backup model, for a timeout, cut-off or 5xx only. */
+export const PODCAST_LLM_MAX_RETRIES = readInt('PODCAST_LLM_MAX_RETRIES', 1);
+
+/**
+ * After a temporary failure the model is tried again ten minutes later. This
+ * caps how many times one set of stories is tried before the fallback stays,
+ * so a model that keeps failing costs at most this × (1 + retries) calls.
+ */
+export const PODCAST_MAX_ATTEMPTS = readInt('PODCAST_MAX_ATTEMPTS', 3);

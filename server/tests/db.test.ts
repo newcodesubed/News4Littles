@@ -172,6 +172,29 @@ describe('schema (§8)', () => {
     db.close();
   });
 
+  it('migrates a v8 database: counts every stored episode as one attempt', () => {
+    const old = openDatabase(path);
+    old.exec(`
+      CREATE TABLE podcast_episodes (
+        key TEXT PRIMARY KEY, ageTarget INTEGER NOT NULL, date TEXT NOT NULL,
+        articleIds TEXT NOT NULL, script TEXT NOT NULL, source TEXT NOT NULL,
+        reason TEXT, model TEXT, costUsd REAL, retryAfter TEXT,
+        createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      INSERT INTO podcast_episodes VALUES
+        ('k1', 8, '2026-09-28', '[]', 'Hi.', 'fallback', NULL, NULL, NULL, NULL,
+         '2026-09-28T00:00:00.000Z', '2026-09-28T00:00:00.000Z');
+    `);
+    old.pragma('user_version = 8');
+    old.close();
+
+    initialiseSchema(path);
+
+    const db = openDatabase(path);
+    expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+    expect(db.prepare(`SELECT attempts FROM podcast_episodes WHERE key = 'k1'`).pluck().get()).toBe(1);
+    db.close();
+  });
+
   it('adds the run version count when migrating from v3', () => {
     initialiseSchema(path);
     seed(path);

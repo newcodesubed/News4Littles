@@ -223,6 +223,44 @@ describe('episodeFor', () => {
       expect(retried.audioKey).not.toBe(first.audioKey);
     });
 
+    it('stops retrying a model that keeps failing, and keeps the fallback', async () => {
+      publish('a');
+      let clock = NOW.getTime();
+      const { llm, complete } = stubLlm({
+        ok: false, reason: 'The model did not respond within 90000ms.', transient: true, elapsedMs: 90000,
+      });
+      const episodes = service({ llm, maxAttempts: 3, now: () => new Date(clock) });
+
+      for (let hour = 0; hour < 24; hour += 1) {
+        await episodes.episodeFor(8);
+        clock += 60 * 60 * 1000;
+      }
+
+      expect(complete).toHaveBeenCalledTimes(3);
+      expect(await stored()).toMatchObject({
+        source: 'fallback',
+        attempts: 3,
+        retryAfter: null,
+        reason: 'The LLM failed: The model did not respond within 90000ms. Stopped after 3 attempts.',
+      });
+    });
+
+    it('gives a new set of stories its own attempts', async () => {
+      publish('a');
+      let clock = NOW.getTime();
+      const { llm, complete } = stubLlm({ ok: false, reason: 'OpenRouter returned 503', transient: true, elapsedMs: 1 });
+      const episodes = service({ llm, maxAttempts: 1, now: () => new Date(clock) });
+
+      await episodes.episodeFor(8);
+      clock += 60 * 60 * 1000;
+      await episodes.episodeFor(8);
+      expect(complete).toHaveBeenCalledTimes(1);
+
+      publish('b');
+      await episodes.episodeFor(8);
+      expect(complete).toHaveBeenCalledTimes(2);
+    });
+
     it('does not retry a permanent failure, however long it has been', async () => {
       publish('a');
       let clock = NOW.getTime();

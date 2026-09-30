@@ -338,6 +338,7 @@ CREATE TABLE IF NOT EXISTS podcast_episodes (
   model      TEXT,
   costUsd    REAL,
   retryAfter TEXT,
+  attempts   INTEGER NOT NULL DEFAULT 1,                      -- times this key was written
   createdAt  TEXT    NOT NULL,
   updatedAt  TEXT    NOT NULL,
 

@@ -13,6 +13,7 @@ export interface StoredEpisode {
   model: string | null;
   costUsd: number | null;
   retryAfter: string | null;
+  attempts: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,14 +33,14 @@ export function createEpisodeRepository(db: Database): EpisodeRepository {
     upsert: db.prepare(
       `INSERT INTO podcast_episodes
          (key, ageTarget, date, articleIds, script, source, reason, model, costUsd,
-          retryAfter, createdAt, updatedAt)
+          retryAfter, attempts, createdAt, updatedAt)
        VALUES
          (@key, @ageTarget, @date, @articleIds, @script, @source, @reason, @model, @costUsd,
-          @retryAfter, @createdAt, @updatedAt)
+          @retryAfter, @attempts, @createdAt, @updatedAt)
        ON CONFLICT (key) DO UPDATE SET
          script = excluded.script, source = excluded.source, reason = excluded.reason,
          model = excluded.model, costUsd = excluded.costUsd, retryAfter = excluded.retryAfter,
-         updatedAt = excluded.updatedAt`,
+         attempts = excluded.attempts, updatedAt = excluded.updatedAt`,
     ),
   };
 

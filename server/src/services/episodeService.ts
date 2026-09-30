@@ -6,9 +6,10 @@ import {
   createEpisodeRepository, type EpisodeSource, type StoredEpisode,
 } from '../db/repositories/episodeRepository.js';
 import {
-  LLM_MODEL, PODCAST_MAX_CHARS, PODCAST_MAX_STORIES, SCRAPE_TIMEZONE, TTS_MAX_CHARS,
+  LLM_ENABLED, LLM_MODEL, PODCAST_LLM_MAX_RETRIES, PODCAST_LLM_MAX_TOKENS, PODCAST_LLM_TIMEOUT_MS,
+  PODCAST_MAX_ATTEMPTS, PODCAST_MAX_CHARS, PODCAST_MAX_STORIES, SCRAPE_TIMEZONE, TTS_MAX_CHARS,
 } from '../env.js';
-import type { OpenRouterClient } from '../llm/openRouterClient.js';
+import { OpenRouterClient } from '../llm/openRouterClient.js';
 import { logger, type Logger } from '../logger.js';
 import { detectInjection } from '../pipeline/approvalGuard.js';
 import { chunkScript } from '../podcast/chunkScript.js';
@@ -53,6 +54,7 @@ export interface EpisodeServiceOptions {
   maxChars?: number;
   chunkChars?: number;
   retryAfterMs?: number;
+  maxAttempts?: number;
   now?: () => Date;
   logger?: Logger;
 }
@@ -61,7 +63,16 @@ const EMPTY: EpisodeView = { date: null, articles: [], script: null, source: nul
 
 const TEN_MINUTES = 10 * 60 * 1000;
 
-const EPISODE_MAX_TOKENS = 3_000;
+/** The model client the episode is written with, sized in env.ts. */
+export function createPodcastLlm(): OpenRouterClient | null {
+  return LLM_ENABLED
+    ? new OpenRouterClient({
+        maxTokens: PODCAST_LLM_MAX_TOKENS,
+        timeoutMs: PODCAST_LLM_TIMEOUT_MS,
+        maxRetries: PODCAST_LLM_MAX_RETRIES,
+      })
+    : null;
+}
 
 export function episodeKey(parts: {
   version: number;
@@ -95,6 +106,7 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
   const maxChars = options.maxChars ?? PODCAST_MAX_CHARS;
   const chunkChars = options.chunkChars ?? TTS_MAX_CHARS;
   const retryAfterMs = options.retryAfterMs ?? TEN_MINUTES;
+  const maxAttempts = options.maxAttempts ?? PODCAST_MAX_ATTEMPTS;
   const now = options.now ?? (() => new Date());
   const log = options.logger ?? logger.child({ area: 'podcast' });
 
@@ -149,7 +161,6 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
 
     const result = await llm.complete({
       prompt: renderEpisodePrompt(inputs.stories, bandForAge(inputs.ageTarget), maxChars),
-      maxTokens: EPISODE_MAX_TOKENS,
     });
     if (!result.ok) return fallback(inputs, `The LLM failed: ${result.reason}`, result.transient);
 
@@ -167,6 +178,9 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
 
   const write = async (inputs: Inputs, previous: StoredEpisode | undefined): Promise<StoredEpisode> => {
     const composed = await compose(inputs);
+    const attempts = (previous?.attempts ?? 0) + 1;
+    // A model that keeps failing would otherwise be paid for every ten minutes, all day.
+    const givenUp = composed.retryAfter !== null && attempts >= maxAttempts;
     const at = now().toISOString();
     const episode: StoredEpisode = {
       key: inputs.key,
@@ -174,6 +188,8 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
       date: inputs.date,
       articleIds: inputs.articles.map((article) => article.id),
       ...composed,
+      ...(givenUp && { retryAfter: null, reason: `${composed.reason} Stopped after ${attempts} attempts.` }),
+      attempts,
       createdAt: previous?.createdAt ?? at,
       updatedAt: at,
     };
@@ -181,7 +197,10 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
 
     const fields = { key: episode.key, ageTarget: episode.ageTarget, date: episode.date };
     if (episode.source === 'fallback') {
-      log.warn({ ...fields, reason: episode.reason, retryAfter: episode.retryAfter }, 'podcast episode used the fallback');
+      log.warn(
+        { ...fields, reason: episode.reason, retryAfter: episode.retryAfter, attempts },
+        'podcast episode used the fallback',
+      );
     } else {
       log.info({ ...fields, model: episode.model, costUsd: episode.costUsd }, 'podcast episode written');
     }

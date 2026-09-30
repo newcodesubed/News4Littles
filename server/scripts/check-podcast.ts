@@ -2,9 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { bandForAge } from '../src/core/article.js';
 import { openDatabase } from '../src/db/connection.js';
-import { LLM_ENABLED, LLM_MODEL, PODCAST_LLM_TIMEOUT_MS, SERVER_ROOT } from '../src/env.js';
-import { OpenRouterClient } from '../src/llm/openRouterClient.js';
-import { createEpisodeService } from '../src/services/episodeService.js';
+import { LLM_ENABLED, LLM_MODEL, SERVER_ROOT } from '../src/env.js';
+import { createEpisodeService, createPodcastLlm } from '../src/services/episodeService.js';
 import { createMemoryAudioCache } from '../src/tts/audioCache.js';
 import { createSpeechProvider } from '../src/tts/index.js';
 
@@ -23,7 +22,7 @@ async function main(): Promise<void> {
 
   try {
     const service = createEpisodeService(db, {
-      llm: LLM_ENABLED ? new OpenRouterClient({ timeoutMs: PODCAST_LLM_TIMEOUT_MS, maxRetries: 0 }) : null,
+      llm: createPodcastLlm(),
       provider,
       cache: createMemoryAudioCache(),
     });

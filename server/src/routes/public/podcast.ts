@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import type { Database } from 'better-sqlite3';
-import { AUDIO_CACHE_DIR, LLM_ENABLED, PODCAST_LLM_TIMEOUT_MS } from '../../env.js';
-import { OpenRouterClient } from '../../llm/openRouterClient.js';
-import { createEpisodeService, type EpisodeService } from '../../services/episodeService.js';
+import { AUDIO_CACHE_DIR } from '../../env.js';
+import { createEpisodeService, createPodcastLlm, type EpisodeService } from '../../services/episodeService.js';
 import { createFileAudioCache, createMemoryAudioCache } from '../../tts/audioCache.js';
 import { createSpeechProvider } from '../../tts/index.js';
 import { createAgeTargetReader } from './ageTarget.js';
@@ -22,7 +21,7 @@ export function createPodcastRouter(db: Database, options: PodcastRouterOptions 
   const service =
     options.service ??
     createEpisodeService(db, {
-      llm: LLM_ENABLED ? new OpenRouterClient({ timeoutMs: PODCAST_LLM_TIMEOUT_MS, maxRetries: 0 }) : null,
+      llm: createPodcastLlm(),
       provider,
       cache: provider ? createFileAudioCache(AUDIO_CACHE_DIR) : createMemoryAudioCache(),
     });

@@ -9,7 +9,7 @@ afterEach(() => ctx.close());
 const EPISODE: StoredEpisode = {
   key: 'k1', ageTarget: 8, date: '2026-09-28', articleIds: ['a1', 'a2'],
   script: 'Hello friends.', source: 'fallback', reason: 'The model timed out.', model: null,
-  costUsd: null, retryAfter: '2026-09-28T12:10:00.000Z',
+  costUsd: null, retryAfter: '2026-09-28T12:10:00.000Z', attempts: 1,
   createdAt: '2026-09-28T12:00:00.000Z', updatedAt: '2026-09-28T12:00:00.000Z',
 };
 
@@ -31,12 +31,12 @@ describe('episode repository', () => {
 
     episodes.upsert({
       ...EPISODE, script: 'Hi, curious friends!', source: 'llm', reason: null, model: 'stub-llm',
-      costUsd: 0.002, retryAfter: null,
+      costUsd: 0.002, retryAfter: null, attempts: 2,
       createdAt: '2026-09-28T13:00:00.000Z', updatedAt: '2026-09-28T13:00:00.000Z',
     });
 
     expect(episodes.findByKey('k1')).toMatchObject({
-      script: 'Hi, curious friends!', source: 'llm', retryAfter: null,
+      script: 'Hi, curious friends!', source: 'llm', retryAfter: null, attempts: 2,
       createdAt: '2026-09-28T12:00:00.000Z', updatedAt: '2026-09-28T13:00:00.000Z',
     });
   });

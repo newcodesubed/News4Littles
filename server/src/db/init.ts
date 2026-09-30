@@ -25,12 +25,13 @@ import { refreshSeededPrompts } from './refreshSeededPrompts.js';
  * 6 — added kid_articles.audioScript (the spoken version of a story).
  * 7 — added raw_articles.dismissedAt (deleting from the waiting backlog).
  * 8 — added podcast_episodes (the daily podcast episode's script).
+ * 9 — added podcast_episodes.attempts (caps retries of a failing model).
  *
  * Seeded prompt TEXT is not versioned here: refreshSeededPrompts decides by
  * comparing the stored text with every seed ever shipped, so it is safe to run
  * on every init and needs no version guard.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 
@@ -68,6 +69,8 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   { table: 'kid_articles', column: 'audioScript', definition: 'TEXT' },
   // Nullable with no default: nothing was dismissed before the column existed.
   { table: 'raw_articles', column: 'dismissedAt', definition: 'TEXT' },
+  // Every episode stored before this column existed was written exactly once.
+  { table: 'podcast_episodes', column: 'attempts', definition: 'INTEGER NOT NULL DEFAULT 1' },
 ];
 
 /**
