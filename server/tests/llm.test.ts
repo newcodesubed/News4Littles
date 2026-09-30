@@ -181,7 +181,7 @@ describe('audioScript is optional (§9.1)', () => {
   });
 
   // The one that matters: a bad script must not cost the story. parseLlmContent
-  // throwing sends the WHOLE version to the rule-based fallback.
+  // throwing fails the WHOLE version.
   it('still returns the story when the script is unusable', () => {
     const content = parseLlmContent(withScript({ nested: 'object' }));
     expect(content.audioScript).toBeNull();

@@ -25,8 +25,8 @@ export const PROVIDER_IDS = Object.keys(PROVIDERS);
 
 /**
  * The configured provider, or null when speech is switched off — no voice is a
- * page without a play button, the same shape as no LLM key being a rule-based
- * story (§9.2). An unknown id throws instead, because that is a typo in .env.
+ * page without a play button. An unknown id throws instead, because that is a
+ * typo in .env.
  */
 export function createSpeechProvider(id: string = TTS_PROVIDER): SpeechProvider | null {
   // Validated before the enabled check: a misspelling is still a misspelling

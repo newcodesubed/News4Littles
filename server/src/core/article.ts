@@ -40,8 +40,8 @@ export const DEFAULT_AGE = 6;
  * One reading band: the unit a story is written in.
  *
  * A story is simplified once per BAND, not once per age. §9.2 already splits
- * the range three ways for the rule-based pipeline ("<=7 -> 14 words per
- * sentence; <=10 -> 20; else 28"), and a 6-year-old and a 7-year-old do not
+ * the range three ways ("<=7 -> 14 words per sentence; <=10 -> 20; else 28"),
+ * and a 6-year-old and a 7-year-old do not
  * need different rewrites — so those three bands are the versions a story has.
  * Three model calls per story instead of ten, and three rows to review.
  *
@@ -54,7 +54,7 @@ export interface AgeBand {
   /** The youngest age in the band; also its anchor (see above). */
   readonly minAge: number;
   readonly maxAge: number;
-  /** §9.2's words-per-sentence limit for the rule-based fallback. */
+  /** §9.2's words-per-sentence limit, which the sandbox checks output against. */
   readonly maxWordsPerSentence: number;
 }
 

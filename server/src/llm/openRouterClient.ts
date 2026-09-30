@@ -5,8 +5,8 @@
  * thin, provider-shaped wrapper rather than an SDK dependency.
  *
  * Never throws for an expected failure: callers get a discriminated result and
- * fall back to the local pipeline (§9.1 step 4). Every cost-bearing knob is a
- * constructor argument so tests can pin them.
+ * report it. Every cost-bearing knob is a constructor argument so tests can pin
+ * them.
  */
 import {
   LLM_FALLBACK_MODEL, LLM_MAX_RETRIES, LLM_MAX_TOKENS, LLM_MODEL, LLM_RETRY_DELAY_MS, LLM_TIMEOUT_MS,

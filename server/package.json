@@ -13,7 +13,6 @@
     "db:seed": "tsx src/db/seed.ts",
     "seed": "tsx src/db/seed-articles.ts",
     "typecheck": "tsc --noEmit",
-    "pipeline:demo": "tsx scripts/try-pipeline.ts",
     "try:rss": "tsx scripts/try-rss.ts",
     "scrape": "tsx scripts/scrape.ts",
     "scrape:bbc": "tsx scripts/scrape.ts --source bbc",

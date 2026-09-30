@@ -47,9 +47,7 @@ const DENY_LIST = [
   'war', 'killed', 'death', 'shooting', 'attack', 'bomb',
   'disaster', 'earthquake', 'violence', 'conflict', 'wounded',
   // Crime against a person. Without these a story about, say, sexual offences
-  // matched nothing and classified as 'calm' — and on the rule-based path
-  // (§9.2) the kid headline is the adult headline, so the subject reached the
-  // kid-facing fields unflagged.
+  // matched nothing and classified as 'calm', so it reached readers unflagged.
   'abuse', 'assault', 'rape', 'sexual', 'murder', 'stabbing',
   'suicide', 'kidnapped', 'terrorism', 'arrested',
 ];
@@ -118,8 +116,8 @@ export function seed(path: string = DATABASE_PATH): SeedResult {
        ON CONFLICT (id) DO NOTHING`,
       // defaultAge is a band anchor: the 5-7 band, which §3.6's default
       // reading age of 6 falls in. scrapeTimes ["06:00"] per §5.3;
-      // llmProvider NULL until a key is supplied (§13.2) — the local fallback
-      // (§9.2) runs in the meantime.
+      // llmProvider NULL until a key is supplied (§13.2); nothing is simplified
+      // in the meantime.
     ).run().changes);
 
     record('admin_users', db.prepare(

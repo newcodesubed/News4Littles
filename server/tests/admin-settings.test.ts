@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createTestContext, insertRawArticle, stubModel, type TestContext,
 } from './helpers.js';
-import { loadLocalPipelineConfig } from '../src/pipeline/localPipeline.js';
+import { loadPipelineConfig } from '../src/pipeline/simplifyArticle.js';
 
 // Every story in this file is written by the fake model from stubModel.
 vi.mock('../src/env.js', async (importOriginal) => ({
@@ -201,7 +201,7 @@ describe('app settings (§8.7)', () => {
 
   it('a saved defaultAge is the band the pipeline writes for', async () => {
     await put('/api/admin/app-settings', { defaultAge: 11, scrapeTimes: ['06:00'] });
-    const config = loadLocalPipelineConfig(ctx.db);
+    const config = loadPipelineConfig(ctx.db);
     expect(config.ageTarget).toBe(11);
   });
 });

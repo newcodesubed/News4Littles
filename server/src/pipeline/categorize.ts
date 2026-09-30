@@ -3,10 +3,9 @@
  *
  * Feeds rarely say what a story is about — the BBC front-page feed carries no
  * category at all — so without this every scraped story landed in 'World'.
- * The guess is stored as RawArticle.topic at scrape time. It is free and works
- * without an API key, which makes it the category the rule-based pipeline
- * (§9.2) uses; when the LLM runs, it picks the category itself and this guess
- * is only the hint it is shown as {{category}}.
+ * The guess is stored as RawArticle.topic at scrape time. The LLM picks the
+ * category itself; this guess is the hint it is shown as {{category}}, and the
+ * category kept when the model names none the reader UI knows.
  *
  * Deliberately rough. 'Good News' is never guessed: it is a judgement about
  * the story's tone, not a subject any word list can spot.

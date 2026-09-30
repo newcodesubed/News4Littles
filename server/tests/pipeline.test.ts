@@ -1,25 +1,14 @@
-/**
- * Local guard + simplification pipeline — PRD §6 and §9.2.
- * Pure logic; no HTTP, no network.
- */
+/** Guard and reading-band rules — PRD §6, §3.6 and §9.2. Pure logic; no HTTP, no network. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   AGE_BANDS, AGE_BAND_ANCHORS, bandForAge, formatAgeBand, isAgeBandAnchor,
 } from '../src/core/article.js';
 import { denyListGuard, strictest } from '../src/pipeline/guard.js';
-import {
-  buildVocab, capitalize, maxWordsForAge, simplifyHeadline, simplifySentences,
-  stripComplexWords, truncateSentence,
-} from '../src/pipeline/simplify.js';
-import { loadLocalPipelineConfig, simplifyLocally } from '../src/pipeline/localPipeline.js';
+import { maxWordsForAge } from '../src/pipeline/simplify.js';
+import { loadPipelineConfig } from '../src/pipeline/simplifyArticle.js';
 import { createTestContext, type TestContext } from './helpers.js';
 
 const DEFAULT_DENY = ['war','killed','death','shooting','attack','bomb','disaster','earthquake','violence','conflict','wounded'];
-
-const RAW = {
-  id: 'r1', headline: 'Adult headline', body: 'A rover found a reef.',
-  topic: 'World', sourceName: 'BBC News', sourceUrl: 'https://example.com/a',
-};
 
 describe('deny-list guard thresholds (§6.1)', () => {
   it.each([
@@ -110,7 +99,7 @@ describe('reading bands (§3.6, §9.2)', () => {
   });
 });
 
-describe('sentence simplification (§9.2)', () => {
+describe('words per sentence (§9.2)', () => {
   it.each([[5, 14], [6, 14], [7, 14], [8, 20], [9, 20], [10, 20], [11, 28], [12, 28], [13, 28], [14, 28]])(
     'age %i allows %i words per sentence',
     (age, limit) => expect(maxWordsForAge(age)).toBe(limit),
@@ -128,159 +117,21 @@ describe('sentence simplification (§9.2)', () => {
     const limits = AGE_BANDS.map((band) => maxWordsForAge(band.minAge));
     expect(new Set(limits).size).toBe(AGE_BANDS.length);
   });
-
-  it('leaves a sentence at exactly the limit untouched', () => {
-    // 14 words exactly.
-    const sentence = 'A survey team documented a coral reef at a depth of nine hundred metres';
-    expect(sentence.split(' ')).toHaveLength(14);
-    expect(truncateSentence(sentence, 14)).toBe(sentence);
-  });
-
-  it('truncates without leaving a dangling function word', () => {
-    // Cutting at 11 would end on "of"; it backs off to the last real word.
-    expect(truncateSentence('A survey team documented a coral reef at a depth of nine hundred metres', 11))
-      .toBe('A survey team documented a coral reef at a depth.');
-  });
-
-  it('leaves a short sentence alone', () => {
-    expect(truncateSentence('Short enough.', 14)).toBe('Short enough.');
-  });
-
-  it.each(['actually', 'essentially', 'moreover', 'furthermore', 'subsequently'])(
-    'strips the complex word "%s"',
-    (word) => expect(stripComplexWords(`It ${word} rained.`)).not.toMatch(new RegExp(word, 'i')),
-  );
-
-  it('removes both commas around a bracketed aside', () => {
-    expect(stripComplexWords('The sky was, moreover, grey.')).toBe('The sky was grey.');
-  });
-
-  it('re-capitalises when the stripped word was first', () => {
-    expect(simplifySentences('Moreover, researchers agreed.', 8)).toEqual(['Researchers agreed.']);
-  });
-
-  it('capitalize leaves the rest of the sentence untouched', () => {
-    expect(capitalize('the BBC said')).toBe('The BBC said');
-  });
 });
 
-describe('headline simplification (§9.2)', () => {
-  it.each([
-    ['Watch: Moment workers are rescued', 'Moment workers are rescued'],
-    ['Weekly quiz: What is the answer?', 'What is the answer?'],
-    ['Coastal towns move to shelters: officials warn of flooding', 'Coastal towns move to shelters'],
-    ['Border talks stall again | Analysis', 'Border talks stall again'],
-    ['Team documents a coral reef — researchers call it remarkable', 'Team documents a coral reef'],
-    ['A plain headline with no separators', 'A plain headline with no separators'],
-  ])('%s -> %s', (input, expected) => {
-    expect(simplifyHeadline(input, 10)).toBe(expected);
-  });
-
-  /**
-   * Documents the current boundary rather than endorsing it: a left side of
-   * THREE words or fewer is treated as a prefix label and dropped. Every BBC
-   * prefix actually observed was 1-2 words ("Watch", "Weekly quiz", "The
-   * Papers"), so a genuine three-word headline is collateral damage here.
-   * Pinned so that changing PREFIX_LABEL_MAX_WORDS is a deliberate act.
-   */
-  it('treats a three-word left side as a prefix label (known boundary)', () => {
-    expect(simplifyHeadline('Storm nears coast: officials warn of flooding', 10))
-      .toBe('Officials warn of flooding');
-  });
-
-  it('keeps a four-word left side', () => {
-    expect(simplifyHeadline('Storm nears the coast: officials warn of flooding', 10))
-      .toBe('Storm nears the coast');
-  });
-});
-
-describe('vocabulary (§9.2)', () => {
-  it('only includes words present in the text', () => {
-    expect(buildVocab('The rover filmed a reef.').map((v) => v.word)).toEqual(['rover', 'reef']);
-  });
-
-  it('orders by first appearance, not dictionary order', () => {
-    expect(buildVocab('The rover found a crater near the reef.').map((v) => v.word))
-      .toEqual(['rover', 'crater', 'reef']);
-  });
-
-  it('caps at three entries', () => {
-    expect(buildVocab('A robot, a satellite, a glacier, a reef and a treaty.')).toHaveLength(3);
-  });
-
-  it('falls back when no dictionary word appears', () => {
-    expect(buildVocab('Two teams played football.').map((v) => v.word)).toEqual(['news', 'source']);
-  });
-
-  it('is deterministic', () => {
-    const text = 'The rover found a crater near the reef.';
-    expect(buildVocab(text)).toEqual(buildVocab(text));
-  });
-});
-
-describe('simplifyLocally', () => {
+describe('loadPipelineConfig', () => {
   let ctx: TestContext;
   beforeAll(() => { ctx = createTestContext(); });
   afterAll(() => ctx.close());
 
-  const run = (overrides = {}, age = 6) =>
-    simplifyLocally({ ...RAW, ...overrides }, loadLocalPipelineConfig(ctx.db, age),
-      { id: 'fixed', now: '2026-01-01T00:00:00.000Z' }).article;
-
-  it('produces every §8.3 field', () => {
-    const article = run();
-    for (const key of ['id','originalId','ageTarget','kidHeadline','summary','whatHappened','whyItMatters',
-      'vocab','thinkAbout','feelingNote','safety','contentWarnings','category','readingMinutes',
-      'sourceName','sourceUrl','status','rejectReason','editedByHuman','createdAt','publishedAt']) {
-      expect(article).toHaveProperty(key);
-    }
-  });
-
-  it('never auto-publishes (§5.2 step 7)', () => {
-    const article = run({ body: 'A war, an attack and a bomb.' });
-    expect(article.status).toBe('pending_review');
-    expect(article.publishedAt).toBeNull();
-  });
-
-  it('gives a calm story no feeling note', () => {
-    expect(run().feelingNote).toBeNull();
-  });
-
-  it('gives a non-calm story a feeling note', () => {
-    expect(run({ body: 'A war, an attack and a bomb.' }).feelingNote).toBeTruthy();
-  });
-
-  it('reports matched deny-list terms as content warnings', () => {
-    expect(run({ body: 'A war, an attack and a bomb.' }).contentWarnings).toEqual(['war', 'attack', 'bomb']);
-  });
-
-  it('maps RawArticle.topic to category (§8.2)', () => {
-    expect(run({ topic: 'Science' }).category).toBe('Science');
-  });
-
-  it('is deterministic for the same input', () => {
-    expect(JSON.stringify(run())).toBe(JSON.stringify(run()));
-  });
-
-  it('respects the age word limit end to end', () => {
-    const article = run({ body: `${'word '.repeat(60).trim()}.` }, 6);
-    const longest = article.whatHappened.split(/(?<=[.!?])\s+/)
-      .reduce((max, s) => Math.max(max, s.split(/\s+/).filter(Boolean).length), 0);
-    expect(longest).toBeLessThanOrEqual(14);
-  });
-
-  it('survives an empty body', () => {
-    expect(run({ body: '' }).summary.length).toBeGreaterThan(0);
-  });
-
   it('reads the deny-list from guard_config, not from code', () => {
-    ctx.db.prepare(`UPDATE guard_config SET denyList = ? WHERE id='default'`).run(JSON.stringify(['volcano']));
-    expect(run({ body: 'A volcano erupted.' }).safety).toBe('adult-nearby');
+    ctx.db.prepare(`UPDATE guard_config SET denyList = ?, denyListEnabled = 0 WHERE id='default'`)
+      .run(JSON.stringify(['volcano']));
+    expect(loadPipelineConfig(ctx.db)).toMatchObject({ denyList: ['volcano'], denyListEnabled: false });
+  });
 
-    ctx.db.prepare(`UPDATE guard_config SET denyListEnabled = 0 WHERE id='default'`).run();
-    expect(run({ body: 'A volcano erupted.' }).safety).toBe('calm');
-
-    ctx.db.prepare(`UPDATE guard_config SET denyList = ?, denyListEnabled = 1 WHERE id='default'`)
-      .run(JSON.stringify(DEFAULT_DENY));
+  it('writes for the band the default age falls in, unless given one', () => {
+    expect(loadPipelineConfig(ctx.db).ageTarget).toBe(5);
+    expect(loadPipelineConfig(ctx.db, 11).ageTarget).toBe(11);
   });
 });

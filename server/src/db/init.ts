@@ -63,8 +63,8 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
     definition: "TEXT CHECK (approvedBy IS NULL OR approvedBy = 'auto')",
   },
   // Nullable with no default: a row written before this column existed has no
-  // spoken version, and NULL says exactly that. It is also what a failed or
-  // rule-based generation stores, so the podcast page has one case to handle.
+  // spoken version, and NULL says exactly that. It is also what a story the
+  // model wrote no script for stores, so the podcast page has one case to handle.
   { table: 'kid_articles', column: 'audioScript', definition: 'TEXT' },
   // Nullable with no default: nothing was dismissed before the column existed.
   { table: 'raw_articles', column: 'dismissedAt', definition: 'TEXT' },

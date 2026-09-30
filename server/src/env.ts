@@ -86,7 +86,7 @@ export const SCRAPE_TIMEZONE = readString(
  */
 export const OPENROUTER_KEY = readString('OPENROUTER_KEY', '');
 
-/** Master switch. Off, or with no key, the local fallback (§9.2) runs. */
+/** Master switch. Off, or with no key, nothing is simplified and articles wait. */
 export const LLM_ENABLED =
   readString('LLM_ENABLED', 'true').toLowerCase() !== 'false' && OPENROUTER_KEY !== '';
 

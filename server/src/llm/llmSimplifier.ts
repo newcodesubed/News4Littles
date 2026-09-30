@@ -78,9 +78,9 @@ export interface LlmContent {
   feelingNote: string | null;
   /**
    * The story as a newsreader would say it. Optional on purpose: it must NOT
-   * join REQUIRED_TEXT, because a throw here drops the whole version to the
-   * rule-based pipeline, and a missing script is a far smaller loss than a
-   * lost story — the same rule vocab already follows.
+   * join REQUIRED_TEXT, because a throw here fails the whole version, and a
+   * missing script is a far smaller loss than a lost story — the same rule
+   * vocab already follows.
    */
   audioScript: string | null;
   /** The model's opinion. Combined with the other guards, never trusted alone. */
@@ -115,7 +115,7 @@ function extractJsonObject(text: string): string {
 
 /**
  * Parse and validate a model response into content the database will accept.
- * Throws LlmResponseError, which the caller turns into a local fallback.
+ * Throws LlmResponseError, which the caller reports as a failed version.
  */
 export function parseLlmContent(text: string): LlmContent {
   let raw: Record<string, unknown>;
