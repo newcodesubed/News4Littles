@@ -61,7 +61,7 @@ export function Home() {
             </div>
 
             <p className="text-xs text-muted-foreground mt-5 inline-flex items-center gap-1.5">
-              <Heart className="w-3.5 h-3.5 text-primary" /> Default reading level: age {readingAge}
+              <Heart className="w-3.5 h-3.5 text-primary" /> Reading age: {readingAge}
             </p>
           </div>
 
