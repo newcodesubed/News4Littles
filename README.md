@@ -256,7 +256,9 @@ untouched seeded prompt up to date.
 
 Set `AUTO_APPROVE_ENABLED=true` and an LLM judges each **calm** story just
 simplified, by a scrape or by **Simplify** on the waiting backlog, publishing
-the ones it approves with **no editor involved**. It
+the ones it approves with **no editor involved**. Each story is judged the
+moment it's written, not after the batch, so it goes live as soon as it's ready
+and a run that fails halfway leaves nothing it wrote unjudged. It
 defaults to `false`, unlike every other flag here, because it trades away the
 human review this product otherwise promises. It also needs a working LLM: no
 API key means no judge, and no judge means nothing is auto-published.
