@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import type { Database } from 'better-sqlite3';
 import { DATABASE_PATH, openDatabase } from './connection.js';
 import { refreshSeededPrompts } from './refreshSeededPrompts.js';
+import { BBC_FRONT_PAGE_FEED, BBC_SECTION_SOURCES, prepareSourceInsert } from './seed-sources.js';
 
 /**
  * Bumped whenever schema.sql changes in a way an existing database must migrate
@@ -26,12 +27,14 @@ import { refreshSeededPrompts } from './refreshSeededPrompts.js';
  * 7 — added raw_articles.dismissedAt (deleting from the waiting backlog).
  * 8 — added podcast_episodes (the daily podcast episode's script).
  * 9 — added podcast_episodes.attempts (caps retries of a failing model).
+ * 10 — added sources.category, the BBC section sources, and full-text
+ *      scraping for the BBC front page (see addBbcSections).
  *
  * Seeded prompt TEXT is not versioned here: refreshSeededPrompts decides by
  * comparing the stored text with every seed ever shipped, so it is safe to run
  * on every init and needs no version guard.
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 const SCHEMA_PATH = fileURLToPath(new URL('./schema.sql', import.meta.url));
 
@@ -71,6 +74,9 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   { table: 'raw_articles', column: 'dismissedAt', definition: 'TEXT' },
   // Every episode stored before this column existed was written exactly once.
   { table: 'podcast_episodes', column: 'attempts', definition: 'INTEGER NOT NULL DEFAULT 1' },
+  // Nullable with no default: NULL guesses each story's category, which is
+  // what every source did before the column existed.
+  { table: 'sources', column: 'category', definition: 'TEXT' },
 ];
 
 /**
@@ -86,6 +92,28 @@ function addMissingColumns(db: Database): void {
     if (columns.some((existing) => existing.name === column)) continue;
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+/**
+ * v10: brings a database seeded before the BBC section feeds up to what a new
+ * one is seeded with. Runs once, on the upgrade to v10 — never again, so a
+ * section an editor deletes later stays deleted.
+ *
+ * The front page switches to full-text scraping only if the row is still
+ * exactly as seeded; an editor who changed its feed or parser keeps their
+ * choice.
+ */
+function addBbcSections(db: Database): void {
+  const now = new Date().toISOString();
+  const insertSource = prepareSourceInsert(db);
+
+  db.transaction(() => {
+    for (const source of BBC_SECTION_SOURCES) insertSource(source, now);
+    db.prepare(
+      `UPDATE sources SET parser = 'bbc', updatedAt = ?
+       WHERE id = 'bbc' AND parser = 'rss' AND url = ?`,
+    ).run(now, BBC_FRONT_PAGE_FEED);
+  })();
 }
 
 export function initialiseSchema(path: string = DATABASE_PATH): string[] {
@@ -110,6 +138,10 @@ export function initialiseSchema(path: string = DATABASE_PATH): string[] {
     if (previousVersion > 0 && previousVersion < 3) {
       db.exec(`UPDATE raw_articles SET simplifiedAt = fetchedAt WHERE simplifiedAt IS NULL`);
     }
+
+    // Guarded the same way: a new database (version 0) gets these rows from
+    // seed instead, and a v10 one already had its chance.
+    if (previousVersion > 0 && previousVersion < 10) addBbcSections(db);
 
     // A prompt row still holding an older seed, untouched, takes the current
     // seed — so a database set up before the prompt asked for a spoken version

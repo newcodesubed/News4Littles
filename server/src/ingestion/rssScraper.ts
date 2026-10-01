@@ -14,13 +14,32 @@
  *
  * Written against the generic `sources` table rather than BBC specifically, so
  * enabling another feed in admin settings is all it takes to ingest it.
+ *
+ * FULL TEXT: a feed's description is one sentence, too little to write a story
+ * from. A source with parser 'bbc' also fetches each new item's article page
+ * (ingestion/bbcArticle.ts) between selecting and storing. If that fails the
+ * description is stored instead, so an item is never worse off than plain RSS.
  */
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
 import { createRawArticleRepository } from '../db/repositories/rawArticleRepository.js';
 import { createSourceRepository, type SourceRow } from '../db/repositories/sourceRepository.js';
+import { logger } from '../logger.js';
 import { guessCategory } from '../pipeline/categorize.js';
+import { fetchBbcArticleText, isBbcArticleUrl } from './bbcArticle.js';
 import { fetchFeed, selectNewItems, type FeedItem } from './feedParser.js';
+
+const log = logger.child({ area: 'scrape' });
+
+/** Pause between article pages: one source's run is a few dozen requests. */
+const ARTICLE_DELAY_MS = 1000;
+
+/**
+ * Consecutive article fetches that may fail before a source stops trying for
+ * this run. Several failures in a row means blocked or down, not one bad page,
+ * and carrying on would only add a timeout per item.
+ */
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 export type { SourceRow };
 
@@ -35,6 +54,8 @@ export interface ScrapeResult {
   skippedAlreadyStored: number;
   skippedUnusable: number;
   inserted: number;
+  /** Items stored with the feed's description because their page gave no text. */
+  fullTextFailed: number;
   newestItemPublishedAt: string | null;
   /** What was stored, for the CLI to print. Raw rows: no kid headline yet. */
   stored: { rawId: string; headline: string; url: string; publishedAt: string | null }[];
@@ -60,6 +81,8 @@ export interface ScrapeOptions {
   limit?: number;
   /** Injectable clock, for deterministic tests. */
   now?: () => string;
+  /** Pause between article page fetches. A test seam; defaults to 1s. */
+  articleDelayMs?: number;
 }
 
 function emptyResult(source: SourceRow): ScrapeResult {
@@ -72,6 +95,7 @@ function emptyResult(source: SourceRow): ScrapeResult {
     skippedAlreadyStored: 0,
     skippedUnusable: 0,
     inserted: 0,
+    fullTextFailed: 0,
     newestItemPublishedAt: source.lastFetchedItemPublishedAt,
     stored: [],
     simplified: [],
@@ -103,7 +127,7 @@ function storeItems(
     let newest = source.lastFetchedItemPublishedAt;
 
     for (const item of items) {
-      if (rawArticles.existsForSourceUrl(source.id, item.link)) {
+      if (rawArticles.existsByUrl(item.link)) {
         result.skippedAlreadyStored += 1;
         continue;
       }
@@ -117,10 +141,10 @@ function storeItems(
         url: item.link,
         headline: item.title,
         body: item.body,
-        // The BBC front-page feed carries no category and §5.2 does not say
-        // what RawArticle.topic should hold, so it is guessed from keywords.
-        // The LLM picks its own when it runs; see pipeline/categorize.ts.
-        topic: guessCategory(item.title, item.body),
+        // A section feed knows its subject; a mixed feed, like the BBC front
+        // page, does not, so the topic is guessed from keywords. Either way it
+        // is a hint: the LLM picks its own when it runs (pipeline/categorize.ts).
+        topic: source.category ?? guessCategory(item.title, item.body),
         publishedAt: item.publishedAt,
         fetchedAt,
         // The run's simplification phase decides which of these get a model
@@ -145,6 +169,51 @@ function storeItems(
     sources.recordFetch(source.id, fetchedAt, newest);
     result.newestItemPublishedAt = newest;
   })();
+}
+
+/**
+ * Replace each candidate's one-line description with its article's full text.
+ *
+ * Sequential with a pause between pages, to be a polite visitor. Skips URLs
+ * already stored — storeItems would discard them anyway. A failure keeps the
+ * description; MAX_CONSECUTIVE_FAILURES in a row stops fetching for the rest
+ * of this source's run.
+ */
+async function addFullText(
+  db: Database,
+  source: SourceRow,
+  items: FeedItem[],
+  result: ScrapeResult,
+  delayMs: number,
+): Promise<void> {
+  const rawArticles = createRawArticleRepository(db);
+  let consecutiveFailures = 0;
+  let fetched = 0;
+
+  for (const item of items) {
+    if (rawArticles.existsByUrl(item.link)) continue;
+
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      result.fullTextFailed += 1;
+      continue;
+    }
+
+    if (fetched > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    fetched += 1;
+
+    try {
+      item.body = await fetchBbcArticleText(item.link, { retryDelayMs: delayMs });
+      consecutiveFailures = 0;
+    } catch (error: unknown) {
+      consecutiveFailures += 1;
+      result.fullTextFailed += 1;
+      const reason = error instanceof Error ? error.message : String(error);
+      log.warn({ sourceId: source.id, url: item.link, reason }, 'kept the feed description');
+      if (consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
+        log.warn({ sourceId: source.id }, 'stopped fetching article pages for this run');
+      }
+    }
+  }
 }
 
 /**
@@ -173,13 +242,27 @@ export async function scrapeSource(
 
   result.itemsInFeed = items.length;
 
-  const selection = selectNewItems(items, source.lastFetchedItemPublishedAt, options.limit);
+  const fullText = source.parser === 'bbc';
+
+  // A BBC video, audio or live link has no article text to fetch, and a
+  // one-line description is not enough to write a story from.
+  const selection = selectNewItems(
+    items,
+    source.lastFetchedItemPublishedAt,
+    options.limit,
+    fullText ? (item) => isBbcArticleUrl(item.link) : undefined,
+  );
   result.skippedNotNew = selection.skippedNotNew;
   result.skippedUnusable = selection.skippedUnusable;
 
-  const fetchedAt = (options.now ?? (() => new Date().toISOString()))();
-
   try {
+    if (fullText) {
+      const delayMs = options.articleDelayMs ?? ARTICLE_DELAY_MS;
+      await addFullText(db, source, selection.candidates, result, delayMs);
+    }
+
+    // After the pages: a run's stories are stamped when they were stored.
+    const fetchedAt = (options.now ?? (() => new Date().toISOString()))();
     storeItems(db, source, selection.candidates, fetchedAt, result);
     result.ok = true;
   } catch (error: unknown) {

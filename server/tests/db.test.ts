@@ -195,6 +195,84 @@ describe('schema (§8)', () => {
     db.close();
   });
 
+  describe('migrating a v9 database to the BBC section feeds (v10)', () => {
+    /** A v9 sources table, holding the two rows a v9 seed would have. */
+    const v9Database = (bbcUrl = 'https://feeds.bbci.co.uk/news/rss.xml') => {
+      const old = openDatabase(path);
+      old.exec(`
+        CREATE TABLE sources (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+          trustLevel TEXT NOT NULL CHECK (trustLevel IN ('high', 'medium', 'low')),
+          parser TEXT, lastFetchedAt TEXT, lastFetchedItemPublishedAt TEXT,
+          createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      `);
+      old.prepare(
+        `INSERT INTO sources VALUES
+           ('bbc', 'BBC News', ?, 1, 'high', 'rss', NULL, NULL, '2026-01-01', '2026-01-01'),
+           ('manual', 'Manual submission', '', 0, 'high', NULL, NULL, NULL, '2026-01-01', '2026-01-01')`,
+      ).run(bbcUrl);
+      old.pragma('user_version = 9');
+      old.close();
+    };
+    const sources = (db: ReturnType<typeof openDatabase>) =>
+      db.prepare(`SELECT id, parser, category, enabled FROM sources ORDER BY id`).all();
+
+    it('adds the category column, the five sections, and full text for the front page', () => {
+      v9Database();
+      initialiseSchema(path);
+
+      const db = openDatabase(path);
+      expect(db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+      expect(sources(db)).toEqual([
+        { id: 'bbc', parser: 'bbc', category: null, enabled: 1 },
+        { id: 'bbc-business', parser: 'bbc', category: 'World', enabled: 1 },
+        { id: 'bbc-health', parser: 'bbc', category: 'Health', enabled: 1 },
+        { id: 'bbc-science', parser: 'bbc', category: null, enabled: 1 },
+        { id: 'bbc-sport', parser: 'bbc', category: 'Sports', enabled: 1 },
+        { id: 'bbc-technology', parser: 'bbc', category: 'Technology', enabled: 1 },
+        { id: 'manual', parser: null, category: null, enabled: 0 },
+      ]);
+      db.close();
+    });
+
+    it("leaves the front page as plain RSS when an editor changed its feed", () => {
+      v9Database('https://example.com/my-own-feed.xml');
+      initialiseSchema(path);
+
+      const db = openDatabase(path);
+      expect(db.prepare(`SELECT parser FROM sources WHERE id = 'bbc'`).pluck().get()).toBe('rss');
+      db.close();
+    });
+
+    it('runs once: a section deleted after the upgrade stays deleted', () => {
+      v9Database();
+      initialiseSchema(path);
+      const db = openDatabase(path);
+      db.prepare(`DELETE FROM sources WHERE id = 'bbc-business'`).run();
+      db.close();
+
+      initialiseSchema(path);
+
+      const after = openDatabase(path);
+      expect(after.prepare(`SELECT 1 FROM sources WHERE id = 'bbc-business'`).get()).toBeUndefined();
+      after.close();
+    });
+
+    it('a new database gets the same rows from seed instead', () => {
+      initialiseSchema(path);
+      seed(path);
+
+      const db = openDatabase(path);
+      expect(sources(db)).toEqual(expect.arrayContaining([
+        { id: 'bbc', parser: 'bbc', category: null, enabled: 1 },
+        { id: 'bbc-business', parser: 'bbc', category: 'World', enabled: 1 },
+        { id: 'bbc-science', parser: 'bbc', category: null, enabled: 1 },
+      ]));
+      db.close();
+    });
+  });
+
   it('adds the run version count when migrating from v3', () => {
     initialiseSchema(path);
     seed(path);
@@ -271,7 +349,7 @@ describe('seeding', () => {
   it('inserts the reference rows', () => {
     initialiseSchema(path);
     const result = seed(path);
-    expect(result.inserted).toMatchObject({ sources: 6, guard_config: 1, app_settings: 1, admin_users: 1 });
+    expect(result.inserted).toMatchObject({ sources: 11, guard_config: 1, app_settings: 1, admin_users: 1 });
   });
 
   it('is idempotent and never overwrites an edit', () => {
@@ -285,7 +363,7 @@ describe('seeding', () => {
     seed(path);
     const after = openDatabase(path);
     expect(after.prepare('SELECT defaultAge FROM app_settings').pluck().get()).toBe(11);
-    expect(countRows(after, 'sources')).toBe(6);
+    expect(countRows(after, 'sources')).toBe(11);
     after.close();
   });
 
@@ -447,7 +525,7 @@ describe('the waiting backlog (raw_articles.simplifiedAt)', () => {
     repo.insert(raw('r1'));
     repo.dismiss(['r1'], '2026-09-09T10:00:00.000Z');
 
-    expect(repo.existsForSourceUrl('bbc', 'https://example.com/r1')).toBe(true);
+    expect(repo.existsByUrl('https://example.com/r1')).toBe(true);
   });
 
   it('a manual submission is never in the backlog', async () => {

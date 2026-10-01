@@ -19,28 +19,9 @@ import { ADMIN_PASSWORD, ADMIN_USERNAME } from '../env.js';
 import { DATABASE_PATH, openDatabase } from './connection.js';
 import { initialiseSchema } from './init.js';
 import { GENERIC_SIMPLIFICATION_PROMPT, YOUNG_READERS_SIMPLIFICATION_PROMPT } from './seed-prompts.js';
+import { prepareSourceInsert, SEEDED_SOURCES } from './seed-sources.js';
 
 const BCRYPT_ROUNDS = 10;
-
-/**
- * PRD §5.1 prototype list, plus the 'manual' row that editor submissions (§4.3)
- * point at so raw_articles.sourceId is always a real foreign key.
- *
- * Only BBC carries a live feed URL: §5.2 names it the first production source
- * and it is the only URL the PRD actually specifies. The other four are seeded
- * disabled with a blank url so the first scraper run is honest rather than
- * half-broken — fill in a real feed URL in /admin/settings, then enable.
- * (This is why reuters/ap-news/npr are enabled = 0 here despite §5.1 listing
- * them as enabled; CNN is disabled in §5.1 too.)
- */
-const SOURCES = [
-  { id: 'bbc',     name: 'BBC News',           url: 'https://feeds.bbci.co.uk/news/rss.xml', enabled: 1, trustLevel: 'high',   parser: 'rss' },
-  { id: 'reuters', name: 'Reuters',            url: '',                                      enabled: 0, trustLevel: 'high',   parser: 'rss' },
-  { id: 'ap-news', name: 'Associated Press',   url: '',                                      enabled: 0, trustLevel: 'high',   parser: 'rss' },
-  { id: 'npr',     name: 'NPR',                url: '',                                      enabled: 0, trustLevel: 'high',   parser: 'rss' },
-  { id: 'cnn',     name: 'CNN',                url: '',                                      enabled: 0, trustLevel: 'medium', parser: 'rss' },
-  { id: 'manual',  name: 'Manual submission',  url: '',                                      enabled: 0, trustLevel: 'high',   parser: null },
-] as const;
 
 /** PRD §6.1 default deny-list, verbatim. */
 const DENY_LIST = [
@@ -77,12 +58,8 @@ export function seed(path: string = DATABASE_PATH): SeedResult {
   const passwordHash = bcrypt.hashSync(ADMIN_PASSWORD, BCRYPT_ROUNDS);
 
   const run = db.transaction(() => {
-    const insertSource = db.prepare(
-      `INSERT INTO sources (id, name, url, enabled, trustLevel, parser, createdAt, updatedAt)
-       VALUES (@id, @name, @url, @enabled, @trustLevel, @parser, @now, @now)
-       ON CONFLICT (id) DO NOTHING`,
-    );
-    for (const source of SOURCES) record('sources', insertSource.run({ ...source, now }).changes);
+    const insertSource = prepareSourceInsert(db);
+    for (const source of SEEDED_SOURCES) record('sources', insertSource(source, now));
 
     record('guard_config', db.prepare(
       `INSERT INTO guard_config

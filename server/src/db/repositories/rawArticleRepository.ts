@@ -48,8 +48,12 @@ export interface WaitingRawArticle {
 export interface RawArticleRepository {
   insert(article: RawArticle): void;
   findById(id: string): StoredRawArticle | undefined;
-  /** §5.2: an item already stored for this source must not be stored twice. */
-  existsForSourceUrl(sourceId: string, url: string): boolean;
+  /**
+   * §5.2: an item already stored must not be stored twice — from ANY source.
+   * BBC section feeds share stories (an AI story is in Technology and
+   * Business), and storing it per source would simplify it twice.
+   */
+  existsByUrl(url: string): boolean;
   countForSource(sourceId: string): number;
   /** Unsimplified, undismissed rows only. Newest publishedAt first; undated last. */
   listWaiting(options?: { sourceId?: string; limit?: number }): WaitingRawArticle[];
@@ -76,7 +80,7 @@ export function createRawArticleRepository(db: Database): RawArticleRepository {
      VALUES (${COLUMNS.map((c) => `@${c}`).join(', ')})`,
   );
   const byId = db.prepare(`SELECT * FROM raw_articles WHERE id = ?`);
-  const bySourceUrl = db.prepare(`SELECT 1 FROM raw_articles WHERE sourceId = ? AND url = ? LIMIT 1`);
+  const byUrl = db.prepare(`SELECT 1 FROM raw_articles WHERE url = ? LIMIT 1`);
   const countBySource = db.prepare(`SELECT COUNT(*) FROM raw_articles WHERE sourceId = ?`);
 
   // ORDER BY publishedAt DESC puts NULLs last in SQLite, which is wanted: an
@@ -119,7 +123,7 @@ export function createRawArticleRepository(db: Database): RawArticleRepository {
   return {
     insert: (article) => void insert.run(article),
     findById: (id) => byId.get(id) as StoredRawArticle | undefined,
-    existsForSourceUrl: (sourceId, url) => bySourceUrl.get(sourceId, url) !== undefined,
+    existsByUrl: (url) => byUrl.get(url) !== undefined,
     countForSource: (sourceId) => countBySource.pluck().get(sourceId) as number,
 
     listWaiting: ({ sourceId, limit } = {}) =>

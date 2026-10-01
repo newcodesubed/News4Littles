@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createScrapeRunRepository } from '../src/db/repositories/scrapeRunRepository.js';
 import { getRunState, resetRunState, startScrapeRun, summarise } from '../src/services/scrapeService.js';
 import {
-  countRows, createTestContext, stubModel, type TestContext,
+  countRows, createTestContext, stubModel, useLocalFeed, type TestContext,
 } from './helpers.js';
 
 // Every story in this file is written by the fake model from stubModel.
@@ -68,8 +68,8 @@ beforeEach(() => {
   itemCount = 2;
   feedDelayMs = 0;
   ctx = createTestContext();
-  ctx.db.prepare(`UPDATE sources SET url = ? WHERE id = 'bbc'`).run(feedUrl);
-  // Only BBC is enabled by default, so "all sources" means one feed here.
+  // Only BBC stays enabled, so "all sources" means one feed here.
+  useLocalFeed(ctx.db, feedUrl);
 });
 afterEach(() => { resetRunState(); ctx.close(); });
 

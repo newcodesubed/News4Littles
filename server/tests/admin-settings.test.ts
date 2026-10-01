@@ -26,7 +26,7 @@ const patch = send('PATCH');
 describe('sources CRUD (§5.1)', () => {
   it('lists the seeded sources with article counts', async () => {
     const sources = await json('/api/admin/sources');
-    expect(sources).toHaveLength(6);
+    expect(sources).toHaveLength(11);
     expect(sources.find((s: any) => s.id === 'bbc')).toMatchObject({ enabled: true, trustLevel: 'high' });
   });
 
@@ -35,7 +35,7 @@ describe('sources CRUD (§5.1)', () => {
       id: 'guardian', name: 'The Guardian', url: 'https://example.com/rss', enabled: true, trustLevel: 'high', parser: 'rss',
     });
     expect(res.status).toBe(201);
-    expect(await json('/api/admin/sources')).toHaveLength(7);
+    expect(await json('/api/admin/sources')).toHaveLength(12);
   });
 
   it.each([
@@ -44,6 +44,7 @@ describe('sources CRUD (§5.1)', () => {
     ['an unknown trust level', { id: 'ok', name: 'X', url: 'u', trustLevel: 'excellent' }, 400],
     ['enabled with no feed URL', { id: 'ok', name: 'X', url: '', enabled: true, trustLevel: 'high' }, 400],
     ['a blank name', { id: 'ok', name: '', url: 'u', trustLevel: 'high' }, 400],
+    ['an unknown category', { id: 'ok', name: 'X', url: 'u', trustLevel: 'high', category: 'Business' }, 400],
   ])('rejects %s', async (_label, body, status) => {
     expect((await post('/api/admin/sources', body)).status).toBe(status);
   });
@@ -52,6 +53,32 @@ describe('sources CRUD (§5.1)', () => {
     await patch('/api/admin/sources/cnn', { name: 'CNN International', parser: 'rss', trustLevel: 'low' });
     const cnn = (await json('/api/admin/sources')).find((s: any) => s.id === 'cnn');
     expect(cnn).toMatchObject({ name: 'CNN International', parser: 'rss', trustLevel: 'low' });
+  });
+
+  it('creates a source with a category, or none to guess per story', async () => {
+    await post('/api/admin/sources', { id: 'nasa', name: 'NASA', url: 'u', trustLevel: 'high', category: 'Science' });
+    await post('/api/admin/sources', { id: 'mixed', name: 'Mixed', url: 'u', trustLevel: 'high' });
+
+    const sources = await json('/api/admin/sources');
+    expect(sources.find((s: any) => s.id === 'nasa').category).toBe('Science');
+    expect(sources.find((s: any) => s.id === 'mixed').category).toBeNull();
+  });
+
+  it('sets a category, and clears it back to guessing with a blank', async () => {
+    const categoryOf = async () =>
+      (await json('/api/admin/sources')).find((s: any) => s.id === 'cnn').category;
+
+    expect((await patch('/api/admin/sources/cnn', { category: 'Sports' })).status).toBe(200);
+    expect(await categoryOf()).toBe('Sports');
+
+    expect((await patch('/api/admin/sources/cnn', { category: '' })).status).toBe(200);
+    expect(await categoryOf()).toBeNull();
+  });
+
+  it('refuses a category the reader UI has no badge for', async () => {
+    const res = await patch('/api/admin/sources/cnn', { category: 'Business' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/category must be one of/);
   });
 
   it('refuses to enable a source with no feed URL', async () => {

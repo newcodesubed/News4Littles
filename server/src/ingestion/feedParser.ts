@@ -12,7 +12,7 @@ const FEED_TIMEOUT_MS = 15_000;
 /**
  * Query parameters publishers add for their own analytics — BBC's feed links
  * all carry `at_medium=RSS&at_campaign=rss`. They never change which page you
- * get, and the duplicate guard in rawArticleRepository.existsForSourceUrl is an
+ * get, and the duplicate guard in rawArticleRepository.existsByUrl is an
  * exact string match on the URL, so the same story arriving with new campaign
  * tags would look like a new article and cost another simplification.
  *
@@ -120,17 +120,22 @@ export interface SelectionResult {
  *
  * An item with no date cannot be compared, so it passes through here and is
  * caught by the already-stored check at persist time instead.
+ *
+ * `accept` lets a source refuse items it cannot use — a BBC video link has no
+ * article text. Refused items count as unusable, and are dropped BEFORE the
+ * limit, so `--limit 5` still means five real articles.
  */
 export function selectNewItems(
   items: Record<string, unknown>[],
   cursor: string | null,
   limit?: number,
+  accept: (item: FeedItem) => boolean = () => true,
 ): SelectionResult {
   const result: SelectionResult = { candidates: [], skippedNotNew: 0, skippedUnusable: 0 };
 
   for (const raw of items) {
     const item = toFeedItem(raw);
-    if (!item) {
+    if (!item || !accept(item)) {
       result.skippedUnusable += 1;
       continue;
     }

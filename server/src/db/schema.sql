@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS sources (
                                      CHECK (enabled IN (0, 1)), -- boolean
   trustLevel                 TEXT    NOT NULL
                                      CHECK (trustLevel IN ('high', 'medium', 'low')),
-  parser                     TEXT,                              -- optional; e.g. 'rss', 'bbc', 'ap-news'
+  parser                     TEXT,                              -- optional; 'bbc' also fetches each article page for its full text
+  category                   TEXT,                              -- KidArticle.category hint for every story; NULL = guess per story
   lastFetchedAt              TEXT,                              -- ISO; NULL until the first fetch
   lastFetchedItemPublishedAt TEXT,                              -- ISO; incremental-scrape cursor (§5.2 step 3)
   createdAt                  TEXT    NOT NULL,                  -- ISO
@@ -89,7 +90,7 @@ CREATE TABLE IF NOT EXISTS raw_articles (
   simplifiedAt TEXT,
   -- ISO when an editor deleted this raw from the backlog; NULL otherwise.
   -- A flag rather than a DELETE: the row is what stops a later scrape storing
-  -- an undated item again (existsForSourceUrl), so removing it would bring the
+  -- an undated item again (existsByUrl), so removing it would bring the
   -- article straight back.
   dismissedAt TEXT
 );

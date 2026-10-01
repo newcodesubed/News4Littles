@@ -35,6 +35,9 @@ function report(result: ScrapeResult): void {
   console.log(`  skipped (duplicate)  ${result.skippedAlreadyStored}`);
   console.log(`  skipped (unusable)   ${result.skippedUnusable}`);
   console.log(`  STORED (raw)         ${result.inserted}`);
+  if (result.fullTextFailed > 0) {
+    console.log(`  no full text         ${result.fullTextFailed} (kept the RSS description)`);
+  }
   console.log(`  SIMPLIFIED           ${result.simplified.length}`);
   console.log(`  VERSIONS             ${result.versionsCreated}`);
   console.log(`  still waiting        ${result.leftWaiting}`);

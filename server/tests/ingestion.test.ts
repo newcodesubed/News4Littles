@@ -8,12 +8,13 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getSource, scrapeSource, type SourceRow } from '../src/ingestion/rssScraper.js';
 import { canonicalUrl } from '../src/ingestion/feedParser.js';
+import { ARTICLE_TEXT, initialDataPage, ARTICLE_BLOCKS } from './bbcFixtures.js';
 import { readScrapeTimes, timeToCron } from '../src/ingestion/scheduler.js';
 import {
   resetRunState, startScrapeRun, summarise, type RunState,
 } from '../src/services/scrapeService.js';
 import {
-  countRows, createTestContext, stubModel, type TestContext,
+  countRows, createTestContext, insertRawArticle, stubModel, useLocalFeed, type TestContext,
 } from './helpers.js';
 
 // Every story in this file is written by the fake model from stubModel.
@@ -30,6 +31,10 @@ let feedStatus = 200;
 let feedBody: string | null = null;
 let feedServer: Server;
 let feedUrl: string;
+/** Same server, same origin: article pages by path, and every request for one. */
+let origin: string;
+let articlePages: Record<string, { status: number; html?: string }> = {};
+let articleRequests: string[] = [];
 
 /**
  * Escape a value for XML text. Titles and descriptions below sit in CDATA, but
@@ -53,14 +58,22 @@ function rss(items: FeedItem[]): string {
 }
 
 beforeAll(async () => {
-  feedServer = createServer((_req, res) => {
+  feedServer = createServer((req, res) => {
+    if (req.url?.includes('/articles/')) {
+      articleRequests.push(req.url);
+      const page = articlePages[req.url] ?? { status: 404 };
+      res.writeHead(page.status, { 'Content-Type': 'text/html' });
+      res.end(page.html ?? '');
+      return;
+    }
     if (feedStatus !== 200) { res.writeHead(feedStatus); res.end('nope'); return; }
     res.writeHead(200, { 'Content-Type': 'application/rss+xml' });
     res.end(feedBody ?? rss(feedItems));
   });
   feedServer.listen(0);
   await new Promise((r) => feedServer.once('listening', r));
-  feedUrl = `http://127.0.0.1:${(feedServer.address() as AddressInfo).port}/rss.xml`;
+  origin = `http://127.0.0.1:${(feedServer.address() as AddressInfo).port}`;
+  feedUrl = `${origin}/rss.xml`;
 });
 afterAll(() => feedServer.close());
 
@@ -69,11 +82,13 @@ beforeEach(() => {
   ctx = createTestContext();
   feedStatus = 200;
   feedBody = null;
+  articlePages = {};
+  articleRequests = [];
   feedItems = [
     { title: 'A rover surveyed the reef', link: 'https://example.com/1', pubDate: 'Thu, 03 Sep 2026 10:00:00 GMT', description: 'A calm story about the sea.' },
     { title: 'Storm brings a disaster and an earthquake', link: 'https://example.com/2', pubDate: 'Fri, 04 Sep 2026 10:00:00 GMT', description: 'A disaster and an earthquake struck.' },
   ];
-  ctx.db.prepare(`UPDATE sources SET url = ? WHERE id = 'bbc'`).run(feedUrl);
+  useLocalFeed(ctx.db, feedUrl);
 });
 afterEach(() => ctx.close());
 
@@ -347,6 +362,175 @@ describe('the simplification budget', () => {
 
     expect(ctx.db.prepare(`SELECT DISTINCT status FROM kid_articles`).pluck().all())
       .toEqual(['pending_review']);
+  });
+});
+
+describe("full text from article pages (parser 'bbc')", () => {
+  const link = (id: string) => `${origin}/news/articles/${id}`;
+  const article = (id: string): FeedItem => ({
+    title: `Story ${id}`, link: link(id),
+    pubDate: 'Thu, 03 Sep 2026 10:00:00 GMT', description: `Description of ${id}.`,
+  });
+  const servePage = (id: string, html = initialDataPage(ARTICLE_BLOCKS)) => {
+    articlePages[`/news/articles/${id}`] = { status: 200, html };
+  };
+  const bodyOf = (id: string) =>
+    ctx.db.prepare(`SELECT body FROM raw_articles WHERE url = ?`).pluck().get(link(id));
+  const topicOf = (id: string) =>
+    ctx.db.prepare(`SELECT topic FROM raw_articles WHERE url = ?`).pluck().get(link(id));
+  const scrape = (source: SourceRow = bbc(), limit?: number) =>
+    scrapeSource(ctx.db, source, { articleDelayMs: 0, limit });
+
+  /** A second BBC source reading the same local feed, as two section feeds share stories. */
+  const section = (id: string) => {
+    ctx.db.prepare(`UPDATE sources SET url = ?, enabled = 1 WHERE id = ?`).run(feedUrl, id);
+    return getSource(ctx.db, id) as SourceRow;
+  };
+
+  beforeEach(() => useLocalFeed(ctx.db, feedUrl, 'bbc'));
+
+  it('stores the article text instead of the one-line description', async () => {
+    feedItems = [article('a1')];
+    servePage('a1');
+
+    const result = await scrape();
+
+    expect(result.inserted).toBe(1);
+    expect(result.fullTextFailed).toBe(0);
+    expect(bodyOf('a1')).toBe(ARTICLE_TEXT);
+  });
+
+  it('skips video, audio and live links without fetching them', async () => {
+    feedItems = [
+      { ...article('v1'), link: `${origin}/news/videos/v1` },
+      { ...article('s1'), link: `${origin}/sounds/play/s1` },
+      article('a1'),
+    ];
+    servePage('a1');
+
+    const result = await scrape();
+
+    expect(result.skippedUnusable).toBe(2);
+    expect(result.inserted).toBe(1);
+    expect(articleRequests).toEqual(['/news/articles/a1']);
+  });
+
+  it('applies the limit to real articles, after the skipped links', async () => {
+    feedItems = [{ ...article('v1'), link: `${origin}/news/videos/v1` }, article('a1'), article('a2')];
+    servePage('a1');
+
+    const result = await scrape(bbc(), 1);
+
+    expect(result.inserted).toBe(1);
+    expect(bodyOf('a1')).toBe(ARTICLE_TEXT);
+  });
+
+  it('keeps the description when the page is missing', async () => {
+    feedItems = [article('a1')];
+
+    const result = await scrape();
+
+    expect(result.ok).toBe(true);
+    expect(result.inserted).toBe(1);
+    expect(result.fullTextFailed).toBe(1);
+    expect(bodyOf('a1')).toBe('Description of a1.');
+  });
+
+  it('keeps the description when the page has no article text', async () => {
+    feedItems = [article('a1')];
+    servePage('a1', '<html><body>A redesigned page</body></html>');
+
+    const result = await scrape();
+
+    expect(result.fullTextFailed).toBe(1);
+    expect(bodyOf('a1')).toBe('Description of a1.');
+  });
+
+  it('stops fetching after three failures in a row, and still stores every item', async () => {
+    feedItems = ['a1', 'a2', 'a3', 'a4', 'a5'].map(article);
+
+    const result = await scrape();
+
+    expect(articleRequests).toHaveLength(3);
+    expect(result.fullTextFailed).toBe(5);
+    expect(result.inserted).toBe(5);
+    expect(bodyOf('a5')).toBe('Description of a5.');
+  });
+
+  it('a success in between resets the count of failures', async () => {
+    feedItems = ['a1', 'a2', 'a3', 'a4', 'a5'].map(article);
+    servePage('a3');
+
+    const result = await scrape();
+
+    expect(articleRequests).toHaveLength(5);
+    expect(result.fullTextFailed).toBe(4);
+    expect(bodyOf('a3')).toBe(ARTICLE_TEXT);
+  });
+
+  it('does not fetch a page whose URL is already stored', async () => {
+    insertRawArticle(ctx.db, { url: link('a1') });
+    feedItems = [article('a1')];
+    servePage('a1');
+
+    const result = await scrape();
+
+    expect(articleRequests).toEqual([]);
+    expect(result.skippedAlreadyStored).toBe(1);
+  });
+
+  it('stores a story two section feeds share once, and fetches it once', async () => {
+    feedItems = [article('a1')];
+    servePage('a1');
+
+    await scrape();
+    const second = await scrape(section('bbc-technology'));
+
+    expect(second.inserted).toBe(0);
+    expect(second.skippedAlreadyStored).toBe(1);
+    expect(articleRequests).toHaveLength(1);
+    expect(countRows(ctx.db, 'raw_articles')).toBe(1);
+  });
+
+  it("files a section's stories under the section's category, whatever they mention", async () => {
+    feedItems = [{ ...article('a1'), title: 'Football team wins the league' }];
+    servePage('a1');
+
+    await scrape(section('bbc-technology'));
+
+    expect(topicOf('a1')).toBe('Technology');
+  });
+
+  it('files Business stories under World', async () => {
+    feedItems = [{ ...article('a1'), title: 'New smartphone app launches' }];
+    servePage('a1');
+
+    await scrape(section('bbc-business'));
+
+    expect(topicOf('a1')).toBe('World');
+  });
+
+  it('guesses per story for a section with no category (Science & Environment)', async () => {
+    feedItems = [
+      { ...article('a1'), title: 'Scientists spot a new planet' },
+      { ...article('a2'), title: 'Climate change shrinks glaciers' },
+    ];
+
+    await scrape(section('bbc-science'));
+
+    expect(topicOf('a1')).toBe('Science');
+    expect(topicOf('a2')).toBe('Environment');
+  });
+
+  it("an 'rss' source never fetches article pages", async () => {
+    useLocalFeed(ctx.db, feedUrl, 'rss');
+    feedItems = [article('a1')];
+    servePage('a1');
+
+    await scrape();
+
+    expect(articleRequests).toEqual([]);
+    expect(bodyOf('a1')).toBe('Description of a1.');
   });
 });
 

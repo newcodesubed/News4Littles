@@ -67,6 +67,19 @@ export function createTestContext(options: { seedData?: boolean; logger?: Logger
   };
 }
 
+/**
+ * Points the 'bbc' source at a local feed and disables every other source with
+ * a live URL, so a run over "all enabled sources" never touches the network —
+ * the seed ships real BBC feed URLs.
+ *
+ * `parser` defaults to 'rss': plain feed items, no article pages fetched. Pass
+ * 'bbc' to exercise full-text scraping against a local article server.
+ */
+export function useLocalFeed(db: Database, feedUrl: string, parser: 'rss' | 'bbc' = 'rss'): void {
+  db.prepare(`UPDATE sources SET url = ?, parser = ? WHERE id = 'bbc'`).run(feedUrl, parser);
+  db.prepare(`UPDATE sources SET enabled = 0 WHERE id <> 'bbc' AND url <> ''`).run();
+}
+
 let fixtureCount = 0;
 
 /** Insert a raw article and return its id. */

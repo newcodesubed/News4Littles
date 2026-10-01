@@ -1,6 +1,7 @@
 /** Sources CRUD — PRD §4.4, §5.1. */
 import { Router } from 'express';
 import type { Database } from 'better-sqlite3';
+import { CATEGORIES, type Category } from '../../core/article.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../../core/errors.js';
 import { createRawArticleRepository } from '../../db/repositories/rawArticleRepository.js';
 import {
@@ -10,6 +11,12 @@ import { optionalString, parseBool, requireOneOf, requireString } from '../../ht
 
 /** Source ids appear in URLs and in the review-queue filter. */
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** A reader-UI category, or null — blank included — to guess per story. */
+function optionalCategory(value: unknown): Category | null {
+  const text = optionalString(value);
+  return text === null ? null : requireOneOf(text, CATEGORIES, 'category');
+}
 
 export function createSourcesRouter(db: Database): Router {
   const router = Router();
@@ -48,6 +55,7 @@ export function createSourcesRouter(db: Database): Router {
         enabled,
         trustLevel: requireOneOf(body.trustLevel ?? 'high', TRUST_LEVELS, 'trustLevel'),
         parser: optionalString(body.parser),
+        category: optionalCategory(body.category),
       },
       new Date().toISOString(),
     );
@@ -63,6 +71,7 @@ export function createSourcesRouter(db: Database): Router {
     if (body.name !== undefined) changes.name = requireString(body.name, 'name');
     if (body.url !== undefined) changes.url = optionalString(body.url) ?? '';
     if (body.parser !== undefined) changes.parser = optionalString(body.parser);
+    if (body.category !== undefined) changes.category = optionalCategory(body.category);
     if (body.trustLevel !== undefined) {
       changes.trustLevel = requireOneOf<TrustLevel>(body.trustLevel, TRUST_LEVELS, 'trustLevel');
     }

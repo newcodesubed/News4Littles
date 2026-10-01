@@ -101,6 +101,7 @@ function failedResult(source: SourceRow, error: unknown): ScrapeResult {
     skippedAlreadyStored: 0,
     skippedUnusable: 0,
     inserted: 0,
+    fullTextFailed: 0,
     newestItemPublishedAt: source.lastFetchedItemPublishedAt,
     stored: [],
     simplified: [],

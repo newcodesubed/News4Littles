@@ -61,6 +61,7 @@ export async function runScheduledScrape(db: Database): Promise<void> {
           {
             sourceId: result.sourceId,
             stored: result.inserted,
+            noFullText: result.fullTextFailed,
             simplified: result.simplified.length,
             versions: result.versionsCreated,
             waiting: result.leftWaiting,

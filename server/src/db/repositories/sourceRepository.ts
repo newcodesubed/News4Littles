@@ -11,6 +11,8 @@ export interface SourceRow {
   enabled: number;
   trustLevel: TrustLevel;
   parser: string | null;
+  /** The category every story from this feed is hinted as; NULL guesses per story. */
+  category: string | null;
   lastFetchedAt: string | null;
   lastFetchedItemPublishedAt: string | null;
   createdAt: string;
@@ -30,6 +32,7 @@ export interface NewSource {
   enabled: boolean;
   trustLevel: TrustLevel;
   parser: string | null;
+  category: string | null;
 }
 
 export interface SourceRepository {
@@ -56,8 +59,8 @@ export function createSourceRepository(db: Database): SourceRepository {
       `SELECT * FROM sources WHERE enabled = 1 AND url <> '' ORDER BY id`,
     ),
     insert: db.prepare(
-      `INSERT INTO sources (id, name, url, enabled, trustLevel, parser, createdAt, updatedAt)
-       VALUES (@id, @name, @url, @enabled, @trustLevel, @parser, @now, @now)`,
+      `INSERT INTO sources (id, name, url, enabled, trustLevel, parser, category, createdAt, updatedAt)
+       VALUES (@id, @name, @url, @enabled, @trustLevel, @parser, @category, @now, @now)`,
     ),
     remove: db.prepare(`DELETE FROM sources WHERE id = ?`),
     recordFetch: db.prepare(
