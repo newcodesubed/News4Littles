@@ -5,6 +5,8 @@ export interface Source {
   enabled: boolean;
   trustLevel: 'high' | 'medium' | 'low';
   parser: string | null;
+  /** Every story from this feed is filed under it; null guesses per story. */
+  category: string | null;
   lastFetchedAt: string | null;
   lastFetchedItemPublishedAt: string | null;
   articleCount: number;

@@ -58,8 +58,8 @@ function mockApi(overrides: Record<string, unknown> = {}) {
       },
     });
     if (path.includes('/sources')) return json([
-      { id: 'bbc', name: 'BBC News', url: 'https://feeds.bbci.co.uk/news/rss.xml', enabled: true, trustLevel: 'high', parser: 'rss', lastFetchedAt: '2026-09-04T06:00:00.000Z', lastFetchedItemPublishedAt: '2026-09-04T05:00:00.000Z', articleCount: 11 },
-      { id: 'manual', name: 'Manual submission', url: '', enabled: false, trustLevel: 'high', parser: null, lastFetchedAt: null, lastFetchedItemPublishedAt: null, articleCount: 3 },
+      { id: 'bbc', name: 'BBC News', url: 'https://feeds.bbci.co.uk/news/rss.xml', enabled: true, trustLevel: 'high', parser: 'bbc', category: null, lastFetchedAt: '2026-09-04T06:00:00.000Z', lastFetchedItemPublishedAt: '2026-09-04T05:00:00.000Z', articleCount: 11 },
+      { id: 'manual', name: 'Manual submission', url: '', enabled: false, trustLevel: 'high', parser: null, category: null, lastFetchedAt: null, lastFetchedItemPublishedAt: null, articleCount: 3 },
     ]);
     if (path.includes('/guard-config')) return json({ denyList: ['war', 'killed'], denyListEnabled: true, promptGuardEnabled: false, promptGuardText: '', ...overrides });
     if (path.includes('/app-settings')) return json({ defaultAge: 5, scrapeTimes: ['06:00'], llmProvider: null, simplifyBudget: 10, apiKeyLocation: 'environment variable only (never stored in the database)' });
@@ -344,6 +344,18 @@ describe('settings — §5.1 sources', () => {
     renderIn(<AdminSettings />);
     await screen.findByDisplayValue('BBC News');
     expect(screen.getAllByRole('button', { name: /reset/i }).length).toBeGreaterThan(0);
+  });
+
+  it('choosing a category PATCHes it, and "Guess category" clears it', async () => {
+    renderIn(<AdminSettings />);
+    await screen.findByDisplayValue('BBC News');
+    const select = screen.getByLabelText('Category for bbc');
+
+    await userEvent.selectOptions(select, 'Technology');
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH' && c.path === '/api/admin/sources/bbc' && c.body.category === 'Technology')).toBe(true));
+
+    await userEvent.selectOptions(select, 'Guess category');
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH' && c.path === '/api/admin/sources/bbc' && c.body.category === '')).toBe(true));
   });
 
   it('toggling enabled PATCHes the source', async () => {

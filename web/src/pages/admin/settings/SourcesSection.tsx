@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { CATEGORIES } from '../../../components/Badges';
 import { Button } from '../../../ui/Button';
 import { ConfirmDialog, type Confirmation } from '../dialogs';
 import { FIELD_CLASS_COMPACT, Select, Switch } from '../../../ui/Field';
@@ -8,7 +9,20 @@ import { LastRunSummary, RunSourceButton, ScrapeAllControls } from './ScrapeCont
 import type { Save, ScrapeStatus, Source } from './types';
 
 const TRUST_LEVELS = ['high', 'medium', 'low'] as const;
-const blankDraft = { id: '', name: '', url: '', trustLevel: 'high', parser: 'rss', enabled: true };
+const blankDraft = { id: '', name: '', url: '', trustLevel: 'high', parser: 'rss', category: '', enabled: true };
+
+/**
+ * The category every story from a source is filed under. Blank — the server
+ * stores NULL — guesses per story, for a feed that mixes subjects.
+ */
+function CategoryOptions() {
+  return (
+    <>
+      <option value="">Guess category</option>
+      {CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+    </>
+  );
+}
 
 /**
  * One editable source row.
@@ -85,6 +99,17 @@ function SourceRow({
               {TRUST_LEVELS.map((level) => (
                 <option key={level} value={level}>{level} trust</option>
               ))}
+            </select>
+            <select
+              value={draft.category ?? ''}
+              aria-label={`Category for ${source.id}`}
+              onChange={(e) => {
+                setDraft({ ...draft, category: e.target.value || null });
+                void commit('category', e.target.value);
+              }}
+              className={`${FIELD_CLASS_COMPACT} text-sm`}
+            >
+              <CategoryOptions />
             </select>
           </div>
 
@@ -190,6 +215,10 @@ export function SourcesSection({
             <Select value={draft.trustLevel} aria-label="Trust level"
               onChange={(e) => setDraft({ ...draft, trustLevel: e.target.value })} className="mt-0">
               {TRUST_LEVELS.map((level) => <option key={level} value={level}>{level} trust</option>)}
+            </Select>
+            <Select value={draft.category} aria-label="Category"
+              onChange={(e) => setDraft({ ...draft, category: e.target.value })} className="mt-0">
+              <CategoryOptions />
             </Select>
           </div>
           <div className="mt-3 flex gap-2">

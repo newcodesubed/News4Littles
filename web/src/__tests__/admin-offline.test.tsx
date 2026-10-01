@@ -38,7 +38,7 @@ const storyOf = (a: typeof ARTICLE) => ({
 
 const SOURCES = [{
   id: 'bbc', name: 'BBC News', url: 'https://feeds.example/rss', enabled: true,
-  trustLevel: 'high', parser: 'rss', lastFetchedAt: null,
+  trustLevel: 'high', parser: 'rss', category: null, lastFetchedAt: null,
   lastFetchedItemPublishedAt: null, articleCount: 1,
 }];
 
