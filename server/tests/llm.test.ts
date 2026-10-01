@@ -11,6 +11,7 @@ import {
   parseLlmContent, renderPrompt, selectPrompt, LlmResponseError, TEMPLATE_VARIABLES,
 } from '../src/llm/llmSimplifier.js';
 import { simplifyArticle, simplifyStory } from '../src/pipeline/simplifyArticle.js';
+import { DENY_LIST_LEAD_CHARS } from '../src/pipeline/guard.js';
 import { AGE_BANDS, AGE_BAND_ANCHORS, CATEGORIES, bandForAge } from '../src/core/article.js';
 import {
   GENERIC_SIMPLIFICATION_PROMPT, YOUNG_READERS_SIMPLIFICATION_PROMPT,
@@ -445,6 +446,34 @@ describe('simplifyArticle orchestration', () => {
         client: withClient(completion(JSON.stringify({ ...GOOD, safety: 'calm', contentWarnings: [] }))),
       });
       expect(out.article.contentWarnings).toEqual(['war', 'attack', 'bomb']);
+    });
+
+    describe('reads the lead, not the whole article (DENY_LIST_LEAD_CHARS)', () => {
+      // Longer than the lead on its own, so anything after it is past the cut.
+      const filler = 'The council met to talk about the new park. '.repeat(
+        Math.ceil(DENY_LIST_LEAD_CHARS / 40),
+      );
+      const calmModel = () =>
+        withClient(completion(JSON.stringify({ ...GOOD, safety: 'calm', feelingNote: null })));
+
+      it('ignores a word used in passing far down a long article', async () => {
+        const body = `${filler}Critics went on the attack over the cost.`;
+        const out = await simplifyArticle(ctx.db, { ...RAW, body }, { client: calmModel() });
+        expect(out.article.safety).toBe('calm');
+      });
+
+      it('still flags a word in the opening paragraphs', async () => {
+        const body = `The war ended today. ${filler}`;
+        const out = await simplifyArticle(ctx.db, { ...RAW, body }, { client: calmModel() });
+        expect(out.article.safety).toBe('adult-nearby');
+      });
+
+      it('still reads the headline', async () => {
+        const out = await simplifyArticle(
+          ctx.db, { ...RAW, headline: 'Bomb found near school', body: filler }, { client: calmModel() },
+        );
+        expect(out.article.safety).toBe('adult-nearby');
+      });
     });
 
     it('a model stricter than the deny-list still wins', async () => {

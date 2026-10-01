@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   AGE_BANDS, AGE_BAND_ANCHORS, bandForAge, formatAgeBand, isAgeBandAnchor,
 } from '../src/core/article.js';
-import { denyListGuard, strictest } from '../src/pipeline/guard.js';
+import { denyListGuard, leadOf, strictest } from '../src/pipeline/guard.js';
 import { maxWordsForAge } from '../src/pipeline/simplify.js';
 import { loadPipelineConfig } from '../src/pipeline/simplifyArticle.js';
 import { createTestContext, type TestContext } from './helpers.js';
@@ -24,6 +24,25 @@ describe('deny-list guard thresholds (§6.1)', () => {
   it('counts DISTINCT words, not occurrences', () => {
     // Eight mentions of one topic is still one topic.
     expect(denyListGuard('war war war war war war war war', DEFAULT_DENY).safety).toBe('adult-nearby');
+  });
+});
+
+describe('leadOf: how much of a body the deny-list reads', () => {
+  it('returns a short text unchanged', () => {
+    expect(leadOf('A short story.', 600)).toBe('A short story.');
+  });
+
+  it('cuts at whitespace, never through a word', () => {
+    // A halved "warm" would read as "war".
+    expect(leadOf('The day was warm', 14)).toBe('The day was');
+  });
+
+  it('keeps a word that ends exactly at the limit', () => {
+    expect(leadOf('The day was warm and sunny', 16)).toBe('The day was warm');
+  });
+
+  it('hard-cuts a text with no whitespace at all', () => {
+    expect(leadOf('x'.repeat(20), 10)).toBe('x'.repeat(10));
   });
 });
 

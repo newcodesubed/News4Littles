@@ -17,7 +17,9 @@ import {
   LlmResponseError, parseLlmContent, renderPrompt, selectPrompt, type LlmContent,
 } from '../llm/llmSimplifier.js';
 import { logger } from '../logger.js';
-import { denyListGuard, strictest, type GuardResult } from './guard.js';
+import {
+  DENY_LIST_LEAD_CHARS, denyListGuard, leadOf, strictest, type GuardResult,
+} from './guard.js';
 import { runPromptGuard, type PromptGuardOutcome } from './promptGuard.js';
 import { FEELING_NOTE_FALLBACK } from './simplify.js';
 
@@ -200,7 +202,9 @@ export async function simplifyArticle(
   // that calls a war story "calm" cannot publish it as calm.
   const guards: GuardResult[] = [];
   if (config.denyListEnabled) {
-    guards.push(denyListGuard(`${raw.headline}\n${raw.body}`, config.denyList));
+    // The lead, not the whole body: see DENY_LIST_LEAD_CHARS.
+    const lead = leadOf(raw.body, DENY_LIST_LEAD_CHARS);
+    guards.push(denyListGuard(`${raw.headline}\n${lead}`, config.denyList));
   }
   guards.push({ guard: 'llm-simplifier', safety: content.safety, matches: [] });
   // A guard that failed contributes nothing rather than a made-up verdict.

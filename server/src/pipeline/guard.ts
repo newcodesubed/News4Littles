@@ -63,6 +63,28 @@ export function denyListGuard(text: string, denyList: string[]): GuardResult {
 }
 
 /**
+ * How much of an article's body the deny-list reads: about its first three
+ * paragraphs, which is where a news story says what happened.
+ *
+ * The whole body is too much. Measured on 36 full BBC articles, a quarter went
+ * from calm to adult-nearby only for words used in passing — "attack" in a
+ * story about AI, "war" and "conflict" in one about energy bills. The model
+ * still reads the full text and gives its own verdict, and the strictest wins.
+ */
+export const DENY_LIST_LEAD_CHARS = 600;
+
+/**
+ * The opening of `text`, at most `maxChars` long, cut at whitespace so a word
+ * is never halved — a halved "warm" would read as "war".
+ */
+export function leadOf(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const cut = text.slice(0, maxChars + 1);
+  const lastSpace = cut.search(/\s\S*$/);
+  return lastSpace > 0 ? cut.slice(0, lastSpace) : text.slice(0, maxChars);
+}
+
+/**
  * §6: "the strictest result wins", over bare verdicts.
  *
  * The one place that knows the severity order. A story's band versions, a
