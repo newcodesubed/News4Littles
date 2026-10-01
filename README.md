@@ -567,14 +567,15 @@ script itself isn't shown: each story's reviewed script is already on the page.
   and joined into one MP3.
 
 The limits are sized from real calls (see `src/env.ts`), so a healthy call is
-never the one that fails. A full day of eight stories took 28–33s and
-3,246–4,140 tokens, most of it the model thinking, for a 4,000–4,200 character
-script.
+never the one that fails. Each story gets about 125 words, room for the facts
+beyond its ~80-word `audioScript`. A full day of eight stories took about 45s
+and about 4,200 output tokens, most of it the model thinking, for a 6,000
+character script (about seven and a half minutes spoken).
 
 | Setting                   | Default | Why                                                                     |
 | ------------------------- | ------- | ----------------------------------------------------------------------- |
 | `PODCAST_MAX_STORIES`     | `8`     | The newest this-many stories of the day go in                           |
-| `PODCAST_MAX_CHARS`       | `7000`  | A longer script is rejected; a quarter above the most the prompt asks   |
+| `PODCAST_MAX_CHARS`       | `10000` | A longer script is rejected; a quarter above the most the prompt asks   |
 | `PODCAST_LLM_MAX_TOKENS`  | `8000`  | The priced cap on one call; about twice the most measured               |
 | `PODCAST_LLM_TIMEOUT_MS`  | `90000` | Enough to write the token cap at the slowest speed seen; the first visitor waits |
 | `PODCAST_LLM_MAX_RETRIES` | `1`     | One retry on the backup model, for a timeout, cut-off or 5xx            |
