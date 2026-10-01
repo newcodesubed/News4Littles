@@ -254,15 +254,20 @@ untouched seeded prompt up to date.
 
 ### Auto mode (off by default)
 
-Set `AUTO_APPROVE_ENABLED=true` and an LLM judges each story a scrape just
-simplified, publishing the ones it approves with **no editor involved**. It
+Set `AUTO_APPROVE_ENABLED=true` and an LLM judges each **calm** story just
+simplified, by a scrape or by **Simplify** on the waiting backlog, publishing
+the ones it approves with **no editor involved**. It
 defaults to `false`, unlike every other flag here, because it trades away the
 human review this product otherwise promises. It also needs a working LLM: no
 API key means no judge, and no judge means nothing is auto-published.
 
 The judge reads the **ages 5–7 version** — the strictest reading level and the
 most sensitive reader — and since publishing is story-scoped, one verdict covers
-every group. Its prompt lives in `pipeline/approvalGuard.ts` and is deliberately
+every group. It judges **safety and accuracy, not reading level**: it sees the
+WORDS list the page explains, and today's date, and is told never to refuse
+over a hard word or a fact newer than it knows. Before that, it held most calm
+stories for words like "league" and rejected current news ("Pocognoli is not
+Scotland's coach") from out-of-date memory. Its prompt lives in `pipeline/approvalGuard.ts` and is deliberately
 not editable from admin settings: it is a safety gate, and one careless edit
 would silently approve everything.
 
@@ -287,9 +292,9 @@ publish something by accident.
 
 Two things it will never touch:
 
-- **`skip-young` stories.** Not judged at all, not even a call made. §6 makes
-  those an explicit human decision, so the content most likely to upset a child
-  stays human-only.
+- **`skip-young` and `adult-nearby` stories.** Not judged at all, not even a
+  call made. §6 makes those an explicit human decision, so anything that could
+  upset or worry a child (war, illness, crime, politics) stays human-only.
 - **Anything already published or rejected.** A person's decision is never
   overwritten or relabelled as the judge's.
 
