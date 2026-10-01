@@ -2,7 +2,7 @@ import { formatAgeBand, type AgeBand, type KidArticle, type VocabEntry } from '.
 import { INJECTION_PATTERNS, detectInjection } from '../pipeline/approvalGuard.js';
 import { scriptFor } from '../services/audioService.js';
 
-export const EPISODE_PROMPT_VERSION = 4;
+export const EPISODE_PROMPT_VERSION = 5;
 
 export interface EpisodeStory {
   id: string;
@@ -59,12 +59,20 @@ const CHARS_PER_WORD = 6;
 // The opening, recap and goodbye together.
 const FRAME_WORDS = 130;
 
+/**
+ * Room per story, about 125 words in the middle. A story's audioScript is
+ * about 80 words, and the episode is given the story's other reviewed fields
+ * too, so at 80 it could only reword the script or drop facts to fit new ones.
+ */
+const MIN_WORDS_PER_STORY = 100;
+const MAX_WORDS_PER_STORY = 150;
+
 export function wordBudget(
   count: number,
   maxChars: number,
 ): { minWords: number; maxWords: number; wordsPerStory: number } {
-  const maxWords = Math.min(100 * count + 150, Math.floor(maxChars / CHARS_PER_WORD));
-  const minWords = Math.min(65 * count + 100, maxWords);
+  const maxWords = Math.min(MAX_WORDS_PER_STORY * count + 150, Math.floor(maxChars / CHARS_PER_WORD));
+  const minWords = Math.min(MIN_WORDS_PER_STORY * count + 100, maxWords);
   const wordsPerStory = Math.max(30, Math.round(((minWords + maxWords) / 2 - FRAME_WORDS) / Math.max(count, 1)));
   return { minWords, maxWords, wordsPerStory };
 }

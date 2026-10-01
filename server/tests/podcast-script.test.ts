@@ -127,7 +127,7 @@ describe('renderEpisodePrompt', () => {
     expect(prompt).toContain('children aged 5–7');
     expect(prompt).toContain('at most 14 words.');
     expect(prompt).toContain('a 5-year-old knows');
-    expect(prompt).toContain('ABOUT 80 WORDS');
+    expect(prompt).toContain('ABOUT 123 WORDS');
   });
 
   it('leaves no placeholder unfilled', () => {
@@ -159,7 +159,11 @@ describe('renderEpisodePrompt', () => {
 
 describe('wordBudget', () => {
   it('scales with the number of stories', () => {
-    expect(wordBudget(3, 6000)).toEqual({ minWords: 295, maxWords: 450, wordsPerStory: 81 });
+    expect(wordBudget(3, 10_000)).toEqual({ minWords: 400, maxWords: 600, wordsPerStory: 123 });
+  });
+
+  it('gives a full day of eight stories about 125 words each', () => {
+    expect(wordBudget(8, 10_000)).toEqual({ minWords: 900, maxWords: 1350, wordsPerStory: 124 });
   });
 
   it('never allows more words than the character cap can hold', () => {

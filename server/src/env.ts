@@ -174,15 +174,22 @@ export const AUDIO_CACHE_DIR = resolve(SERVER_ROOT, readString('AUDIO_CACHE_DIR'
  *   time     9.9–18.1s   / 28.0–33.3s
  *   tokens   1,006–2,007 / 3,246–4,140  (of which thinking: 768–1,797 / 2,375–3,234)
  *   script   984–1,139   / 3,982–4,232 characters
+ *
+ * Re-measured with the v4 prompt (every reviewed field) and ~125 words a story
+ * (2026-10-01), for four stories / eight:
+ *
+ *   time     37.2s / 44.6s
+ *   output   ~3,950 / ~4,180 tokens, thinking included
+ *   script   3,361 / 6,048 characters
  */
 export const PODCAST_MAX_STORIES = readInt('PODCAST_MAX_STORIES', 8);
 
 /**
- * A longer script is rejected. Eight stories ask for at most 950 words, about
- * 5,600 characters at the 5.9 per word measured; 7,000 leaves a quarter on top.
+ * A longer script is rejected. Eight stories ask for at most 1,350 words, about
+ * 8,000 characters at the 5.9 per word measured; 10,000 leaves a quarter on top.
  * Also bounds the text-to-speech bill for one episode.
  */
-export const PODCAST_MAX_CHARS = readInt('PODCAST_MAX_CHARS', 7000);
+export const PODCAST_MAX_CHARS = readInt('PODCAST_MAX_CHARS', 10_000);
 
 /**
  * The priced cap on one call. About twice the most measured (4,140): a script
