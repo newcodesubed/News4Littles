@@ -110,6 +110,11 @@ export async function autoApproveStories(
  * waited for a person even when auto mode was on.
  *
  * Returns null, judging nothing, unless auto mode is on. Logs every decision.
+ *
+ * Never throws. It runs inside a batch, right after each story is written, and
+ * a failure here (say, the database refusing the publish) must not mark a story
+ * that WAS simplified as a failed simplification. A story it could not judge
+ * simply stays in pending_review, which is where it already was.
  */
 export async function autoApproveIfEnabled(
   db: Database,
@@ -124,11 +129,17 @@ export async function autoApproveIfEnabled(
   // AUTO_APPROVE_ENABLED already implies LLM_ENABLED, so a key exists here.
   if (!(options.enabled ?? AUTO_APPROVE_ENABLED) || originalIds.length === 0) return null;
 
-  const report = await autoApproveStories(
-    db,
-    originalIds.map((originalId) => ({ originalId })),
-    { client: options.client ?? new OpenRouterClient({}) },
-  );
+  let report: AutoApproveReport;
+  try {
+    report = await autoApproveStories(
+      db,
+      originalIds.map((originalId) => ({ originalId })),
+      { client: options.client ?? new OpenRouterClient({}) },
+    );
+  } catch (error: unknown) {
+    log.error({ err: error, originalIds }, 'could not judge; left for review');
+    return null;
+  }
 
   for (const held of report.held) {
     log.info({ originalId: held.originalId, reason: held.reason }, 'held for review');

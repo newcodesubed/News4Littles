@@ -6,6 +6,7 @@
  * skip-young story must leave the queue exactly as it was.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AGE_BANDS } from '../src/core/article.js';
 import { OpenRouterClient } from '../src/llm/openRouterClient.js';
 import { judgeStory } from '../src/pipeline/approvalGuard.js';
 import { autoApproveStories } from '../src/services/autoApprove.js';
@@ -419,6 +420,8 @@ describe('a scrape run reaches the judge', () => {
    */
   function dualClient(approve: boolean) {
     let judgeCalls = 0;
+    /** Every model call in order, so a test can see when the judge ran. */
+    const order: ('simplify' | 'judge')[] = [];
     const version = JSON.stringify({
       kidHeadline: 'A calm story', summary: 'Divers looked at a reef.',
       whatHappened: 'They went down deep.', whyItMatters: 'Reefs matter.',
@@ -430,6 +433,7 @@ describe('a scrape run reaches the judge', () => {
       const prompt = JSON.parse(String(init.body)).messages[0].content as string;
       const isJudge = prompt.includes('<<<STORY>>>');
       if (isJudge) judgeCalls += 1;
+      order.push(isJudge ? 'judge' : 'simplify');
       return {
         ok: true,
         status: 200,
@@ -447,6 +451,7 @@ describe('a scrape run reaches the judge', () => {
     return {
       client: new OpenRouterClient({ apiKey: 'test-key', fetchImpl, maxRetries: 1 }),
       judgeCalls: () => judgeCalls,
+      order: () => order,
     };
   }
 
@@ -555,6 +560,52 @@ describe('a scrape run reaches the judge', () => {
 
       expect(judgeCalls).toBe(0);
       expect(state.autoPublished).toBe(0);
+      expect(statuses('w1')).toEqual(['pending_review']);
+    });
+  });
+  describe('each story is judged as soon as it is written', () => {
+    it('judges between stories, not after the batch', async () => {
+      const { simplifyRawArticles } = await import('../src/services/simplifyService.js');
+      seedWaiting('w1');
+      seedWaiting('w2');
+      const { client, order } = dualClient(true);
+
+      await simplifyRawArticles(ctx.db, ['w1', 'w2'], { client, autoApprove: true });
+
+      const oneStory = [...Array(AGE_BANDS.length).fill('simplify'), 'judge'];
+      expect(order()).toEqual([...oneStory, ...oneStory]);
+    });
+
+    it('a story is live before the next one is written', async () => {
+      const { simplifyRawArticles } = await import('../src/services/simplifyService.js');
+      seedWaiting('w1');
+      seedWaiting('w2');
+      const { client } = dualClient(true);
+      let w1WhenFirstDone: string[] = [];
+
+      const report = await simplifyRawArticles(ctx.db, ['w1', 'w2'], {
+        client, autoApprove: true,
+        onProgress: (done) => { if (done === 1) w1WhenFirstDone = statuses('w1'); },
+      });
+
+      expect(w1WhenFirstDone).toEqual(['published']);
+      expect(report.autoPublished).toBe(2);
+    });
+
+    it('a story it cannot publish is left pending, not counted as a failed simplification', async () => {
+      const { simplifyRawArticles } = await import('../src/services/simplifyService.js');
+      seedWaiting('w1');
+      // The database refuses the publish itself.
+      ctx.db.exec(`CREATE TRIGGER refuse_publish BEFORE UPDATE OF status ON kid_articles
+                   WHEN NEW.status = 'published' BEGIN SELECT RAISE(ABORT, 'refused'); END`);
+      const { client, judgeCalls } = dualClient(true);
+
+      const report = await simplifyRawArticles(ctx.db, ['w1'], { client, autoApprove: true });
+
+      expect(judgeCalls()).toBe(1);
+      expect(report.simplified.map((row) => row.rawId)).toEqual(['w1']);
+      expect(report.failures).toEqual([]);
+      expect(report.autoPublished).toBe(0);
       expect(statuses('w1')).toEqual(['pending_review']);
     });
   });

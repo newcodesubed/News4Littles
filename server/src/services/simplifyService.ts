@@ -54,6 +54,8 @@ export interface SimplifyReport {
   failures: SimplifyFailure[];
   /** Ids that were already simplified — a double submit, not an error. */
   skipped: string[];
+  /** Stories auto mode published without an editor. 0 unless it is on. */
+  autoPublished: number;
 }
 
 export interface SimplifyOptions {
@@ -62,6 +64,8 @@ export interface SimplifyOptions {
   now?: () => string;
   /** Called with the number of ids attempted so far, for progress polling. */
   onProgress?: (done: number) => void;
+  /** Overrides AUTO_APPROVE_ENABLED. A test seam. */
+  autoApprove?: boolean;
 }
 
 /**
@@ -71,6 +75,10 @@ export interface SimplifyOptions {
  * sit inside a better-sqlite3 transaction anyway, and committing per article
  * makes a batch resumable: a failure on the seventh keeps the first six and
  * leaves the rest waiting for another attempt.
+ *
+ * In auto mode each story is judged the moment it is written, not after the
+ * batch: a calm story goes live as soon as it is ready, and a batch that dies
+ * halfway cannot leave the stories it already wrote unjudged.
  *
  * Does NOT take the job lock — callers own that, because a scrape run holds it
  * across both of its phases.
@@ -84,7 +92,9 @@ export async function simplifyRawArticles(
   const articles = createArticleRepository(db);
   const clock = options.now ?? (() => new Date().toISOString());
 
-  const report: SimplifyReport = { simplified: [], dropped: [], failures: [], skipped: [] };
+  const report: SimplifyReport = {
+    simplified: [], dropped: [], failures: [], skipped: [], autoPublished: 0,
+  };
   let done = 0;
 
   // Nothing is lost: the articles stay waiting until the model is back.
@@ -170,6 +180,12 @@ export async function simplifyRawArticles(
         versions: versions.length,
         costUsd: outcome.costUsd,
       });
+
+      // Right away, not after the batch (see above). Never throws.
+      const judged = await autoApproveIfEnabled(db, [raw.id], {
+        enabled: options.autoApprove, client: options.client,
+      });
+      report.autoPublished += judged?.published.length ?? 0;
     } catch (error: unknown) {
       // A database failure on one article leaves simplifiedAt NULL, so the row
       // stays waiting and can be retried. The batch carries on.
@@ -221,11 +237,7 @@ export function resetSimplifyJob(): void {
 export function startSimplifyJob(
   db: Database,
   rawIds: string[],
-  options: SimplifyOptions & {
-    onFinished?: (state: SimplifyJobState) => void;
-    /** Overrides AUTO_APPROVE_ENABLED. A test seam. */
-    autoApprove?: boolean;
-  } = {},
+  options: SimplifyOptions & { onFinished?: (state: SimplifyJobState) => void } = {},
 ): SimplifyJobState {
   if (rawIds.length === 0) throw new BadRequestError('No articles were selected.');
 
@@ -237,7 +249,7 @@ export function startSimplifyJob(
     rawIds,
     done: 0,
     running: true,
-    report: { simplified: [], dropped: [], failures: [], skipped: [] },
+    report: { simplified: [], dropped: [], failures: [], skipped: [], autoPublished: 0 },
     autoPublished: 0,
   };
   current = state;
@@ -249,15 +261,7 @@ export function startSimplifyJob(
         ...options,
         onProgress: (done) => { state.done = done; },
       });
-
-      // The same auto mode a scrape run has: a story simplified from the
-      // backlog is judged like one simplified by the scheduler.
-      const judged = await autoApproveIfEnabled(
-        db,
-        state.report.simplified.map((row) => row.rawId),
-        { enabled: options.autoApprove, client: options.client },
-      );
-      state.autoPublished = judged?.published.length ?? 0;
+      state.autoPublished = state.report.autoPublished;
     } catch (error: unknown) {
       state.report.failures.push({
         rawId: '(batch)',

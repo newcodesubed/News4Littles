@@ -27,7 +27,6 @@ import { createSourceRepository } from '../db/repositories/sourceRepository.js';
 import { scrapeSource, type ScrapeResult, type SourceRow } from '../ingestion/rssScraper.js';
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
 import { logger } from '../logger.js';
-import { autoApproveIfEnabled } from './autoApprove.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 import { selectBudgetedBatch, type SourceQueue } from './simplifyBudget.js';
 import { simplifyRawArticles } from './simplifyService.js';
@@ -185,10 +184,15 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
         .filter((group): group is SourceQueue => group !== undefined);
 
       const batch = selectBudgetedBatch(queues, state.budget);
+      // §2.2 promises a human reads every story first. AUTO_APPROVE_ENABLED
+      // trades that away for calm stories, judging each one as soon as it is
+      // written; anything the judge does not explicitly approve stays pending.
       const report = await simplifyRawArticles(db, batch, {
         client: options.client,
+        autoApprove: options.autoApprove,
         onProgress: (done) => { state.simplifiedCount = done; },
       });
+      state.autoPublished = report.autoPublished;
 
       // Attribute each article's outcome back to the source it came from.
       for (const row of report.simplified) {
@@ -208,17 +212,6 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
         result.costUsd += row.costUsd;
         result.dropped.push(`${row.headline}: ${row.reason}`);
       }
-
-      // ─── Auto mode, only when explicitly enabled ───────────────────────
-      // §2.2 promises a human reads every story first. AUTO_APPROVE_ENABLED
-      // trades that away, so it is off unless asked for, and anything the
-      // judge does not explicitly approve stays in pending_review.
-      const judged = await autoApproveIfEnabled(
-        db,
-        report.simplified.map((row) => row.rawId),
-        { enabled: options.autoApprove, client: options.client },
-      );
-      state.autoPublished = judged?.published.length ?? 0;
 
       // Counted, not subtracted: phase 2 may have cleared backlog from an
       // earlier run, so this run's `inserted` is not the right basis.
