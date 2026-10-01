@@ -15,7 +15,7 @@ import { detectInjection } from '../pipeline/approvalGuard.js';
 import { chunkScript } from '../podcast/chunkScript.js';
 import {
   EPISODE_PROMPT_VERSION, checkEpisodeScript, parseEpisodeScript, renderEpisodePrompt,
-  toEpisodeStory, type EpisodeStory,
+  storyTexts, toEpisodeStory, type EpisodeStory,
 } from '../podcast/episodePrompt.js';
 import { buildFallbackEpisode } from '../podcast/fallbackEpisode.js';
 import { joinMp3 } from '../podcast/joinMp3.js';
@@ -93,7 +93,8 @@ export function episodeKey(parts: {
         parts.model,
         String(parts.ageTarget),
         parts.date,
-        ...parts.stories.map((s) => [s.id, s.kidHeadline, s.sourceName, s.script, s.thinkAbout].join('\n')),
+        // Every field the model reads: an editor's edit to any of them is a new episode.
+        ...parts.stories.map((s) => [s.id, ...storyTexts(s)].join('\n')),
       ].join('\n\n'),
     )
     .digest('hex');
@@ -161,7 +162,7 @@ export function createEpisodeService(db: Database, options: EpisodeServiceOption
     if (!llm) return fallback(inputs, 'The LLM is switched off.', false);
 
     for (const story of inputs.stories) {
-      for (const field of [story.kidHeadline, story.sourceName, story.script, story.thinkAbout]) {
+      for (const field of storyTexts(story)) {
         const tripped = detectInjection(field);
         if (tripped) return fallback(inputs, `A story's text reads as an instruction (${tripped}).`, false);
       }

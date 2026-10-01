@@ -2,14 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { AGE_BANDS, type KidArticle } from '../src/core/article.js';
 import {
   EPISODE_PROMPT_VERSION, checkEpisodeScript, parseEpisodeScript, renderEpisodePrompt,
-  toEpisodeStory, wordBudget, type EpisodeStory,
+  storyTexts, toEpisodeStory, wordBudget, type EpisodeStory,
 } from '../src/podcast/episodePrompt.js';
 import { buildFallbackEpisode } from '../src/podcast/fallbackEpisode.js';
 import { chunkScript } from '../src/podcast/chunkScript.js';
 
 const article = (o: Partial<KidArticle> = {}): KidArticle => ({
   id: 'a1', originalId: 'r1', ageTarget: 8, kidHeadline: 'A robot visits the reef',
-  summary: 'A robot swam to a coral reef.', whatHappened: 'W', whyItMatters: 'Y',
+  summary: 'A robot swam to a coral reef.',
+  whatHappened: 'A robot dived to a reef and counted three hundred fish in one hour.',
+  whyItMatters: 'It is the first count of fish on this reef.',
   vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
   thinkAbout: 'What would you ask the robot?', audioScript: 'A little robot swam down to a coral reef and counted the fish.',
   feelingNote: null, safety: 'calm', contentWarnings: null, category: 'Science', readingMinutes: 3,
@@ -39,12 +41,26 @@ const GOOD = [
 const withLine = (line: string) => GOOD.replace('So, what did', `${line}\n\nSo, what did`);
 
 describe('toEpisodeStory', () => {
-  it('carries the reviewed script', () => {
+  it('carries the reviewed script and every other reviewed field', () => {
     expect(STORIES[0]).toEqual({
       id: 'a1', kidHeadline: 'A robot visits the reef', sourceName: 'BBC News',
       script: 'A little robot swam down to a coral reef and counted the fish.',
       thinkAbout: 'What would you ask the robot?', hasOwnScript: true,
+      summary: 'A robot swam to a coral reef.',
+      whatHappened: 'A robot dived to a reef and counted three hundred fish in one hour.',
+      whyItMatters: 'It is the first count of fish on this reef.',
+      vocab: [{ word: 'reef', definition: 'A ridge under the sea.' }],
     });
+  });
+
+  it('lists every text the model reads, vocab included, for the key and the injection check', () => {
+    expect(storyTexts(STORIES[0]!)).toEqual([
+      'A robot visits the reef', 'BBC News',
+      'A little robot swam down to a coral reef and counted the fish.',
+      'What would you ask the robot?', 'A robot swam to a coral reef.',
+      'A robot dived to a reef and counted three hundred fish in one hour.',
+      'It is the first count of fish on this reef.', 'reef', 'A ridge under the sea.',
+    ]);
   });
 
   it('falls back to the assembled script for a story written before audio scripts', () => {
@@ -57,10 +73,50 @@ describe('toEpisodeStory', () => {
 describe('renderEpisodePrompt', () => {
   const prompt = renderEpisodePrompt(STORIES, BAND_5_7, 6000);
 
+  /** Story 1 as sent; the rules above it name the same field labels. */
+  const firstStory = (rendered: string) =>
+    rendered.slice(rendered.indexOf('<<<STORY 1>>>'), rendered.indexOf('<<<END STORY 1>>>'));
+
   it('fences every story as data, in order', () => {
-    expect(prompt).toContain('<<<STORY 1>>>\nTEXT: A little robot swam down to a coral reef and counted the fish.\n<<<END STORY 1>>>');
-    expect(prompt).toContain('TEXT: Two baby pandas practised climbing a big tree at the zoo.\n<<<END STORY 2>>>');
+    expect(prompt).toContain('SPOKEN VERSION: Two baby pandas practised climbing a big tree at the zoo.\n<<<END STORY 2>>>');
     expect(prompt.indexOf('<<<STORY 1>>>')).toBeLessThan(prompt.indexOf('<<<STORY 2>>>'));
+  });
+
+  it("sends every reviewed field, not just the spoken script", () => {
+    expect(prompt).toContain([
+      '<<<STORY 1>>>',
+      'HEADLINE: A robot visits the reef',
+      'SUMMARY: A robot swam to a coral reef.',
+      'WHAT HAPPENED: A robot dived to a reef and counted three hundred fish in one hour.',
+      'WHY IT MATTERS: It is the first count of fish on this reef.',
+      'WORDS:',
+      '- reef: A ridge under the sea.',
+      'SPOKEN VERSION: A little robot swam down to a coral reef and counted the fish.',
+      '<<<END STORY 1>>>',
+    ].join('\n'));
+  });
+
+  it('tells the host to build from the facts, not copy the spoken version', () => {
+    expect(prompt).toContain('never copy its sentences');
+    expect(prompt).toContain('No story copies sentences from its SPOKEN VERSION.');
+    expect(prompt).not.toContain('TEXT');
+  });
+
+  it('leaves out a blank field rather than sending an empty label', () => {
+    const story = toEpisodeStory(article({ whyItMatters: '  ', vocab: [] }));
+    const rendered = firstStory(renderEpisodePrompt([story], BAND_5_7, 6000));
+    expect(rendered).toContain('WHAT HAPPENED:');
+    expect(rendered).not.toContain('WHY IT MATTERS:');
+    expect(rendered).not.toContain('WORDS:');
+  });
+
+  it('sends no spoken version for a story written before audio scripts', () => {
+    // Its assembled script repeats the fields already sent, plus its source.
+    const old = toEpisodeStory(article({ audioScript: null }));
+    const rendered = renderEpisodePrompt([old], BAND_5_7, 6000);
+    expect(firstStory(rendered)).not.toContain('SPOKEN VERSION:');
+    expect(rendered).toContain('WHAT HAPPENED: A robot dived');
+    expect(rendered).not.toContain('BBC News');
   });
 
   it('puts the rules after the stories, so the last thing read is the instruction', () => {
