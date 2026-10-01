@@ -92,7 +92,8 @@ Everything under `/admin` needs the admin password.
 ## How a story reaches a reader
 
 ```
-BBC RSS feed ─┐                  first 10 per run
+BBC feeds ────┐                  first 10 per run
+(full text)   │
               ├─→ raw_articles ─┬─→ guard + simplify ─→ kid_articles
 paste by hand ┘                 │   (once per reading     (3 versions + a spoken
                                 │    group: 5-7, 8-10,     script, pending_review)
@@ -126,6 +127,7 @@ present.
 ```bash
 cd server
 npm run try:rss              # just prove the feed fetch works
+npm run try:bbc -- <url>     # what the scraper reads from one BBC article page
 npm run scrape               # every enabled source
 npm run scrape:bbc           # one source
 npm run scrape -- --limit 5  # cap items fetched (see the warning below)
@@ -136,8 +138,8 @@ Or click **Run all enabled** / **Run now** in `/admin/settings`, which shows
 progress and what the last run did.
 
 Fetching is incremental: items older than the newest one already stored are
-skipped, and an item whose URL is already stored is skipped too. Only one run
-happens at a time.
+skipped, and an item whose URL is already stored — by any source — is skipped
+too. Only one run happens at a time.
 
 A scheduled run fires daily at the times in `app_settings.scrapeTimes`
 (`["06:00"]` by default), editable in admin settings. **Changing the times needs
@@ -148,6 +150,47 @@ a server restart** — the cron jobs are registered at boot.
 > Those stories are then skipped forever. Use the plain command for real work.
 > `--budget` is the safe one: it stores everything and only defers the
 > simplifying.
+
+### Full article text from BBC
+
+A feed item's description is one sentence, too little to write a story from.
+So the feed is used to **find** articles, and each article's own page is
+scraped for its **text** (`ingestion/bbcArticle.ts`). That happens for every
+source whose parser is `bbc`. Any other parser stores the feed's description,
+as before.
+
+The seeded BBC sources, one per section so each can be switched off alone:
+
+| Source           | Feed                                   | Category         |
+|------------------|----------------------------------------|------------------|
+| `bbc`            | `news/rss.xml` (front page)            | guessed          |
+| `bbc-technology` | `news/technology/rss.xml`              | Technology       |
+| `bbc-business`   | `news/business/rss.xml`                | World            |
+| `bbc-health`     | `news/health/rss.xml`                  | Health           |
+| `bbc-science`    | `news/science_and_environment/rss.xml` | guessed          |
+| `bbc-sport`      | `sport/rss.xml`                        | Sports           |
+
+An existing database gets them from `npm run db:init` (schema version 10),
+which the deploy already runs.
+
+- **No HTML is parsed.** BBC pages embed the article as JSON, in one of two
+  shapes (bbc.co.uk and Sport, or bbc.com); both are read. Only body text and
+  subheadings are kept: captions, bylines, related links and adverts are not.
+- **Only article links are scraped.** Video, audio, iPlayer and live links have
+  no text, so they are skipped and counted as unusable.
+- **A failed page never loses the story.** It is stored with the feed's
+  description, and the run counts it as "no full text". After three failures
+  in a row a source stops fetching pages for the rest of that run — BBC is
+  down, or blocking us — rather than waiting out a timeout per item.
+- **Politely.** One page at a time, a second apart, as `News4LittlesBot/1.0`.
+  The first run fetches a few hundred pages; later runs only what is new.
+- **The deny-list reads the headline and the opening ~600 characters**
+  (`DENY_LIST_LEAD_CHARS`), not the whole article. On full text it flagged a
+  quarter of calm stories for words used in passing ("attack" in a story about
+  AI). The model still reads the full text and votes, and the strictest wins.
+
+When stories start arriving thin, BBC has probably changed its markup: run
+`npm run try:bbc -- <article url>` to see what is still extracted.
 
 ### The simplification budget
 
@@ -186,10 +229,12 @@ item. Steps 1–5 live in `ingestion/rssScraper.ts`; steps 6–7 moved to
 
 ### Categories
 
-The BBC front-page feed carries no category, so a story's category is decided
-in two steps:
+A story's category is decided in two steps:
 
-1. **At scrape time, a keyword guess** (`pipeline/categorize.ts`). Free, no API
+1. **At scrape time, the source's category, or a keyword guess.** A section
+   feed has a fixed category (`sources.category`, editable in
+   `/admin/settings`). A mixed feed such as the BBC front page has none, so the
+   category is guessed from keywords (`pipeline/categorize.ts`). Free, no API
    key needed. Anything that matches no keywords is `World`.
 2. **When the model rewrites the story, the model picks** from the same list
    the site has badges for (`CATEGORIES` in `core/article.ts`, mirrored in
@@ -730,7 +775,7 @@ server/src/
   http/               middleware (auth, request logging, errors) and validation
   pipeline/           the safety guard and the simplification entry point
   llm/                the OpenRouter client and response parsing
-  ingestion/          RSS fetching, parsing, scheduling
+  ingestion/          RSS fetching, BBC article pages, parsing, scheduling
   services/           use cases: submit, regenerate, sandbox, scrape runs,
                       simplification (simplifyService, simplifyBudget, jobLock)
   tts/                the speech provider registry, its contract, and the audio cache
