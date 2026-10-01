@@ -531,9 +531,14 @@ waits, which is why the play button has a real loading state.
 
 The big play button on `/podcast` plays one episode covering the stories
 **published on the most recent day** (in `SCRAPE_TIMEZONE`) for the reader's
-band. The LLM retells each story's reviewed `audioScript` as a kids' radio
-show: a hook, a lead-in and a wonder question per story, a recap, and a
-goodbye.
+band. The LLM retells each story as a kids' radio show: a hook, a lead-in and a
+wonder question per story, a recap, and a goodbye.
+
+It's given every reviewed field of each story (headline, summary, what
+happened, why it matters, vocab, and the `audioScript`) and told to build its
+retelling from the facts, never copying the `audioScript`'s sentences. Given the
+`audioScript` alone, the best retelling was that script again, so the episode
+came out nearly word for word.
 
 ```
 GET /api/podcast/stories?age=N          → the day's stories, at once (no model call)
@@ -550,7 +555,7 @@ script itself isn't shown: each story's reviewed script is already on the page.
   under a hash of the script. A reload costs nothing. A newly published or
   edited story is a new hash, so the next visitor builds a new episode once.
 - **No editor reads the episode script**, so it's guarded instead. Only
-  reviewed scripts go in. The prompt is hardcoded (`src/podcast/episodePrompt.ts`)
+  reviewed fields go in. The prompt is hardcoded (`src/podcast/episodePrompt.ts`)
   and forbids new facts. The answer must pass free checks (length, every
   source named, no markup, no instruction-like text). If anything fails, the
   episode is built from the reviewed scripts stitched between a fixed welcome
