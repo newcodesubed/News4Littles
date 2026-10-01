@@ -6,8 +6,9 @@
  * path that breaks that promise, so it is written to fail closed:
  *
  *  - a story is published ONLY on an explicit `approved === true`
- *  - a skip-young story is never published and never even judged (§6, §4.2 —
- *    the content most likely to upset a child stays human-only)
+ *  - only a calm story is ever judged. A skip-young or adult-nearby story is
+ *    never published and never even judged: the subjects that could upset or
+ *    worry a child (§6, §4.2) stay human-only
  *  - an already-published story is left alone, so a human's decision is never
  *    relabelled as the judge's
  *  - every publish records `approvedBy = 'auto'`, so a story no person read is
@@ -74,10 +75,13 @@ export async function autoApproveStories(
       continue;
     }
 
-    if (story.safety === 'skip-young') {
+    if (story.safety !== 'calm') {
       // Not judged at all: §6 makes these an explicit human decision, so there
-      // is no verdict here for the judge to get wrong.
-      report.held.push({ originalId, reason: 'held: skip-young needs a person (§6)' });
+      // is no verdict here for the judge to get wrong. adult-nearby joined
+      // skip-young once the judge stopped refusing over hard words: it then
+      // approved illness and crime stories too, and a model alone is not
+      // enough of a check on those.
+      report.held.push({ originalId, reason: `held: ${story.safety} needs a person (§6)` });
       continue;
     }
 

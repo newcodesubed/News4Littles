@@ -324,6 +324,18 @@ describe('autoApproveStories', () => {
     expect(report.held[0].reason).toMatch(/skip-young/);
   });
 
+  it('never publishes an adult-nearby story either, and never even asks', async () => {
+    // Worrying subjects (illness, crime, politics) wait for an editor too.
+    const raw = seedStory('s1', 'adult-nearby');
+    const { client, calls } = stubClient({ ok: true, body: { approved: true, reason: 'Fine.' } });
+
+    const report = await autoApproveStories(ctx.db, [candidate(raw)], { client });
+
+    expect(statuses('s1')).toEqual(['pending_review']);
+    expect(calls()).toBe(0);
+    expect(report.held[0].reason).toMatch(/adult-nearby needs a person/);
+  });
+
   it('leaves a story that is already published alone', async () => {
     const raw = seedStory('s1');
     ctx.db.prepare(`UPDATE kid_articles SET status='published', publishedAt=? WHERE originalId=?`)
