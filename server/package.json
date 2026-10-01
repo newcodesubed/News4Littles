@@ -15,6 +15,7 @@
     "seed": "tsx src/db/seed-articles.ts",
     "typecheck": "tsc --noEmit",
     "try:rss": "tsx scripts/try-rss.ts",
+    "try:bbc": "tsx scripts/try-bbc-article.ts",
     "scrape": "tsx scripts/scrape.ts",
     "scrape:bbc": "tsx scripts/scrape.ts --source bbc",
     "test": "vitest run",
