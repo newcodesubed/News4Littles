@@ -26,9 +26,9 @@ name: Server
 on:
   push:
     branches: [main]
-    paths: ['server/**', '.github/workflows/server.yml']
+    paths: ["server/**", ".github/workflows/server.yml"]
   pull_request:
-    paths: ['server/**', '.github/workflows/server.yml']
+    paths: ["server/**", ".github/workflows/server.yml"]
   workflow_dispatch:
 
 permissions:
@@ -36,7 +36,7 @@ permissions:
 
 env:
   # Keep in step with the Node version on the VPS.
-  NODE_VERSION: '20'
+  NODE_VERSION: "20"
 
 jobs:
   test:
@@ -85,10 +85,10 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.DEPLOY_HOST }}
           SSH_USER: ${{ secrets.DEPLOY_USER }}
-          SSH_PORT: ${{ vars.DEPLOY_PORT || '22' }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          PM2_APP: ${{ vars.PM2_APP || 'news4littles-server' }}
-          HEALTH_URL: ${{ vars.HEALTH_URL || 'http://localhost:4000/api/health' }}
+          SSH_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          PM2_APP: ${{ secrets.PM2_APP || 'news4littles-server' }}
+          HEALTH_URL: ${{ secrets.HEALTH_URL || 'http://localhost:4000/api/health' }}
         run: |
           test -n "$DEPLOY_PATH" || { echo "::error::Set the DEPLOY_PATH variable."; exit 1; }
           args=$(printf '%q ' "$GITHUB_SHA" "$DEPLOY_PATH" "$PM2_APP" "$HEALTH_URL")
