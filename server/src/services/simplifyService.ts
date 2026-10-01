@@ -17,6 +17,7 @@ import { createRawArticleRepository } from '../db/repositories/rawArticleReposit
 import type { OpenRouterClient } from '../llm/openRouterClient.js';
 import { LLM_OFF_REASON, llmAvailable, simplifyStory, type SimplifySuccess } from '../pipeline/simplifyArticle.js';
 import { strictestSafety } from '../pipeline/guard.js';
+import { autoApproveIfEnabled } from './autoApprove.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 
 export interface SimplifiedRow {
@@ -194,6 +195,8 @@ export interface SimplifyJobState {
   done: number;
   running: boolean;
   report: SimplifyReport;
+  /** Stories auto mode published without an editor. 0 unless it is on. */
+  autoPublished: number;
 }
 
 /** Module-level for the same reason as the job lock: one process, one admin. */
@@ -218,7 +221,11 @@ export function resetSimplifyJob(): void {
 export function startSimplifyJob(
   db: Database,
   rawIds: string[],
-  options: SimplifyOptions & { onFinished?: (state: SimplifyJobState) => void } = {},
+  options: SimplifyOptions & {
+    onFinished?: (state: SimplifyJobState) => void;
+    /** Overrides AUTO_APPROVE_ENABLED. A test seam. */
+    autoApprove?: boolean;
+  } = {},
 ): SimplifyJobState {
   if (rawIds.length === 0) throw new BadRequestError('No articles were selected.');
 
@@ -231,6 +238,7 @@ export function startSimplifyJob(
     done: 0,
     running: true,
     report: { simplified: [], dropped: [], failures: [], skipped: [] },
+    autoPublished: 0,
   };
   current = state;
 
@@ -241,6 +249,15 @@ export function startSimplifyJob(
         ...options,
         onProgress: (done) => { state.done = done; },
       });
+
+      // The same auto mode a scrape run has: a story simplified from the
+      // backlog is judged like one simplified by the scheduler.
+      const judged = await autoApproveIfEnabled(
+        db,
+        state.report.simplified.map((row) => row.rawId),
+        { enabled: options.autoApprove, client: options.client },
+      );
+      state.autoPublished = judged?.published.length ?? 0;
     } catch (error: unknown) {
       state.report.failures.push({
         rawId: '(batch)',

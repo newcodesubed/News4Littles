@@ -25,16 +25,14 @@ import {
 import { createSettingsRepository } from '../db/repositories/settingsRepository.js';
 import { createSourceRepository } from '../db/repositories/sourceRepository.js';
 import { scrapeSource, type ScrapeResult, type SourceRow } from '../ingestion/rssScraper.js';
-import { OpenRouterClient } from '../llm/openRouterClient.js';
-import { AUTO_APPROVE_ENABLED } from '../env.js';
+import type { OpenRouterClient } from '../llm/openRouterClient.js';
 import { logger } from '../logger.js';
-import { autoApproveStories } from './autoApprove.js';
+import { autoApproveIfEnabled } from './autoApprove.js';
 import { acquireJob, releaseJob } from './jobLock.js';
 import { selectBudgetedBatch, type SourceQueue } from './simplifyBudget.js';
 import { simplifyRawArticles } from './simplifyService.js';
 
 const log = logger.child({ area: 'scrape' });
-const autoLog = logger.child({ area: 'auto' });
 
 export interface RunState {
   id: string;
@@ -215,25 +213,12 @@ export function startScrapeRun(db: Database, options: StartOptions = {}): RunSta
       // §2.2 promises a human reads every story first. AUTO_APPROVE_ENABLED
       // trades that away, so it is off unless asked for, and anything the
       // judge does not explicitly approve stays in pending_review.
-      if (options.autoApprove ?? AUTO_APPROVE_ENABLED) {
-        // The composition root supplies the client: options.client is the
-        // test seam and is undefined in production, so a default is built here
-        // rather than inside the service. AUTO_APPROVE_ENABLED already implies
-        // LLM_ENABLED, so a key exists whenever this runs.
-        const judged = await autoApproveStories(
-          db,
-          report.simplified.map((row) => ({ originalId: row.rawId })),
-          { client: options.client ?? new OpenRouterClient({}) },
-        );
-        state.autoPublished = judged.published.length;
-
-        for (const held of judged.held) {
-          autoLog.info({ originalId: held.originalId, reason: held.reason }, 'held for review');
-        }
-        for (const done of judged.published) {
-          autoLog.info({ originalId: done.originalId, reason: done.reason }, 'published with no editor');
-        }
-      }
+      const judged = await autoApproveIfEnabled(
+        db,
+        report.simplified.map((row) => row.rawId),
+        { enabled: options.autoApprove, client: options.client },
+      );
+      state.autoPublished = judged?.published.length ?? 0;
 
       // Counted, not subtracted: phase 2 may have cleared backlog from an
       // earlier run, so this run's `inserted` is not the right basis.

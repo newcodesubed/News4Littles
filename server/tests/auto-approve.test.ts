@@ -498,4 +498,52 @@ describe('a scrape run reaches the judge', () => {
       resetRunState();
     }
   });
+  describe('the "Simplify" button on the waiting backlog reaches it too', () => {
+    // Auto mode used to run only inside a scrape, so every story an editor
+    // simplified from the backlog waited for a person, calm or not.
+    const runSimplifyJob = async (options: { autoApprove: boolean; approve: boolean }) => {
+      const { startSimplifyJob, resetSimplifyJob } = await import('../src/services/simplifyService.js');
+      resetSimplifyJob();
+      const { client, judgeCalls } = dualClient(options.approve);
+
+      try {
+        const state = await new Promise<{ autoPublished: number }>((resolve) => {
+          startSimplifyJob(ctx.db, ['w1'], { client, autoApprove: options.autoApprove, onFinished: resolve });
+        });
+        return { state, judgeCalls: judgeCalls() };
+      } finally {
+        resetSimplifyJob();
+      }
+    };
+
+    it('publishes a calm story the judge approves', async () => {
+      seedWaiting('w1');
+
+      const { state, judgeCalls } = await runSimplifyJob({ autoApprove: true, approve: true });
+
+      expect(judgeCalls).toBe(1);
+      expect(state.autoPublished).toBe(1);
+      expect(statuses('w1')).toEqual(['published']);
+      expect(approvedBy('w1')).toEqual(['auto']);
+    });
+
+    it('leaves it pending when the judge refuses', async () => {
+      seedWaiting('w1');
+
+      const { state } = await runSimplifyJob({ autoApprove: true, approve: false });
+
+      expect(state.autoPublished).toBe(0);
+      expect(statuses('w1')).toEqual(['pending_review']);
+    });
+
+    it('never asks the judge while auto mode is off', async () => {
+      seedWaiting('w1');
+
+      const { state, judgeCalls } = await runSimplifyJob({ autoApprove: false, approve: true });
+
+      expect(judgeCalls).toBe(0);
+      expect(state.autoPublished).toBe(0);
+      expect(statuses('w1')).toEqual(['pending_review']);
+    });
+  });
 });

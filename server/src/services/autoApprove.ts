@@ -19,8 +19,12 @@
  */
 import type { Database } from 'better-sqlite3';
 import { createArticleRepository } from '../db/repositories/articleRepository.js';
-import type { OpenRouterClient } from '../llm/openRouterClient.js';
+import { AUTO_APPROVE_ENABLED } from '../env.js';
+import { OpenRouterClient } from '../llm/openRouterClient.js';
+import { logger } from '../logger.js';
 import { judgeStory } from '../pipeline/approvalGuard.js';
+
+const log = logger.child({ area: 'auto' });
 
 export interface AutoApproveReport {
   /** Stories the judge approved and this published. */
@@ -92,5 +96,41 @@ export async function autoApproveStories(
     report.published.push({ originalId, reason: verdict.reason });
   }
 
+  return report;
+}
+
+/**
+ * Auto mode for stories just simplified, wherever that happened: a scrape run,
+ * or an editor pressing "Simplify" on the waiting backlog. It used to run only
+ * inside a scrape, so a story simplified from the backlog was never judged and
+ * waited for a person even when auto mode was on.
+ *
+ * Returns null, judging nothing, unless auto mode is on. Logs every decision.
+ */
+export async function autoApproveIfEnabled(
+  db: Database,
+  originalIds: string[],
+  options: {
+    /** Overrides AUTO_APPROVE_ENABLED. A test seam. */
+    enabled?: boolean;
+    /** The callers' own test seam; undefined in production, so a default is built here. */
+    client?: OpenRouterClient;
+  } = {},
+): Promise<AutoApproveReport | null> {
+  // AUTO_APPROVE_ENABLED already implies LLM_ENABLED, so a key exists here.
+  if (!(options.enabled ?? AUTO_APPROVE_ENABLED) || originalIds.length === 0) return null;
+
+  const report = await autoApproveStories(
+    db,
+    originalIds.map((originalId) => ({ originalId })),
+    { client: options.client ?? new OpenRouterClient({}) },
+  );
+
+  for (const held of report.held) {
+    log.info({ originalId: held.originalId, reason: held.reason }, 'held for review');
+  }
+  for (const done of report.published) {
+    log.info({ originalId: done.originalId, reason: done.reason }, 'published with no editor');
+  }
   return report;
 }
